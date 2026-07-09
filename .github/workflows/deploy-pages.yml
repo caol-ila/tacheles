@@ -1,0 +1,50 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow one concurrent deployment; let an in-progress production run finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage static site (drop dev-only files)
+        run: |
+          mkdir -p _site
+          cp -r app/. _site/
+          rm -rf _site/server.js _site/Tacheles-starten.cmd _site/test
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    # GitHub Pages on a free plan only serves PUBLIC repos. While this repo is
+    # private the build job above still runs (so CI stays green), but the deploy
+    # is skipped. Once you flip the repo to public, run this workflow from the
+    # Actions tab to publish.
+    if: github.event.repository.private == false
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages (enables it on first public run)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - id: deployment
+        uses: actions/deploy-pages@v4

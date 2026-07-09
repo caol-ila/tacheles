@@ -1,0 +1,12 @@
+# Dependencies (none today, but keep them out if ever added)
+**/node_modules/
+
+# Logs & OS cruft
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/

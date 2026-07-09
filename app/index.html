@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <meta name="theme-color" content="#177e89" />
+  <title>Tacheles · Hebräisch lernen</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <!-- Haupt-Container: alle Screens werden von app.js hier hineingerendert -->
+  <main id="app" class="app"></main>
+
+  <!-- Untere Navigation (waehrend einer Lern-Session ausgeblendet) -->
+  <nav id="nav" class="bottom-nav" aria-label="Hauptnavigation">
+    <button class="nav-btn" data-screen="home"><span class="nav-ico">🏠</span><span>Home</span></button>
+    <button class="nav-btn" data-screen="modes"><span class="nav-ico">🎓</span><span>Lernen</span></button>
+    <button class="nav-btn" data-screen="progress"><span class="nav-ico">📈</span><span>Fortschritt</span></button>
+    <button class="nav-btn" data-screen="profile"><span class="nav-ico">⚙️</span><span>Profil</span></button>
+  </nav>
+
+  <!-- Ebene fuer das dezente Abschluss-Konfetti -->
+  <div id="confetti-layer" aria-hidden="true"></div>
+
+  <!-- Klassische Scripts (keine Module, kein fetch) -> laeuft per file:// -->
+  <script src="content.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // PWA: Service Worker nur ueber http/https (z. B. Tacheles-starten.cmd).
+    // Macht die App offline-faehig und auf Android "installierbar".
+    if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+      navigator.serviceWorker.register("sw.js").catch(function () { /* egal */ });
+    }
+  </script>
+</body>
+</html>

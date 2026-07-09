@@ -1,0 +1,15 @@
+{
+  "name": "Tacheles – Hebräisch lernen",
+  "short_name": "Tacheles",
+  "description": "Hebräisch für deutsche Anfänger: lesen, hören, sprechen. Reden wir Tacheles.",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fdf6ec",
+  "theme_color": "#177e89",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
