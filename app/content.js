@@ -1,12 +1,14 @@
 /*
- * Tacheles - Content-Daten (Baender A0 "Survival" bis B2, ~530 Eintraege, 33 Themen)
+ * Tacheles - Content-Daten (Baender A0 "Survival" bis C2, ~670 Eintraege, 41 Themen)
  * Klassisches Script (kein ES-Modul), damit es per file:// direkt im Browser laeuft.
  * Definiert global: window.TACHELES_CONTENT = { version, themes, items, dialogues, modules }
  *
- * Baender (band): "A0" | "A1" | "A2" | "B1" | "B2" (jedes Thema/Dialog traegt eines).
+ * Baender (band): "A0" | "A1" | "A2" | "B1" | "B2" | "C1" | "C2" (jedes Thema/Dialog traegt eines).
  *   A0/A1 = Survival + Grundwortschatz; A2 = Alltag (Arbeit, Wohnen, Wetter, Hobbys,
  *   Vergangenheit/Zukunft); B1 = Meinung, Medien, Behoerden, Beziehungen;
- *   B2 = Gesellschaft/Politik, Abstraktes, Slang, Arbeitswelt fuer Fortgeschrittene.
+ *   B2 = Gesellschaft/Politik, Abstraktes, Slang, Arbeitswelt fuer Fortgeschrittene;
+ *   C1 = Verhandeln, Kultur/Literatur, Wissenschaft/Technik, Gefuehle im Detail;
+ *   C2 = Rhetorik/Politik, Ironie/Wortspiel, Amtssprache/Vertraege, seltene Idiome.
  *
  * modules: gefuehrte Themen-Lektionen (Buchstaben, Aussprache, Gegensaetze) mit
  *   Schritten (explain/teach/quiz/pairquiz). Schema siehe unten bei "modules:".
@@ -34,7 +36,7 @@
  * "echten" Release muttersprachlich gegengelesen werden.
  */
 window.TACHELES_CONTENT = {
-  version: 2,
+  version: 3,
   themes: [
     { id: "alefbet",   title: "Alef-Bet (Buchstaben)",   emoji: "🔤", band: "A0" },
     { id: "greetings", title: "Begrüßung & Höflichkeit", emoji: "👋", band: "A0" },
@@ -71,7 +73,17 @@ window.TACHELES_CONTENT = {
     { id: "society",      title: "Gesellschaft & Politik",     emoji: "🏛️", band: "B2" },
     { id: "abstract",     title: "Abstraktes & Ideen",         emoji: "🧠", band: "B2" },
     { id: "slang",        title: "Slang & Redewendungen",      emoji: "😎", band: "B2" },
-    { id: "work_adv",     title: "Arbeitswelt für Profis",     emoji: "📈", band: "B2" }
+    { id: "work_adv",     title: "Arbeitswelt für Profis",     emoji: "📈", band: "B2" },
+    // --- Band C1 ---
+    { id: "negotiation",  title: "Arbeitswelt & Verhandeln",   emoji: "🤝", band: "C1" },
+    { id: "culture",      title: "Kultur & Literatur",         emoji: "🎭", band: "C1" },
+    { id: "science",      title: "Wissenschaft & Technik",     emoji: "🔬", band: "C1" },
+    { id: "emotions",     title: "Gefühle & Beziehungen im Detail", emoji: "💗", band: "C1" },
+    // --- Band C2 ---
+    { id: "rhetoric",     title: "Rhetorik & Politik",         emoji: "🗣️", band: "C2" },
+    { id: "irony",        title: "Ironie & Wortspiel",         emoji: "😏", band: "C2" },
+    { id: "legal",        title: "Amtssprache & Verträge",     emoji: "📜", band: "C2" },
+    { id: "idioms",       title: "Seltene Idiome & Register",  emoji: "🎩", band: "C2" }
   ],
   items: [
     // --- Alef-Bet (type 'letter') ---
@@ -740,7 +752,179 @@ window.TACHELES_CONTENT = {
     { id: "eichut",     type: "word",   he: "איכות",   niqqud: "אֵיכוּת",      translit: "eichut",     de: "Qualität",               theme: "work_adv", freq: 13 },
     { id: "yeilut",     type: "word",   he: "יעילות",  niqqud: "יְעִילוּת",     translit: "ye'ilut",    de: "Effizienz",              theme: "work_adv", freq: 14 },
     { id: "tacharut",   type: "word",   he: "תחרות",   niqqud: "תַּחֲרוּת",     translit: "tacharut",   de: "Wettbewerb / Konkurrenz", theme: "work_adv", freq: 15 },
-    { id: "hizdamnut",  type: "word",   he: "הזדמנות", niqqud: "הִזְדַּמְּנוּת", translit: "hizdamnut",  de: "Gelegenheit / Chance",   theme: "work_adv", freq: 16 }
+    { id: "hizdamnut",  type: "word",   he: "הזדמנות", niqqud: "הִזְדַּמְּנוּת", translit: "hizdamnut",  de: "Gelegenheit / Chance",   theme: "work_adv", freq: 16 },
+
+    // ================================================================
+    // Erweiterung: Baender C1, C2 (muttersprachliches Review steht aus)
+    // ================================================================
+
+    // ===== Band C1 =====
+
+    // --- Arbeitswelt & Verhandeln (C1) ---
+    { id: "masa_umatan", type: "phrase", he: "משא ומתן",   niqqud: "מַשָּׂא וּמַתָּן",  translit: "masa umatan",  de: "Verhandlung",                theme: "negotiation", freq: 1, note: "wörtl. „Tragen und Geben“; oft kurz „masa matan“" },
+    { id: "hatsaa",      type: "word",   he: "הצעה",       niqqud: "הַצָּעָה",         translit: "hatsa'a",      de: "Angebot / Vorschlag",        theme: "negotiation", freq: 2 },
+    { id: "drisha",      type: "word",   he: "דרישה",      niqqud: "דְּרִישָׁה",       translit: "drisha",       de: "Forderung",                  theme: "negotiation", freq: 3 },
+    { id: "vitur",       type: "word",   he: "ויתור",      niqqud: "וִיתּוּר",         translit: "vitur",        de: "Zugeständnis / Verzicht",    theme: "negotiation", freq: 4 },
+    { id: "pshara",      type: "word",   he: "פשרה",       niqqud: "פְּשָׁרָה",        translit: "pshara",       de: "Kompromiss",                 theme: "negotiation", freq: 5 },
+    { id: "heskem",      type: "word",   he: "הסכם",       niqqud: "הֶסְכֵּם",         translit: "heskem",       de: "Vereinbarung / Abkommen",    theme: "negotiation", freq: 6 },
+    { id: "choze",       type: "word",   he: "חוזה",       niqqud: "חוֹזֶה",           translit: "choze",        de: "Vertrag",                    theme: "negotiation", freq: 7 },
+    { id: "tnai",        type: "word",   he: "תנאי",       niqqud: "תְּנַאי",          translit: "tnai",         de: "Bedingung",                  theme: "negotiation", freq: 8, note: "Mehrzahl: tna'im" },
+    { id: "saif",        type: "word",   he: "סעיף",       niqqud: "סָעִיף",           translit: "saif",         de: "Klausel / Paragraf",         theme: "negotiation", freq: 9 },
+    { id: "hitchayvut",  type: "word",   he: "התחייבות",   niqqud: "הִתְחַיְּבוּת",     translit: "hitchayvut",   de: "Verpflichtung / Zusage",     theme: "negotiation", freq: 10 },
+    { id: "shituf_peula",type: "phrase", he: "שיתוף פעולה", niqqud: "שִׁיתּוּף פְּעֻלָּה", translit: "shituf pe'ula", de: "Zusammenarbeit / Kooperation", theme: "negotiation", freq: 11 },
+    { id: "yitaron",     type: "word",   he: "יתרון",      niqqud: "יִתְרוֹן",         translit: "yitaron",      de: "Vorteil",                    theme: "negotiation", freq: 12, opposite: "chisaron", note: "Gegenteil von Nachteil" },
+    { id: "chisaron",    type: "word",   he: "חיסרון",     niqqud: "חִסָּרוֹן",        translit: "chisaron",     de: "Nachteil",                   theme: "negotiation", freq: 13, opposite: "yitaron", note: "Gegenteil von Vorteil" },
+    { id: "samchut",     type: "word",   he: "סמכות",      niqqud: "סַמְכוּת",         translit: "samchut",      de: "Befugnis / Autorität",       theme: "negotiation", freq: 14 },
+    { id: "mikuach",     type: "word",   he: "מיקוח",      niqqud: "מִיקּוּחַ",        translit: "mikuach",      de: "Feilschen",                  theme: "negotiation", freq: 15 },
+    { id: "temura",      type: "word",   he: "תמורה",      niqqud: "תְּמוּרָה",        translit: "temura",       de: "Gegenleistung",              theme: "negotiation", freq: 16, note: "„bi-tmura le-“ = im Gegenzug für" },
+    { id: "moed_acharon",type: "phrase", he: "מועד אחרון", niqqud: "מוֹעֵד אַחֲרוֹן",  translit: "mo'ed acharon", de: "Frist / Deadline",          theme: "negotiation", freq: 17 },
+    { id: "s_masa_heskem", type: "sentence", he: "אנחנו צריכים להגיע להסכם", niqqud: "אנחנו צריכים להגיע להסכם", translit: "anachnu tsrichim lehagia le-heskem", de: "Wir müssen zu einer Vereinbarung kommen.", theme: "negotiation", freq: 18,
+      tokens: [ { he: "אנחנו", translit: "anachnu", de: "wir" }, { he: "צריכים", translit: "tsrichim", de: "müssen" }, { he: "להגיע", translit: "lehagia", de: "gelangen" }, { he: "להסכם", translit: "le-heskem", de: "zu einer Vereinbarung" } ] },
+
+    // --- Kultur & Literatur (C1) ---
+    { id: "tarbut",      type: "word",   he: "תרבות",      niqqud: "תַּרְבּוּת",       translit: "tarbut",       de: "Kultur",                     theme: "culture", freq: 1 },
+    { id: "sifrut",      type: "word",   he: "ספרות",      niqqud: "סִפְרוּת",         translit: "sifrut",       de: "Literatur",                  theme: "culture", freq: 2 },
+    { id: "sofer",       type: "word",   he: "סופר",       niqqud: "סוֹפֵר",           translit: "sofer",        de: "Schriftsteller",             theme: "culture", freq: 3, note: "weiblich: soferet" },
+    { id: "meshorer",    type: "word",   he: "משורר",      niqqud: "מְשׁוֹרֵר",        translit: "meshorer",     de: "Dichter",                    theme: "culture", freq: 4, note: "weiblich: meshoreret" },
+    { id: "shira",       type: "word",   he: "שירה",       niqqud: "שִׁירָה",          translit: "shira",        de: "Poesie / Dichtung",          theme: "culture", freq: 5 },
+    { id: "roman",       type: "word",   he: "רומן",       niqqud: "רוֹמָן",           translit: "roman",        de: "Roman",                      theme: "culture", freq: 6 },
+    { id: "sipur",       type: "word",   he: "סיפור",      niqqud: "סִיפּוּר",         translit: "sipur",        de: "Geschichte / Erzählung",     theme: "culture", freq: 7 },
+    { id: "alila",       type: "word",   he: "עלילה",      niqqud: "עֲלִילָה",         translit: "alila",        de: "Handlung / Plot",            theme: "culture", freq: 8 },
+    { id: "dmut",        type: "word",   he: "דמות",       niqqud: "דְּמוּת",          translit: "dmut",         de: "Figur / Gestalt",            theme: "culture", freq: 9 },
+    { id: "yetsira",     type: "word",   he: "יצירה",      niqqud: "יְצִירָה",         translit: "yetsira",      de: "Werk (Kunstwerk)",           theme: "culture", freq: 10 },
+    { id: "oman",        type: "word",   he: "אמן",        niqqud: "אָמָּן",           translit: "oman",         de: "Künstler",                   theme: "culture", freq: 11, note: "weiblich: omanit" },
+    { id: "tsayar",      type: "word",   he: "צייר",       niqqud: "צַיָּיר",          translit: "tsayar",       de: "Maler",                      theme: "culture", freq: 12, note: "weiblich: tsayeret" },
+    { id: "pesel",       type: "word",   he: "פסל",        niqqud: "פֶּסֶל",           translit: "pesel",        de: "Skulptur / Statue",          theme: "culture", freq: 13 },
+    { id: "taarucha",    type: "word",   he: "תערוכה",     niqqud: "תַּעֲרוּכָה",      translit: "ta'arucha",    de: "Ausstellung",                theme: "culture", freq: 14 },
+    { id: "kahal",       type: "word",   he: "קהל",        niqqud: "קָהָל",            translit: "kahal",        de: "Publikum",                   theme: "culture", freq: 15 },
+    { id: "bikoret",     type: "word",   he: "ביקורת",     niqqud: "בִּיקֹּרֶת",       translit: "bikoret",      de: "Kritik / Rezension",         theme: "culture", freq: 16 },
+    { id: "hashpaa",     type: "word",   he: "השפעה",      niqqud: "הַשְׁפָּעָה",      translit: "hashpa'a",     de: "Einfluss",                   theme: "culture", freq: 17 },
+    { id: "s_sefer_hishpia", type: "sentence", he: "הספר הזה השפיע עליי מאוד", niqqud: "הספר הזה השפיע עליי מאוד", translit: "ha-sefer ha-ze hishpia alai me'od", de: "Dieses Buch hat mich sehr beeinflusst.", theme: "culture", freq: 18,
+      tokens: [ { he: "הספר", translit: "ha-sefer", de: "das Buch" }, { he: "הזה", translit: "ha-ze", de: "dieses" }, { he: "השפיע", translit: "hishpia", de: "beeinflusste" }, { he: "עליי", translit: "alai", de: "mich" }, { he: "מאוד", translit: "me'od", de: "sehr" } ] },
+
+    // --- Wissenschaft & Technik (C1) ---
+    { id: "mada",        type: "word",   he: "מדע",        niqqud: "מַדָּע",           translit: "mada",         de: "Wissenschaft",               theme: "science", freq: 1 },
+    { id: "mechkar",     type: "word",   he: "מחקר",       niqqud: "מֶחְקָר",          translit: "mechkar",      de: "Forschung / Studie",         theme: "science", freq: 2 },
+    { id: "nisui",       type: "word",   he: "ניסוי",      niqqud: "נִיסּוּי",         translit: "nisui",        de: "Experiment",                 theme: "science", freq: 3 },
+    { id: "madaan",      type: "word",   he: "מדען",       niqqud: "מַדְעָן",          translit: "mada'an",      de: "Wissenschaftler",            theme: "science", freq: 4, note: "weiblich: mada'anit" },
+    { id: "teorya",      type: "word",   he: "תיאוריה",    niqqud: "תֵּאוֹרְיָה",      translit: "te'orya",      de: "Theorie",                    theme: "science", freq: 5 },
+    { id: "gilui",       type: "word",   he: "גילוי",      niqqud: "גִּילּוּי",        translit: "gilui",        de: "Entdeckung",                 theme: "science", freq: 6 },
+    { id: "hamtsaa",     type: "word",   he: "המצאה",      niqqud: "הַמְצָאָה",        translit: "hamtsa'a",     de: "Erfindung",                  theme: "science", freq: 7 },
+    { id: "tofaa",       type: "word",   he: "תופעה",      niqqud: "תּוֹפָעָה",        translit: "tofa'a",       de: "Phänomen / Erscheinung",     theme: "science", freq: 8 },
+    { id: "technologya", type: "word",   he: "טכנולוגיה",  niqqud: "טֶכְנוֹלוֹגְיָה",   translit: "technologya",  de: "Technologie",                theme: "science", freq: 9 },
+    { id: "pituach",     type: "word",   he: "פיתוח",      niqqud: "פִּיתּוּחַ",       translit: "pituach",      de: "Entwicklung / Ausbau",       theme: "science", freq: 10 },
+    { id: "netunim",     type: "word",   he: "נתונים",     niqqud: "נְתוּנִים",        translit: "netunim",      de: "Daten",                      theme: "science", freq: 11 },
+    { id: "tochna",      type: "word",   he: "תוכנה",      niqqud: "תּוֹכְנָה",        translit: "tochna",       de: "Software",                   theme: "science", freq: 12 },
+    { id: "chumra",      type: "word",   he: "חומרה",      niqqud: "חוּמְרָה",         translit: "chumra",       de: "Hardware",                   theme: "science", freq: 13, note: "gleiches Wort auch: Schweregrad, Strenge" },
+    { id: "manganon",    type: "word",   he: "מנגנון",     niqqud: "מַנְגָּנוֹן",      translit: "manganon",     de: "Mechanismus",                theme: "science", freq: 14 },
+    { id: "taasiya",     type: "word",   he: "תעשייה",     niqqud: "תַּעֲשִׂיָּה",     translit: "ta'asiya",     de: "Industrie",                  theme: "science", freq: 15 },
+    { id: "sviva",       type: "word",   he: "סביבה",      niqqud: "סְבִיבָה",         translit: "sviva",        de: "Umwelt / Umgebung",          theme: "science", freq: 16 },
+    { id: "hitpatchut",  type: "word",   he: "התפתחות",    niqqud: "הִתְפַּתְּחוּת",    translit: "hitpatchut",   de: "Entwicklung (Evolution)",    theme: "science", freq: 17 },
+    { id: "bina_melachutit", type: "phrase", he: "בינה מלאכותית", niqqud: "בִּינָה מְלָאכוּתִית", translit: "bina melachutit", de: "künstliche Intelligenz", theme: "science", freq: 18 },
+    { id: "s_mechkar_gila", type: "sentence", he: "המחקר גילה תופעה חדשה", niqqud: "המחקר גילה תופעה חדשה", translit: "ha-mechkar gila tofa'a chadasha", de: "Die Studie entdeckte ein neues Phänomen.", theme: "science", freq: 19,
+      tokens: [ { he: "המחקר", translit: "ha-mechkar", de: "die Studie" }, { he: "גילה", translit: "gila", de: "entdeckte" }, { he: "תופעה", translit: "tofa'a", de: "ein Phänomen" }, { he: "חדשה", translit: "chadasha", de: "neues" } ] },
+
+    // --- Gefühle & Beziehungen im Detail (C1) ---
+    { id: "tiskul",      type: "word",   he: "תסכול",      niqqud: "תִּסְכּוּל",       translit: "tiskul",       de: "Frustration",                theme: "emotions", freq: 1 },
+    { id: "achzava",     type: "word",   he: "אכזבה",      niqqud: "אַכְזָבָה",        translit: "achzava",      de: "Enttäuschung",               theme: "emotions", freq: 2 },
+    { id: "hargasha",    type: "word",   he: "הרגשה",      niqqud: "הַרְגָּשָׁה",      translit: "hargasha",     de: "Empfindung / Gefühl",        theme: "emotions", freq: 3, note: "verwandt mit „regesh“" },
+    { id: "charata",     type: "word",   he: "חרטה",       niqqud: "חֲרָטָה",          translit: "charata",      de: "Reue",                       theme: "emotions", freq: 4 },
+    { id: "ashma",       type: "word",   he: "אשמה",       niqqud: "אַשְׁמָה",         translit: "ashma",        de: "Schuld / Schuldgefühl",      theme: "emotions", freq: 5 },
+    { id: "busha",       type: "word",   he: "בושה",       niqqud: "בּוּשָׁה",         translit: "busha",        de: "Scham / Peinlichkeit",       theme: "emotions", freq: 6 },
+    { id: "gaava",       type: "word",   he: "גאווה",      niqqud: "גַּאֲוָה",         translit: "ga'ava",       de: "Stolz",                      theme: "emotions", freq: 7 },
+    { id: "kavod",       type: "word",   he: "כבוד",       niqqud: "כָּבוֹד",          translit: "kavod",        de: "Respekt / Ehre",             theme: "emotions", freq: 8, note: "„kol ha-kavod“ = alle Achtung" },
+    { id: "hakarat_toda",type: "phrase", he: "הכרת תודה",  niqqud: "הַכָּרַת תּוֹדָה",  translit: "hakarat toda", de: "Dankbarkeit",                theme: "emotions", freq: 9 },
+    { id: "empatya",     type: "word",   he: "אמפתיה",     niqqud: "אֶמְפַּתְיָה",     translit: "empatya",      de: "Empathie / Einfühlung",      theme: "emotions", freq: 10 },
+    { id: "rachamim",    type: "word",   he: "רחמים",      niqqud: "רַחֲמִים",         translit: "rachamim",     de: "Mitleid / Erbarmen",         theme: "emotions", freq: 11 },
+    { id: "hitragshut",  type: "word",   he: "התרגשות",    niqqud: "הִתְרַגְּשׁוּת",    translit: "hitragshut",   de: "Aufregung / Rührung",        theme: "emotions", freq: 12, note: "verwandt mit „mitragesh“" },
+    { id: "shalva",      type: "word",   he: "שלווה",      niqqud: "שַׁלְוָה",         translit: "shalva",       de: "Gelassenheit / Ruhe",        theme: "emotions", freq: 13, opposite: "metach", note: "Gegenteil von Anspannung" },
+    { id: "metach",      type: "word",   he: "מתח",        niqqud: "מֶתַח",            translit: "metach",       de: "Anspannung / Spannung",      theme: "emotions", freq: 14, opposite: "shalva", note: "auch: Thriller; Gegenteil von Gelassenheit" },
+    { id: "kavana",      type: "word",   he: "כוונה",      niqqud: "כַּוָּנָה",        translit: "kavana",       de: "Absicht",                    theme: "emotions", freq: 15 },
+    { id: "kirva",       type: "word",   he: "קרבה",       niqqud: "קִרְבָה",          translit: "kirva",        de: "Nähe / Verbundenheit",       theme: "emotions", freq: 16 },
+    { id: "neemanut",    type: "word",   he: "נאמנות",     niqqud: "נֶאֱמָנוּת",       translit: "ne'emanut",    de: "Treue / Loyalität",          theme: "emotions", freq: 17 },
+    { id: "s_margish_gaava", type: "sentence", he: "אני מרגיש גאווה גדולה", niqqud: "אני מרגיש גאווה גדולה", translit: "ani margish ga'ava gdola", de: "Ich empfinde großen Stolz.", theme: "emotions", freq: 18, note: "männlich; weiblich: margisha",
+      tokens: [ { he: "אני", translit: "ani", de: "ich" }, { he: "מרגיש", translit: "margish", de: "empfinde" }, { he: "גאווה", translit: "ga'ava", de: "Stolz" }, { he: "גדולה", translit: "gdola", de: "großen" } ] },
+
+    // ===== Band C2 =====
+
+    // --- Rhetorik & Politik (C2) ---
+    { id: "neum",        type: "word",   he: "נאום",       niqqud: "נְאוּם",           translit: "ne'um",        de: "Rede / Ansprache",           theme: "rhetoric", freq: 1 },
+    { id: "tguva",       type: "word",   he: "תגובה",      niqqud: "תְּגוּבָה",        translit: "tguva",        de: "Reaktion / Erwiderung",      theme: "rhetoric", freq: 2 },
+    { id: "taana",       type: "word",   he: "טענה",       niqqud: "טַעֲנָה",          translit: "ta'ana",       de: "Behauptung / Argument",      theme: "rhetoric", freq: 3 },
+    { id: "shichnua",    type: "word",   he: "שכנוע",      niqqud: "שִׁכְנוּעַ",       translit: "shichnua",     de: "Überzeugungsarbeit",         theme: "rhetoric", freq: 4 },
+    { id: "manhig",      type: "word",   he: "מנהיג",      niqqud: "מַנְהִיג",         translit: "manhig",       de: "Anführer / Staatsmann",      theme: "rhetoric", freq: 5, note: "weiblich: manhiga" },
+    { id: "shilton",     type: "word",   he: "שלטון",      niqqud: "שִׁלְטוֹן",        translit: "shilton",      de: "Herrschaft / Regime",        theme: "rhetoric", freq: 6 },
+    { id: "opozitsya",   type: "word",   he: "אופוזיציה",  niqqud: "אוֹפּוֹזִיצְיָה",   translit: "opozitsya",    de: "Opposition",                 theme: "rhetoric", freq: 7 },
+    { id: "koalitsya",   type: "word",   he: "קואליציה",   niqqud: "קוֹאָלִיצְיָה",    translit: "ko'alitsya",   de: "Koalition",                  theme: "rhetoric", freq: 8 },
+    { id: "mediniyut",   type: "word",   he: "מדיניות",    niqqud: "מְדִינִיּוּת",     translit: "mediniyut",    de: "Politik (Regierungslinie)",  theme: "rhetoric", freq: 9, note: "der Kurs, nicht „politika“ (das Feld)" },
+    { id: "reforma",     type: "word",   he: "רפורמה",     niqqud: "רֵפוֹרְמָה",       translit: "reforma",      de: "Reform",                     theme: "rhetoric", freq: 10 },
+    { id: "hatsbaa",     type: "word",   he: "הצבעה",      niqqud: "הַצְבָּעָה",       translit: "hatsba'a",     de: "Abstimmung",                 theme: "rhetoric", freq: 11 },
+    { id: "taamula",     type: "word",   he: "תעמולה",     niqqud: "תַּעֲמוּלָה",      translit: "ta'amula",     de: "Propaganda",                 theme: "rhetoric", freq: 12 },
+    { id: "demagogya",   type: "word",   he: "דמגוגיה",    niqqud: "דֶּמָגוֹגְיָה",    translit: "demagogya",    de: "Demagogie",                  theme: "rhetoric", freq: 13 },
+    { id: "retorika",    type: "word",   he: "רטוריקה",    niqqud: "רֵטוֹרִיקָה",      translit: "retorika",     de: "Rhetorik",                   theme: "rhetoric", freq: 14 },
+    { id: "meser",       type: "word",   he: "מסר",        niqqud: "מֶסֶר",            translit: "meser",        de: "Botschaft (Kernaussage)",    theme: "rhetoric", freq: 15 },
+    { id: "hasata",      type: "word",   he: "הסתה",       niqqud: "הַסָּתָה",         translit: "hasata",       de: "Hetze / Aufwiegelung",       theme: "rhetoric", freq: 16 },
+    { id: "s_neum_shichnea", type: "sentence", he: "הנאום שלו שכנע את הקהל", niqqud: "הנאום שלו שכנע את הקהל", translit: "ha-ne'um shelo shichnea et ha-kahal", de: "Seine Rede überzeugte das Publikum.", theme: "rhetoric", freq: 17,
+      tokens: [ { he: "הנאום", translit: "ha-ne'um", de: "die Rede" }, { he: "שלו", translit: "shelo", de: "seine" }, { he: "שכנע", translit: "shichnea", de: "überzeugte" }, { he: "את", translit: "et", de: "(Objekt)" }, { he: "הקהל", translit: "ha-kahal", de: "das Publikum" } ] },
+
+    // --- Ironie & Wortspiel (C2) ---
+    { id: "ironya",      type: "word",   he: "אירוניה",    niqqud: "אִירוֹנְיָה",      translit: "ironya",       de: "Ironie",                     theme: "irony", freq: 1 },
+    { id: "sarkazm",     type: "word",   he: "סרקזם",      niqqud: "סַרְקַזְם",        translit: "sarkazm",      de: "Sarkasmus",                  theme: "irony", freq: 2 },
+    { id: "tsiniyut",    type: "word",   he: "ציניות",     niqqud: "צִינִיּוּת",       translit: "tsiniyut",     de: "Zynismus",                   theme: "irony", freq: 3 },
+    { id: "humor",       type: "word",   he: "הומור",      niqqud: "הוּמוֹר",          translit: "humor",        de: "Humor",                      theme: "irony", freq: 4 },
+    { id: "bdicha",      type: "word",   he: "בדיחה",      niqqud: "בְּדִיחָה",        translit: "bdicha",       de: "Witz",                       theme: "irony", freq: 5 },
+    { id: "liglug",      type: "word",   he: "לגלוג",      niqqud: "לִגְלוּג",         translit: "liglug",       de: "Spott",                      theme: "irony", freq: 6 },
+    { id: "mischak_milim", type: "phrase", he: "משחק מילים", niqqud: "מִשְׂחַק מִילִּים", translit: "mischak milim", de: "Wortspiel",                theme: "irony", freq: 7 },
+    { id: "remez",       type: "word",   he: "רמז",        niqqud: "רֶמֶז",            translit: "remez",        de: "Anspielung / Hinweis",       theme: "irony", freq: 8 },
+    { id: "kinui",       type: "word",   he: "כינוי",      niqqud: "כִּינּוּי",        translit: "kinui",        de: "Spitzname / Beiname",        theme: "irony", freq: 9 },
+    { id: "hagzama",     type: "word",   he: "הגזמה",      niqqud: "הַגְזָמָה",        translit: "hagzama",      de: "Übertreibung",               theme: "irony", freq: 10 },
+    { id: "mashmaut_kfula", type: "phrase", he: "משמעות כפולה", niqqud: "מַשְׁמָעוּת כְּפוּלָה", translit: "mashmaut kfula", de: "Doppeldeutigkeit",       theme: "irony", freq: 11 },
+    { id: "parodya",     type: "word",   he: "פרודיה",     niqqud: "פָּרוֹדְיָה",      translit: "parodya",      de: "Parodie",                    theme: "irony", freq: 12 },
+    { id: "satira",      type: "word",   he: "סאטירה",     niqqud: "סָאטִירָה",        translit: "satira",       de: "Satire",                     theme: "irony", freq: 13 },
+    { id: "davka",       type: "word",   he: "דווקא",      niqqud: "דַּוְקָא",         translit: "davka",        de: "gerade / ausgerechnet",      theme: "irony", freq: 14, note: "schwer übersetzbar; oft mit trotzigem oder ironischem Unterton" },
+    { id: "kivyachol",   type: "word",   he: "כביכול",     niqqud: "כִּבְיָכוֹל",      translit: "kivyachol",    de: "angeblich / sogenannt",      theme: "irony", freq: 15, note: "wörtl. „als ob es möglich wäre“; meist ironisch" },
+    { id: "s_kivyachol_mumche", type: "sentence", he: "הוא כביכול מומחה גדול", niqqud: "הוא כביכול מומחה גדול", translit: "hu kivyachol mumche gadol", de: "Er ist angeblich ein großer Experte.", theme: "irony", freq: 16, note: "mit ironischem Unterton",
+      tokens: [ { he: "הוא", translit: "hu", de: "er" }, { he: "כביכול", translit: "kivyachol", de: "angeblich" }, { he: "מומחה", translit: "mumche", de: "Experte" }, { he: "גדול", translit: "gadol", de: "großer" } ] },
+
+    // --- Amtssprache & Verträge (C2) ---
+    { id: "takanon",     type: "word",   he: "תקנון",      niqqud: "תַּקָּנוֹן",       translit: "takanon",      de: "Satzung / Regelwerk",        theme: "legal", freq: 1 },
+    { id: "takana",      type: "word",   he: "תקנה",       niqqud: "תַּקָּנָה",        translit: "takana",       de: "Verordnung / Vorschrift",    theme: "legal", freq: 2 },
+    { id: "chukika",     type: "word",   he: "חקיקה",      niqqud: "חֲקִיקָה",         translit: "chukika",      de: "Gesetzgebung",               theme: "legal", freq: 3, note: "verwandt mit „chok“ (Gesetz)" },
+    { id: "din",         type: "word",   he: "דין",        niqqud: "דִּין",            translit: "din",          de: "Recht (Rechtsordnung)",      theme: "legal", freq: 4, note: "„orech din“ = Rechtsanwalt" },
+    { id: "orech_din",   type: "phrase", he: "עורך דין",   niqqud: "עוֹרֵךְ דִּין",    translit: "orech din",    de: "Rechtsanwalt",               theme: "legal", freq: 5, note: "weiblich: orechet din" },
+    { id: "tviaa",       type: "word",   he: "תביעה",      niqqud: "תְּבִיעָה",        translit: "tvi'a",        de: "Klage",                      theme: "legal", freq: 6 },
+    { id: "psak_din",    type: "phrase", he: "פסק דין",    niqqud: "פְּסַק דִּין",     translit: "psak din",     de: "Urteil",                     theme: "legal", freq: 7 },
+    { id: "irur",        type: "word",   he: "ערעור",      niqqud: "עִרְעוּר",         translit: "ir'ur",        de: "Berufung / Einspruch",       theme: "legal", freq: 8 },
+    { id: "hafara",      type: "word",   he: "הפרה",       niqqud: "הֲפָרָה",          translit: "hafara",       de: "Verstoß / Vertragsbruch",    theme: "legal", freq: 9 },
+    { id: "pitsui",      type: "word",   he: "פיצוי",      niqqud: "פִּיצּוּי",        translit: "pitsui",       de: "Entschädigung",              theme: "legal", freq: 10 },
+    { id: "chova",       type: "word",   he: "חובה",       niqqud: "חוֹבָה",           translit: "chova",        de: "Pflicht",                    theme: "legal", freq: 11, opposite: "zchut", note: "Gegenteil von Recht/Anspruch" },
+    { id: "zchut",       type: "word",   he: "זכות",       niqqud: "זְכוּת",           translit: "zchut",        de: "Recht / Anspruch",           theme: "legal", freq: 12, opposite: "chova", note: "Gegenteil von Pflicht" },
+    { id: "tokef",       type: "word",   he: "תוקף",       niqqud: "תּוֹקֶף",          translit: "tokef",        de: "Gültigkeit",                 theme: "legal", freq: 13, note: "„bi-tokef“ = in Kraft, gültig" },
+    { id: "nispach",     type: "word",   he: "נספח",       niqqud: "נִסְפָּח",         translit: "nispach",      de: "Anhang / Anlage",            theme: "legal", freq: 14 },
+    { id: "chatum",      type: "word",   he: "חתום",       niqqud: "חָתוּם",           translit: "chatum",       de: "unterzeichnet",              theme: "legal", freq: 15, note: "verwandt mit „chatima“ (Unterschrift)" },
+    { id: "mechayev",    type: "word",   he: "מחייב",      niqqud: "מְחַיֵּיב",        translit: "mechayev",     de: "verbindlich / verpflichtend", theme: "legal", freq: 16 },
+    { id: "s_chatmu_choze", type: "sentence", he: "שני הצדדים חתמו על החוזה", niqqud: "שני הצדדים חתמו על החוזה", translit: "shnei ha-tsdadim chatmu al ha-choze", de: "Beide Seiten unterschrieben den Vertrag.", theme: "legal", freq: 17,
+      tokens: [ { he: "שני", translit: "shnei", de: "beide" }, { he: "הצדדים", translit: "ha-tsdadim", de: "die Seiten" }, { he: "חתמו", translit: "chatmu", de: "unterschrieben" }, { he: "על", translit: "al", de: "auf" }, { he: "החוזה", translit: "ha-choze", de: "den Vertrag" } ] },
+
+    // --- Seltene Idiome & Register (C2) ---
+    { id: "lav_davka",   type: "phrase", he: "לאו דווקא",  niqqud: "לָאו דַּוְקָא",     translit: "lav davka",    de: "nicht unbedingt",            theme: "idioms", freq: 1, note: "gehobenes Register" },
+    { id: "af_al_pi_ken",type: "phrase", he: "אף על פי כן", niqqud: "אַף עַל פִּי כֵן",  translit: "af al pi ken",  de: "nichtsdestotrotz / dennoch", theme: "idioms", freq: 2 },
+    { id: "lemaase",     type: "phrase", he: "למעשה",      niqqud: "לְמַעֲשֶׂה",       translit: "lema'ase",     de: "tatsächlich / de facto",     theme: "idioms", freq: 3 },
+    { id: "mikol_makom", type: "phrase", he: "מכל מקום",   niqqud: "מִכָּל מָקוֹם",    translit: "mikol makom",  de: "wie dem auch sei / jedenfalls", theme: "idioms", freq: 4, note: "gehoben" },
+    { id: "beikar",      type: "word",   he: "בעיקר",      niqqud: "בְּעִיקָּר",       translit: "be'ikar",      de: "hauptsächlich / vor allem",  theme: "idioms", freq: 5 },
+    { id: "achen",       type: "word",   he: "אכן",        niqqud: "אָכֵן",            translit: "achen",        de: "in der Tat / fürwahr",       theme: "idioms", freq: 6, note: "gehoben" },
+    { id: "lefichach",   type: "word",   he: "לפיכך",      niqqud: "לְפִיכָךְ",        translit: "lefichach",    de: "folglich / demnach",         theme: "idioms", freq: 7, note: "formell, oft juristisch" },
+    { id: "al_kotso",    type: "phrase", he: "על קוצו של יוד", niqqud: "עַל קוֹצוֹ שֶׁל יוֹד", translit: "al kotso shel yod", de: "aufs kleinste Detail genau", theme: "idioms", freq: 8, note: "wörtl. „auf dem Häkchen des Jud“ (kleinster Buchstabe)" },
+    { id: "ein_navi",    type: "phrase", he: "אין נביא בעירו", niqqud: "אֵין נָבִיא בְּעִירוֹ", translit: "ein navi be-iro", de: "Der Prophet gilt nichts im eigenen Land", theme: "idioms", freq: 9, note: "Sprichwort" },
+    { id: "harei",       type: "word",   he: "הרי",        niqqud: "הֲרֵי",            translit: "harei",        de: "doch / bekanntlich",         theme: "idioms", freq: 10, note: "Diskurspartikel, gehoben" },
+    { id: "bilti_efshari", type: "phrase", he: "בלתי אפשרי", niqqud: "בִּלְתִּי אֶפְשָׁרִי", translit: "bilti efshari", de: "unmöglich",              theme: "idioms", freq: 11, note: "„bilti-“ = gehobene Verneinung (Un-)" },
+    { id: "chad_paami",  type: "phrase", he: "חד פעמי",    niqqud: "חַד פַּעֲמִי",     translit: "chad pa'ami",  de: "einmalig / einmal-",         theme: "idioms", freq: 12 },
+    { id: "mishum_kach", type: "phrase", he: "משום כך",    niqqud: "מִשּׁוּם כָּךְ",   translit: "mishum kach",  de: "aus diesem Grund / deshalb", theme: "idioms", freq: 13 },
+    { id: "kelomar",     type: "word",   he: "כלומר",      niqqud: "כְּלוֹמַר",        translit: "kelomar",      de: "das heißt / nämlich",        theme: "idioms", freq: 14 },
+    { id: "muchlat",     type: "word",   he: "מוחלט",      niqqud: "מֻחְלָט",          translit: "muchlat",      de: "absolut / vollständig",      theme: "idioms", freq: 15 },
+    { id: "zot_omeret",  type: "phrase", he: "זאת אומרת",  niqqud: "זֹאת אוֹמֶרֶת",    translit: "zot omeret",   de: "das heißt / also",           theme: "idioms", freq: 16, note: "wörtl. „das sagt“; häufige Erläuterungsformel" },
+    { id: "s_lemaase_tsadak", type: "sentence", he: "למעשה, הוא צדק לגמרי", niqqud: "למעשה, הוא צדק לגמרי", translit: "lema'ase, hu tsadak legamrei", de: "Tatsächlich hatte er völlig recht.", theme: "idioms", freq: 17,
+      tokens: [ { he: "למעשה", translit: "lema'ase", de: "tatsächlich" }, { he: "הוא", translit: "hu", de: "er" }, { he: "צדק", translit: "tsadak", de: "hatte recht" }, { he: "לגמרי", translit: "legamrei", de: "völlig" } ] }
   ],
 
   /*
@@ -880,6 +1064,28 @@ window.TACHELES_CONTENT = {
         { who: "me",      he: "יש בעיה אחת גדולה",          translit: "yesh be'aya achat gdola",        de: "Es gibt ein großes Problem.", itemId: "beaya" },
         { who: "partner", he: "אתה צודק, זו בעיה",          translit: "ata tsodek, zo be'aya",          de: "Du hast recht, das ist ein Problem." },
         { who: "me",      he: "אבל יש פתרון",               translit: "aval yesh pitaron",              de: "Aber es gibt eine Lösung.", itemId: "pitaron" }
+      ]
+    },
+    {
+      id: "salary_talk", title: "Gehaltsgespräch", emoji: "🤝", partner: "Personalchefin", band: "C1",
+      lines: [
+        { who: "partner", he: "בוא נדבר על התנאים",          translit: "bo nedaber al ha-tna'im",        de: "Lass uns über die Bedingungen sprechen.", itemId: "tnai" },
+        { who: "me",      he: "אשמח לנהל משא ומתן",          translit: "esmach lenahel masa u-matan",    de: "Ich würde gern verhandeln.", itemId: "masa_umatan" },
+        { who: "partner", he: "מה הדרישה שלך?",              translit: "ma ha-drisha shelcha?",          de: "Was ist deine Forderung?", itemId: "drisha" },
+        { who: "me",      he: "אני מבקש העלאה במשכורת",      translit: "ani mevakesh ha'ala'a ba-maskoret", de: "Ich bitte um eine Gehaltserhöhung.", itemId: "maskoret" },
+        { who: "partner", he: "נוכל להגיע לפשרה",            translit: "nuchal lehagia le-pshara",       de: "Wir können einen Kompromiss finden.", itemId: "pshara" },
+        { who: "me",      he: "מצוין, נחתום על הסכם",        translit: "metsuyan, nachtom al heskem",    de: "Ausgezeichnet, wir unterschreiben eine Vereinbarung.", itemId: "heskem" }
+      ]
+    },
+    {
+      id: "contract_talk", title: "Beim Anwalt", emoji: "📜", partner: "Anwältin", band: "C2",
+      lines: [
+        { who: "partner", he: "קראת את כל הסעיפים בחוזה?",   translit: "karata et kol ha-se'ifim ba-choze?", de: "Hast du alle Klauseln im Vertrag gelesen?", itemId: "saif" },
+        { who: "me",      he: "כן, אבל סעיף אחד מדאיג אותי",  translit: "ken, aval saif echad mad'ig oti", de: "Ja, aber eine Klausel beunruhigt mich.", itemId: "choze" },
+        { who: "partner", he: "מדובר בהפרה או בפיצוי?",       translit: "medubar be-hafara o be-pitsui?", de: "Geht es um einen Verstoß oder um Entschädigung?", itemId: "pitsui" },
+        { who: "me",      he: "אני רוצה להבין את החובות שלי",  translit: "ani rotze lehavin et ha-chovot sheli", de: "Ich will meine Pflichten verstehen.", itemId: "chova" },
+        { who: "partner", he: "החוזה מחייב את שני הצדדים",     translit: "ha-choze mechayev et shnei ha-tsdadim", de: "Der Vertrag verpflichtet beide Seiten.", itemId: "mechayev" },
+        { who: "me",      he: "בסדר, החתימה שלי בתוקף",       translit: "beseder, ha-chatima sheli be-tokef", de: "Gut, meine Unterschrift ist gültig.", itemId: "tokef" }
       ]
     }
   ],
@@ -1051,7 +1257,13 @@ window.TACHELES_CONTENT = {
     // B2: Abstraktes
     raayon: "💡", chalom: "💭", matara: "🎯", koach: "💪", tikva: "🤞",
     // B2: Arbeitswelt
-    startap: "🚀", revach: "📈", hefsed: "📉", tsevet: "👥", yaad: "🎯"
+    startap: "🚀", revach: "📈", hefsed: "📉", tsevet: "👥", yaad: "🎯",
+    // C1: Verhandeln, Kultur, Wissenschaft
+    choze: "📜", roman: "📖", pesel: "🗿", tsayar: "🎨", neum: "🎤",
+    nisui: "🧪", madaan: "🧑‍🔬", netunim: "📊", taasiya: "🏭", sviva: "🌍",
+    bina_melachutit: "🤖",
+    // C2: Ironie, Recht
+    bdicha: "😂", orech_din: "⚖️"
   };
   window.TACHELES_CONTENT.items.forEach(function (it) {
     if (EMOJI[it.id]) it.emoji = EMOJI[it.id];

@@ -6,12 +6,13 @@
  */
 "use strict";
 
-var CACHE_NAME = "tacheles-v7";
+var CACHE_NAME = "tacheles-v8";
 var ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./content.js",
+  "./grammar.js",
   "./app.js",
   "./manifest.webmanifest",
   "./icon.svg"

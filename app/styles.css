@@ -870,6 +870,9 @@ body.in-session .bottom-nav { display: none; }
 
 .module-explain { text-align: left; }
 .module-text { margin: 0; line-height: 1.55; white-space: pre-wrap; }
+/* Cloze-Lueckensatz: etwas kleiner als ein Einzelwort, damit ganze Saetze
+   inkl. ___-Luecke auf schmalen Screens passen (Optionen erben .dlg-opt). */
+.module-cloze .he-wrap.big .he-text { font-size: 2.1rem; }
 .module-examples { display: flex; flex-direction: column; gap: 8px; }
 .module-example {
   display: flex; align-items: center; gap: 12px;

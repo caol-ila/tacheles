@@ -121,11 +121,29 @@
     return null;
   }
 
+  /* Grammatik-Module aus der separaten grammar.js (eigenes Global) additiv in
+   * CONTENT.modules mergen. Defensiv: fehlendes Global ist ok; Module mit schon
+   * vorhandener ID werden uebersprungen (die aus content.js gewinnt); kaputte
+   * Eintraege (ohne id) werden ignoriert. */
+  function mergeGrammarModules() {
+    if (!CONTENT) return;
+    var G = window.TACHELES_GRAMMAR;
+    if (!G || !Array.isArray(G.modules)) return;
+    if (!Array.isArray(CONTENT.modules)) CONTENT.modules = [];
+    var have = {};
+    CONTENT.modules.forEach(function (m) { if (m && m.id) have[m.id] = true; });
+    G.modules.forEach(function (m) {
+      if (!m || !m.id || have[m.id]) return;
+      have[m.id] = true;
+      CONTENT.modules.push(m);
+    });
+  }
+
   /* Level-Baender (Reihenfolge zaehlt). Themen tragen ein `band`; Items erben
    * das Band ihres Themas. Fehlt ein Band (z. B. altes/fremdes Content), gilt
    * defensiv "A0" (immer offen). */
-  var BANDS = ["A0", "A1", "A2", "B1", "B2"];
-  var LEVEL_CAPS = ["auto", "A0", "A1", "A2", "B1", "B2"];
+  var BANDS = ["A0", "A1", "A2", "B1", "B2", "C1", "C2"];
+  var LEVEL_CAPS = ["auto"].concat(BANDS); // abgeleitet: 'auto' + alle Baender
   function bandIndex(b) { var i = BANDS.indexOf(b); return i < 0 ? 0 : i; }
   function themeBand(theme) { return (theme && BANDS.indexOf(theme.band) >= 0) ? theme.band : "A0"; }
   function itemBand(item) { return themeBand(themeById(item.theme)); }
@@ -1038,7 +1056,7 @@
    */
   function maybeAdvanceBand() {
     var curIdx = bandIndex(state.profile.unlockedBand);
-    if (curIdx >= BANDS.length - 1) return; // schon B2
+    if (curIdx >= BANDS.length - 1) return; // schon oberstes Band
     for (var i = 0; i <= curIdx; i++) {
       if (bandProgress(BANDS[i]) < 0.4) return;
     }
@@ -1200,29 +1218,46 @@
 
   /** Modul-Kacheln (gefuehrte Mini-Lektionen). Rendert nichts, wenn keine
    *  Module im Content sind (defensiv, falls Content-Update noch aussteht). */
+  /** Eine einzelne Modul-Kachel (band-gated, mit Schrittzahl/Dauer, Done-State). */
+  function moduleTileHtml(m, done) {
+    var band = (BANDS.indexOf(m.band) >= 0) ? m.band : "A0";
+    var locked = !bandUnlocked(band);
+    var isDone = !!done[m.id];
+    // Umfang transparent machen: Schrittzahl + grobe Dauer (~2 Schritte/Min).
+    var steps = (m.steps || []).length;
+    var mins = Math.max(1, Math.ceil(steps / 2));
+    var stepInfo = ' · ' + steps + ' Schritte · ~' + mins + ' Min';
+    // Fertige Module zeigen den Haken im Emoji-Slot (nicht nur am Rahmen).
+    var emoji = locked ? '🔒' : (isDone ? '✅' : esc(m.emoji || "📚"));
+    return '<button class="module-tile' + (locked ? ' locked' : '') + (isDone ? ' done' : '') +
+      '" data-module="' + esc(m.id) + '"' + (locked ? ' data-locked="' + esc(band) + '"' : '') + '>' +
+      '<span class="module-emoji">' + emoji + '</span>' +
+      '<span class="module-body"><span class="module-title">' + esc(m.title) +
+      (locked ? ' <span class="band-tag">ab ' + esc(band) + '</span>' : '') + '</span>' +
+      '<span class="module-sub">' + esc(m.sub || "") + stepInfo + '</span></span>' +
+      '</button>';
+  }
+
+  /** Eine Modul-Sektion (Ueberschrift + Kacheln); leer -> nichts (Heading entfaellt). */
+  function moduleSectionHtml(heading, mods, done) {
+    if (!mods.length) return "";
+    return '<h2 class="h2">' + heading + '</h2>' +
+      '<div class="module-list">' +
+      mods.map(function (m) { return moduleTileHtml(m, done); }).join("") +
+      '</div>';
+  }
+
+  /** Modul-Kacheln, in zwei Sektionen: "📚 Module" (ohne group) und
+   *  "🧠 Grammatik" (group === "grammar"). Rendert nichts, wenn keine Module da
+   *  sind (defensiv, falls Content-/Grammatik-Update noch aussteht). */
   function moduleTilesHtml() {
     var mods = (CONTENT && CONTENT.modules) || [];
     if (!mods.length) return "";
     var done = state.gamification.counters.modulesDone || {};
-    return '<h2 class="h2">📚 Module <span class="h2-sub">· geführte Mini-Lektionen</span></h2>' +
-      '<div class="module-list">' + mods.map(function (m) {
-        var band = (BANDS.indexOf(m.band) >= 0) ? m.band : "A0";
-        var locked = !bandUnlocked(band);
-        var isDone = !!done[m.id];
-        // Umfang transparent machen: Schrittzahl + grobe Dauer (~2 Schritte/Min).
-        var steps = (m.steps || []).length;
-        var mins = Math.max(1, Math.ceil(steps / 2));
-        var stepInfo = ' · ' + steps + ' Schritte · ~' + mins + ' Min';
-        // Fertige Module zeigen den Haken im Emoji-Slot (nicht nur am Rahmen).
-        var emoji = locked ? '🔒' : (isDone ? '✅' : esc(m.emoji || "📚"));
-        return '<button class="module-tile' + (locked ? ' locked' : '') + (isDone ? ' done' : '') +
-          '" data-module="' + esc(m.id) + '"' + (locked ? ' data-locked="' + esc(band) + '"' : '') + '>' +
-          '<span class="module-emoji">' + emoji + '</span>' +
-          '<span class="module-body"><span class="module-title">' + esc(m.title) +
-          (locked ? ' <span class="band-tag">ab ' + esc(band) + '</span>' : '') + '</span>' +
-          '<span class="module-sub">' + esc(m.sub || "") + stepInfo + '</span></span>' +
-          '</button>';
-      }).join("") + '</div>';
+    var basic = mods.filter(function (m) { return m.group !== "grammar"; });
+    var grammar = mods.filter(function (m) { return m.group === "grammar"; });
+    return moduleSectionHtml('📚 Module <span class="h2-sub">· geführte Mini-Lektionen</span>', basic, done) +
+      moduleSectionHtml('🧠 Grammatik <span class="h2-sub">· Regeln verstehen &amp; üben</span>', grammar, done);
   }
 
   function wireModuleTiles(root) {
@@ -3594,8 +3629,10 @@
    * 16. Module-Runner (gefuehrte Mini-Lektionen)
    * Schrittarten: explain (Lehrkarte), teach (Vorstellungskarte, keine Wertung),
    * quiz (MC he->de mit FESTEN Distraktoren), pairquiz (de-Frage, he-Optionen,
-   * Gegenteil garantiert dabei). recordAnswer als "mc" fuer quiz/pairquiz.
-   * ========================================================== */
+   * Gegenteil garantiert dabei), cloze (Lueckensatz he -> fehlende Form waehlen),
+   * form (deutsche Aufgabe -> richtige he-Form waehlen). Grammatik-Module (aus
+   * grammar.js) nutzen v. a. cloze/form. Alle Abfragen verbuchen als "mc"
+   * (recordAnswer bei gesetztem itemId, sonst recordFreeAnswer). */
 
   function moduleStepNext() {
     if (!session) return;
@@ -3618,6 +3655,8 @@
     if (step.type === "explain") return renderModuleExplain(step, title);
     if (step.type === "teach") return renderModuleTeach(step, title);
     if (step.type === "pairquiz") return renderModulePairQuiz(step, title);
+    if (step.type === "cloze") return renderModuleCloze(step, title);
+    if (step.type === "form") return renderModuleForm(step, title);
     return renderModuleQuiz(step, title);
   }
 
@@ -3781,6 +3820,102 @@
     moduleOptionButtons(body, item, distractors, "he", function (correct) {
       if (!correct) feedback.textContent = "Richtig ist: " + item.he + " (" + item.de + ")";
       else if (state.profile.autoplay) TTS.speak(spoken(item));
+    });
+    body.appendChild(feedback);
+  }
+
+  /**
+   * Options-UI fuer cloze/form: freie Optionen ({ he, translit, correct }),
+   * GENAU eine correct:true. He-Buttons (RTL) mit Umschrift-Zeile wie bei den
+   * Dialog-Optionen. Verbucht als "mc": recordAnswer, wenn ein gueltiges
+   * step.itemId gesetzt ist, sonst recordFreeAnswer. Richtig -> Auto-Weiter,
+   * falsch -> "Weiter"-Knopf. Tastatur 1-4 / Enter wie ueberall.
+   */
+  function moduleChoiceButtons(body, step, afterAnswer) {
+    var options = (step.options || []).filter(function (o) { return o && o.he; });
+    var shuffled = shuffle(options.slice());
+    var list = el("div", "opt-list");
+    var done = false;
+    shuffled.forEach(function (opt) {
+      var b = el("button", "opt he-opt dlg-opt");
+      var he = el("div", "b-he", opt.he); he.dir = "rtl"; he.lang = "he";
+      b.appendChild(he);
+      if (opt.translit) b.appendChild(el("div", "b-translit", opt.translit));
+      b.addEventListener("click", function () {
+        if (done) return;
+        done = true;
+        var correct = opt.correct === true;
+        var kids = list.querySelectorAll(".opt");
+        kids.forEach(function (ob) { ob.disabled = true; ob.classList.add("dim"); });
+        b.classList.remove("dim");
+        b.classList.add(correct ? "correct" : "wrong");
+        if (!correct) {
+          // die tatsaechlich richtige Option markieren (Index-treu zu shuffled)
+          shuffled.forEach(function (o, i) {
+            if (o.correct === true && kids[i]) { kids[i].classList.add("correct"); kids[i].classList.remove("dim"); }
+          });
+        }
+        if (step.itemId && itemById(step.itemId)) {
+          recordAnswer(step.itemId, "mc", correct ? "good" : "again");
+        } else {
+          recordFreeAnswer("mc", correct);
+        }
+        if (afterAnswer) afterAnswer(correct);
+        if (correct) later(moduleStepNext, 1000);
+        else {
+          var cont = btn("Weiter", "btn primary big", moduleStepNext);
+          cont.dataset.k = "cont";
+          body.appendChild(cont);
+          cont.focus();
+        }
+      });
+      list.appendChild(b);
+    });
+    body.appendChild(list);
+    setOptKeys(function (e) {
+      if (!session) return;
+      if (e.key >= "1" && e.key <= "4") {
+        var btns = list.querySelectorAll(".opt");
+        var target = btns[+e.key - 1];
+        if (target && !target.disabled) { e.preventDefault(); target.click(); }
+      } else if (e.key === "Enter" || e.key === " ") {
+        var cont2 = body.querySelector('[data-k="cont"]');
+        if (cont2) { e.preventDefault(); cont2.click(); }
+      }
+    });
+  }
+
+  /** cloze: hebraeischer Lueckensatz (mit ___) gross RTL + Umschrift + Bedeutung,
+   *  darunter die he-Optionen. Note nach dem Antworten (feedback-note). */
+  function renderModuleCloze(step, title) {
+    if (!step.options || !step.options.length) return moduleStepNext();
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    body.appendChild(el("div", "task-question", "Welche Form passt?"));
+    var card = el("div", "card learn-card module-cloze");
+    var wrap = el("div", "he-wrap big");
+    var heDiv = el("div", "he-text", step.he || "");
+    heDiv.dir = "rtl"; heDiv.lang = "he";
+    wrap.appendChild(heDiv);
+    wrap.appendChild(el("div", "translit", step.translit || ""));
+    card.appendChild(wrap);
+    if (step.de) card.appendChild(el("div", "de-prompt", step.de));
+    body.appendChild(card);
+    var feedback = el("div", "feedback-note");
+    moduleChoiceButtons(body, step, function () {
+      if (step.note) feedback.textContent = step.note;
+    });
+    body.appendChild(feedback);
+  }
+
+  /** form: deutsche Aufgabe als Frage, darunter die he-Optionen.
+   *  Note nach dem Antworten (feedback-note). */
+  function renderModuleForm(step, title) {
+    if (!step.options || !step.options.length) return moduleStepNext();
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    body.appendChild(el("div", "task-question", step.prompt || "Welche Form passt?"));
+    var feedback = el("div", "feedback-note");
+    moduleChoiceButtons(body, step, function () {
+      if (step.note) feedback.textContent = step.note;
     });
     body.appendChild(feedback);
   }
@@ -4019,6 +4154,7 @@
         "Bitte index.html im selben Ordner wie content.js öffnen.</div>";
       return;
     }
+    mergeGrammarModules();
     loadState();
     saveState();
     TTS.init();
@@ -4031,7 +4167,26 @@
   }
 
   // Kleine, lesbare Debug-Oberflaeche fuer den Regressionstest.
-  window.TACHELES_DEBUG = { mergeStates: mergeStates, BANDS: BANDS };
+  window.TACHELES_DEBUG = {
+    mergeStates: mergeStates,
+    BANDS: BANDS,
+    // Ist ein Band beim AKTUELLEN Zustand freigeschaltet? (Gating-Check im Test)
+    bandUnlocked: function (band) { return bandUnlocked(band); },
+    // Aktueller Modul-Schritt-Typ (fuer den Grammatik-E2E-Walk).
+    moduleStepType: function () {
+      if (!session || !session.steps) return null;
+      var st = session.steps[session.stepIdx];
+      return st ? st.type : null;
+    },
+    // he-Text der korrekten Option im aktuellen cloze/form-Schritt (kein DOM-Leak).
+    moduleCurrentCorrect: function () {
+      if (!session || !session.steps) return null;
+      var st = session.steps[session.stepIdx];
+      if (!st || !Array.isArray(st.options)) return null;
+      var c = st.options.filter(function (o) { return o && o.correct === true; })[0];
+      return c ? c.he : null;
+    }
+  };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
