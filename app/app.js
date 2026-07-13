@@ -77,10 +77,20 @@
   }
   function todayStr() { return dateStr(new Date()); }
 
+  // Gleichzeitige Toasts (z. B. Abzeichen + Level-Up) sollen sich nicht
+  // ueberlappen: jeder neue Toast wird um die Zahl lebender Toasts nach oben
+  // versetzt. Beim Entfernen aus der Liste austragen.
+  var liveToasts = [];
   function toast(msg, cls) {
     var t = el("div", "toast" + (cls ? " " + cls : ""), msg);
+    t.style.bottom = (90 + liveToasts.length * 54) + "px";
+    liveToasts.push(t);
     document.body.appendChild(t);
-    setTimeout(function () { t.remove(); }, cls === "gold" ? 3600 : 2600);
+    setTimeout(function () {
+      var idx = liveToasts.indexOf(t);
+      if (idx >= 0) liveToasts.splice(idx, 1);
+      t.remove();
+    }, cls === "gold" ? 3600 : 2600);
   }
 
   /* ==========================================================
@@ -135,6 +145,7 @@
         fadeMode: "auto",       // 'auto' | 'off_early' | 'keep'
         autoplay: true,         // Audio automatisch abspielen (Reels/Karten)
         micHintDismissed: false,// Hinweis zum Mikrofon auf file:// wurde weggeklickt
+        sttNoticeConfirmed: false, // Cloud-Hinweis vor der ERSTEN Sprachaufnahme bestaetigt?
         onboarded: false,       // Willkommens-Tour beim ersten Start gezeigt?
         levelCap: "auto",       // 'auto' | 'A0'..'B2' — manuelle Level-Grenze
         unlockedBand: "A1",     // hoechstes ERREICHTES Band (Default A1 = A0+A1 offen)
@@ -172,6 +183,7 @@
       if (["auto", "off_early", "keep"].indexOf(raw.profile.fadeMode) >= 0) s.profile.fadeMode = raw.profile.fadeMode;
       if (typeof raw.profile.autoplay === "boolean") s.profile.autoplay = raw.profile.autoplay;
       if (typeof raw.profile.micHintDismissed === "boolean") s.profile.micHintDismissed = raw.profile.micHintDismissed;
+      if (typeof raw.profile.sttNoticeConfirmed === "boolean") s.profile.sttNoticeConfirmed = raw.profile.sttNoticeConfirmed;
       if (typeof raw.profile.onboarded === "boolean") s.profile.onboarded = raw.profile.onboarded;
       if (LEVEL_CAPS.indexOf(raw.profile.levelCap) >= 0) s.profile.levelCap = raw.profile.levelCap;
       if (BANDS.indexOf(raw.profile.unlockedBand) >= 0) s.profile.unlockedBand = raw.profile.unlockedBand;
@@ -182,8 +194,11 @@
     if (!s.profile.onboarded && raw.srs && typeof raw.srs === "object" && Object.keys(raw.srs).length > 0) {
       s.profile.onboarded = true;
     }
+    // Alle Zaehler defensiv auf >= 0 klammern (fremde/kaputte Importe koennen
+    // negative oder unsinnige Werte enthalten).
+    var nn = function (x) { return Math.max(0, Number(x) || 0); };
     if (raw.gamification && typeof raw.gamification === "object") {
-      s.gamification.xpTotal = Number(raw.gamification.xpTotal) || 0;
+      s.gamification.xpTotal = nn(raw.gamification.xpTotal);
       s.gamification.lastActiveDay = raw.gamification.lastActiveDay || null;
       if (Array.isArray(raw.gamification.achievements)) {
         s.gamification.achievements = raw.gamification.achievements.filter(function (x) { return typeof x === "string"; });
@@ -191,12 +206,12 @@
       if (raw.gamification.frozenDays && typeof raw.gamification.frozenDays === "object" && !Array.isArray(raw.gamification.frozenDays)) {
         s.gamification.frozenDays = raw.gamification.frozenDays;
       }
-      s.gamification.answersTotal = Number(raw.gamification.answersTotal) || 0;
+      s.gamification.answersTotal = nn(raw.gamification.answersTotal);
       var rc = raw.gamification.counters;
       if (rc && typeof rc === "object") {
-        s.gamification.counters.bestBlitz = Number(rc.bestBlitz) || 0;
-        s.gamification.counters.bestExam = Number(rc.bestExam) || 0;
-        s.gamification.counters.sessionsDone = Number(rc.sessionsDone) || 0;
+        s.gamification.counters.bestBlitz = nn(rc.bestBlitz);
+        s.gamification.counters.bestExam = nn(rc.bestExam);
+        s.gamification.counters.sessionsDone = nn(rc.sessionsDone);
         if (rc.dialogsDone && typeof rc.dialogsDone === "object" && !Array.isArray(rc.dialogsDone)) {
           s.gamification.counters.dialogsDone = rc.dialogsDone;
         }
@@ -205,8 +220,39 @@
         }
       }
     }
-    if (raw.srs && typeof raw.srs === "object" && !Array.isArray(raw.srs)) s.srs = raw.srs;
-    if (raw.log && typeof raw.log === "object" && !Array.isArray(raw.log)) s.log = raw.log;
+    // srs: pro Item nur echte Objekte uebernehmen und Feld fuer Feld sauber
+    // rekonstruieren (Number-Coercion, Defaults, Clamping). So kann ein
+    // korrupter Eintrag wie srs:{shalom:5} den Scheduler nicht zum Absturz bringen.
+    if (raw.srs && typeof raw.srs === "object" && !Array.isArray(raw.srs)) {
+      Object.keys(raw.srs).forEach(function (id) {
+        var e = raw.srs[id];
+        if (!e || typeof e !== "object" || Array.isArray(e)) return; // z. B. srs.shalom = 5 -> verworfen
+        s.srs[id] = {
+          ease: Math.max(1.3, Number(e.ease) || 2.5),
+          intervalDays: Math.max(0, Number(e.intervalDays) || 0),
+          dueTs: Math.max(0, Number(e.dueTs) || 0),
+          reps: Math.max(0, Number(e.reps) || 0),
+          lapses: Math.max(0, Number(e.lapses) || 0),
+          mastery: clamp(Number(e.mastery) || 0, 0, 5),
+          lastReviewTs: Math.max(0, Number(e.lastReviewTs) || 0)
+        };
+      });
+    }
+    // log: pro Tag nur echte Objekte, Zahlenfelder >= 0, goalMet boolean.
+    if (raw.log && typeof raw.log === "object" && !Array.isArray(raw.log)) {
+      Object.keys(raw.log).forEach(function (day) {
+        var d = raw.log[day];
+        if (!d || typeof d !== "object" || Array.isArray(d)) return; // z. B. log["..."] = 3 -> verworfen
+        var entry = {
+          answers: nn(d.answers),
+          correct: nn(d.correct),
+          xp: nn(d.xp),
+          goalMet: !!d.goalMet
+        };
+        if (d.mastered !== undefined) entry.mastered = nn(d.mastered);
+        s.log[day] = entry;
+      });
+    }
     return s;
   }
 
@@ -250,6 +296,9 @@
     input.addEventListener("change", function () {
       var file = input.files && input.files[0];
       if (!file) return;
+      // Groessenlimit: ein echter Export bleibt weit unter 1 MB. Grosse Dateien
+      // gar nicht erst einlesen (DoS-/Fehlbedienungs-Schutz).
+      if (file.size > 1000000) { toast("Datei ist zu groß für einen Tacheles-Export."); return; }
       var reader = new FileReader();
       reader.onload = function () {
         try {
@@ -258,6 +307,7 @@
             toast("Das sieht nicht wie ein Tacheles-Export aus.");
             return;
           }
+          if (Object.keys(obj.srs).length > 10000) { toast("Das sieht nicht wie ein Tacheles-Export aus."); return; }
           showImportChoice(obj, function (mode) { applyImportedState(obj, mode); });
         } catch (e) {
           toast("Datei konnte nicht gelesen werden.");
@@ -349,7 +399,9 @@
 
   function getSrs(id) {
     var e = state.srs[id];
-    if (!e) {
+    // Belt-and-braces: ein nicht-Objekt (z. B. aus einem kaputten Import, das
+    // normalizeState umgangen haette) wird durch einen frischen Default ersetzt.
+    if (!e || typeof e !== "object" || Array.isArray(e)) {
       e = { ease: 2.5, intervalDays: 0, dueTs: 0, reps: 0, lapses: 0, mastery: 0, lastReviewTs: 0 };
       state.srs[id] = e;
     }
@@ -1453,8 +1505,7 @@
       '<div class="setting-row"><div><div class="setting-label">Inhalts-Level</div>' +
       '<div class="setting-sub">Bis zu welchem Niveau Themen erscheinen. „Automatisch“ schaltet mit deinem Fortschritt frei.</div></div>' +
       '<select id="level-sel">' +
-      opt("auto", "Automatisch", p.levelCap) + opt("A0", "A0", p.levelCap) + opt("A1", "A1", p.levelCap) +
-      opt("A2", "A2", p.levelCap) + opt("B1", "B1", p.levelCap) + opt("B2", "B2", p.levelCap) +
+      LEVEL_CAPS.map(function (v) { return opt(v, v === "auto" ? "Automatisch" : v, p.levelCap); }).join("") +
       '</select></div>' +
       (p.levelCap !== "auto" && bandIndex(p.levelCap) < bandIndex(p.unlockedBand) ?
         '<div class="setting-sub" style="margin-top:-4px;color:var(--accent)">Du siehst gerade weniger, ' +
@@ -1491,6 +1542,13 @@
       'Per Datei (Export/Import) oder Sync-Code nimmst du ihn mit – beim Einspielen kannst du ' +
       'zusammenführen statt ersetzen. Tipp: Die Export-Datei kann auch in einem ' +
       'OneDrive-/Google-Drive-Ordner liegen.</p>' +
+      '<p class="setting-sub" style="margin:8px 0 0">Der Sync-Code enthält deinen gesamten ' +
+      'Lernfortschritt und landet in der Zwischenablage – auf Geräten mit Cloud-Zwischenablage ' +
+      '(Windows/Android) kann er dabei synchronisiert werden.</p>' +
+      '<p class="setting-sub" style="margin:8px 0 0"><b>Datenschutz:</b> Alle Lerndaten bleiben im ' +
+      'localStorage dieses Geräts. Kein Server, keine Konten, keine Telemetrie. Einzige Ausnahme ist ' +
+      'die Spracherkennung im Sprechen-Modus (Cloud des Browser-Herstellers, siehe Hinweis vor der ' +
+      'ersten Aufnahme). Über Export und Zurücksetzen hast du die volle Kontrolle über deine Daten.</p>' +
       '<div class="data-actions" style="margin-top:14px">' +
       '<button class="btn danger" id="btn-reset">🗑 Zurücksetzen</button>' +
       '</div></section>' +
@@ -2452,6 +2510,31 @@
 
   /* ---------- 11d. Sprechen ---------- */
 
+  /**
+   * Einmaliger Hinweis vor der ERSTEN Sprachaufnahme: die Browser-eigene
+   * Spracherkennung (Chrome/Edge) schickt die Aufnahme in die Cloud des
+   * Browser-Herstellers. Erst nach Bestaetigung wird STT.listen gestartet;
+   * danach nie wieder gezeigt.
+   */
+  function showSttNotice(onConfirm) {
+    var o = buildOverlay("🎤 Spracherkennung");
+    o.box.appendChild(el("div", "overlay-text",
+      "🎤 Hinweis: Die Spracherkennung von Chrome/Edge sendet deine Sprachaufnahme " +
+      "zur Auswertung an einen Dienst des Browser-Herstellers (meist Google). " +
+      "Die Aufnahme wird von Tacheles nicht gespeichert. Ohne Mikrofon kannst du " +
+      "dich mit '✓ Konnte ich' / '✗ Noch nicht' selbst bewerten."));
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn("Verstanden, aufnehmen", "btn primary big", function () {
+      state.profile.sttNoticeConfirmed = true;
+      saveState();
+      o.close();
+      if (onConfirm) onConfirm();
+    }));
+    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
+  }
+
   function renderSpeak(task, title) {
     var body = sessionShell(title, session.i / session.tasks.length);
     var item = task.item;
@@ -2483,6 +2566,12 @@
     if (STT.available()) {
       var mic = btn("🎤 Jetzt sprechen", "btn big mic-btn", function () {
         if (answered) return;
+        // Vor der ERSTEN Aufnahme einmalig ueber die Cloud-Erkennung aufklaeren.
+        if (!state.profile.sttNoticeConfirmed) { showSttNotice(startListen); return; }
+        startListen();
+      });
+      function startListen() {
+        if (answered) return;
         mic.classList.add("recording");
         status.className = "stt-status";
         status.textContent = "Ich höre zu … sprich jetzt.";
@@ -2512,7 +2601,7 @@
             status.appendChild(document.createTextNode(" – probier’s nochmal oder bewerte selbst."));
           }
         });
-      });
+      }
       body.appendChild(mic);
       // Auf file:// merkt sich der Browser die Mikrofon-Erlaubnis nicht (fragt
       // pro Wort neu). Ueber localhost (Tacheles-starten.cmd) nur einmal.
@@ -3381,10 +3470,17 @@
     card.appendChild(he);
     wrap.appendChild(card);
 
-    // Optionen: richtig + 3 aus demselben Band, keine doppelten de-Texte.
-    var distr = shuffle(p.pool.filter(function (x) {
-      return x.id !== item.id && x.de !== item.de;
-    }).slice()).slice(0, 3);
+    // Optionen: richtig + bis zu 3 aus demselben Band. Distraktoren werden auch
+    // untereinander dedupliziert (nach de UND he), damit keine zwei Optionen
+    // denselben Text tragen (seen-set-Muster wie moduleFillDistractors).
+    var seenDe = {}, seenHe = {}, distr = [];
+    seenDe[item.de] = true; seenHe[item.he] = true;
+    shuffle(p.pool.slice()).forEach(function (x) {
+      if (distr.length >= 3) return;
+      if (x.id === item.id || seenDe[x.de] || seenHe[x.he]) return;
+      seenDe[x.de] = true; seenHe[x.he] = true;
+      distr.push(x);
+    });
     var options = shuffle([item].concat(distr));
     var list = el("div", "opt-list");
     var done = false;
@@ -3774,6 +3870,7 @@
     m.profile.autoplay = a.profile.autoplay;
     m.profile.micHintDismissed = a.profile.micHintDismissed;
     m.profile.levelCap = a.profile.levelCap;
+    m.profile.sttNoticeConfirmed = !!(a.profile.sttNoticeConfirmed || b.profile.sttNoticeConfirmed);
     m.profile.onboarded = !!(a.profile.onboarded || b.profile.onboarded);
     m.profile.placementDone = !!(a.profile.placementDone || b.profile.placementDone);
     m.profile.unlockedBand = bandIndex(a.profile.unlockedBand) >= bandIndex(b.profile.unlockedBand)
@@ -3891,6 +3988,9 @@
     actions.appendChild(btn("Übernehmen", "btn primary big", function () {
       var code = ta.value.trim();
       if (!code) { toast("Kein Code eingegeben."); return; }
+      // Laengenlimit: ein echter Sync-Code bleibt klar darunter. Riesige
+      // Eingaben nicht dekodieren (kein Haenger bei Junk).
+      if (code.length > 1400000) { toast("Der Sync-Code ist ungültig."); return; }
       var json, obj;
       try { json = decodeURIComponent(escape(atob(code))); }
       catch (e) { toast("Der Sync-Code ist ungültig."); return; }
@@ -3900,6 +4000,7 @@
         toast("Das ist kein gültiger Tacheles-Code.");
         return;
       }
+      if (Object.keys(obj.srs).length > 10000) { toast("Der Sync-Code ist ungültig."); return; }
       o.close();
       showImportChoice(obj, function (mode) { applyImportedState(obj, mode); });
     }));
@@ -3930,7 +4031,7 @@
   }
 
   // Kleine, lesbare Debug-Oberflaeche fuer den Regressionstest.
-  window.TACHELES_DEBUG = { mergeStates: mergeStates };
+  window.TACHELES_DEBUG = { mergeStates: mergeStates, BANDS: BANDS };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

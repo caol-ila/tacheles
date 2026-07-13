@@ -789,7 +789,7 @@ window.TACHELES_CONTENT = {
         { who: "partner", he: "שלום! מה שלומך?",           translit: "shalom! ma shlomcha?",           de: "Hallo! Wie geht es dir?" },
         { who: "me",      he: "טוב, תודה! מה שלומך?",      translit: "tov, toda! ma shlomech?",        de: "Gut, danke! Wie geht es dir?", itemId: "tov" },
         { who: "partner", he: "מצוין! איך קוראים לך?",     translit: "metsuyan! eich kor'im lecha?",   de: "Super! Wie heißt du?" },
-        { who: "me",      he: "קוראים לי תומס",            translit: "kor'im li Thomas",               de: "Ich heiße Thomas.", itemId: "eich_korim" },
+        { who: "me",      he: "קוראים לי דני",            translit: "kor'im li Dani",                 de: "Ich heiße Dani.", itemId: "eich_korim" },
         { who: "partner", he: "נעים מאוד!",                translit: "na'im me'od!",                   de: "Sehr angenehm!" },
         { who: "me",      he: "נעים מאוד! להתראות!",       translit: "na'im me'od! lehitraot!",        de: "Sehr angenehm! Auf Wiedersehen!", itemId: "naim_meod" }
       ]

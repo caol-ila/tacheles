@@ -87,6 +87,26 @@ Details: [docs/03-content-model.md](docs/03-content-model.md).
 
 ---
 
+## Datenschutz
+
+Tacheles ist datensparsam gebaut. Alle Lerndaten (Fortschritt, SRS-Zustand, Statistik,
+Einstellungen) bleiben ausschließlich im `localStorage` deines Geräts. Es gibt keinen Server,
+keine Konten und keine Telemetrie: nichts wird im Hintergrund übertragen.
+
+Die einzige Ausnahme ist der Sprechen-Modus. Die Spracherkennung von Chrome/Edge sendet deine
+Sprachaufnahme zur Auswertung an einen Dienst des Browser-Herstellers (meist Google). Tacheles
+speichert diese Aufnahme nicht. Vor der allerersten Aufnahme erscheint dazu ein einmaliger
+Hinweis, den du bestätigen musst. Ohne Mikrofon kommst du komplett aus: du bewertest dich mit
+"Konnte ich" / "Noch nicht" selbst.
+
+Deine Daten trägst du selbst weiter. Über Export/Import (JSON-Datei) oder den Sync-Code nimmst
+du den Fortschritt auf ein anderes Gerät mit. Der Sync-Code enthält deinen gesamten
+Lernfortschritt und landet in der Zwischenablage: auf Geräten mit Cloud-Zwischenablage
+(Windows/Android) kann er dabei mitsynchronisiert werden. Mit "Zurücksetzen" löschst du jederzeit
+alles wieder. Damit hast du die volle Kontrolle über deine Daten.
+
+---
+
 ## Lizenz
 
 Tacheles steht unter der [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-or-later`).

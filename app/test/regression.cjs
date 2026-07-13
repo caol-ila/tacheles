@@ -40,7 +40,7 @@ function check(name, ok, detail) {
   // --- 1. Content-Integritaet ---
   const c = await page.evaluate(() => {
     const C = window.TACHELES_CONTENT;
-    const BANDS = ["A0", "A1", "A2", "B1", "B2"];
+    const BANDS = window.TACHELES_DEBUG.BANDS;
     const seen = {}, dups = [];
     C.items.forEach(i => { if (seen[i.id]) dups.push(i.id); seen[i.id] = 1; });
     const t = {}; C.themes.forEach(x => t[x.id] = 1);
@@ -120,6 +120,7 @@ function check(name, ok, detail) {
       levelCap: s.profile.levelCap,
       unlockedBand: s.profile.unlockedBand,
       placementDone: s.profile.placementDone,
+      sttNoticeConfirmed: s.profile.sttNoticeConfirmed,
       modulesDone: s.gamification.counters.modulesDone
     };
   });
@@ -127,6 +128,8 @@ function check(name, ok, detail) {
     newFields.levelCap === "auto" && newFields.unlockedBand === "A1" &&
     newFields.placementDone === false && newFields.modulesDone && typeof newFields.modulesDone === "object",
     JSON.stringify(newFields));
+  check("State hat sttNoticeConfirmed === false nach frischem Laden",
+    newFields.sttNoticeConfirmed === false, JSON.stringify(newFields.sttNoticeConfirmed));
 
   // --- 2b. Tag-1-Verhalten (Teach-First) ---
   // Smart-Session: erste Aufgabe zu einem NEUEN Wort ist eine Intro-Karte,
@@ -233,7 +236,7 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(250);
 
-  // --- 9. Merge (mergeStates via Debug-Oberflaeche) ---
+  // --- 8. Merge (mergeStates via Debug-Oberflaeche) ---
   const merge = await page.evaluate(() => {
     const mk = (over) => Object.assign({
       version: 1,
@@ -276,7 +279,7 @@ function check(name, ok, detail) {
     merge.unlocked === "A2" && merge.placement === true && merge.levelCap === "auto",
     merge.unlocked + "/" + merge.placement + "/" + merge.levelCap);
 
-  // --- 10. Level-Gating (gesperrtes Thema vs. levelCap-Override) ---
+  // --- 9. Level-Gating (gesperrtes Thema vs. levelCap-Override) ---
   await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
   await page.waitForTimeout(300);
   const lockedInfo = await page.evaluate(() => {
@@ -321,7 +324,7 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(200);
 
-  // --- 11. Module (Lernen-Kacheln, oeffnen, Quiz zaehlt Antwort) ---
+  // --- 10. Module (Lernen-Kacheln, oeffnen, Quiz zaehlt Antwort) ---
   await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
   await page.waitForTimeout(300);
   const modTiles = await page.evaluate(() => document.querySelectorAll(".module-tile:not(.locked)").length);
@@ -357,7 +360,7 @@ function check(name, ok, detail) {
     check("Modul-Quiz zaehlt eine Antwort", true, "n/a");
   }
 
-  // --- 12. Einstufungstest (Placement) aus Onboarding heraus ---
+  // --- 11. Einstufungstest (Placement) aus Onboarding heraus ---
   await page.evaluate(() => { localStorage.removeItem("tacheles_state_v1"); });
   await page.goto(APP); await page.waitForTimeout(500);
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /los geht/i.test(x.textContent)); if (b) b.click(); });
@@ -395,7 +398,94 @@ function check(name, ok, detail) {
   const placeDone = await page.evaluate(() => (JSON.parse(localStorage.getItem("tacheles_state_v1")).profile || {}).placementDone);
   check("placementDone in localStorage gesetzt", placeDone === true, placeDone);
 
-  // --- 8. Konsolenfehler ---
+  // --- 12. Robustheit: korrupter Import, Groessenlimits, Distraktor-Dedupe ---
+  // T3/T8: kaputte srs/log/Zaehler-Werte duerfen die App nicht abstuerzen lassen.
+  await page.evaluate(() => {
+    localStorage.setItem("tacheles_state_v1", JSON.stringify({
+      version: 1,
+      profile: { onboarded: true, autoplay: false, micHintDismissed: true, sttNoticeConfirmed: true },
+      gamification: { xpTotal: -500, answersTotal: -3, counters: { bestBlitz: -1 } },
+      srs: { shalom: 5, w_valid: { ease: 2.5, intervalDays: 2, dueTs: 0, reps: 2, lapses: 0, mastery: 9, lastReviewTs: 100 } },
+      log: { "2026-01-01": 3, "2026-01-02": { answers: -5, correct: 2, xp: -1, goalMet: true } }
+    }));
+  });
+  await page.reload(); await page.waitForTimeout(600);
+  const corrupt = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return {
+      home: !!document.querySelector("#cta-start"),
+      shalomType: typeof s.srs.shalom,
+      shalomDropped: s.srs.shalom === undefined,
+      validMastery: s.srs.w_valid ? s.srs.w_valid.mastery : null,
+      xp: s.gamification.xpTotal,
+      answers: s.gamification.answersTotal,
+      logDay: s.log["2026-01-01"],
+      logDay2Answers: s.log["2026-01-02"] ? s.log["2026-01-02"].answers : null
+    };
+  });
+  check("Korrupt-Import: App rendert Home ohne Absturz", corrupt.home);
+  check("Korrupt-Import: srs.shalom ist Objekt oder verworfen (T3)",
+    corrupt.shalomType === "object" || corrupt.shalomDropped, corrupt.shalomType);
+  check("Korrupt-Import: srs-Felder rekonstruiert, mastery <= 5 (T3)",
+    corrupt.validMastery === 5, corrupt.validMastery);
+  check("Korrupt-Import: negative Zaehler auf 0 geklammert (T8)",
+    corrupt.xp === 0 && corrupt.answers === 0, corrupt.xp + "/" + corrupt.answers);
+  check("Korrupt-Import: kaputte log-Tage verworfen, Zahlen >= 0 (T3)",
+    corrupt.logDay === undefined && corrupt.logDay2Answers === 0,
+    JSON.stringify(corrupt.logDay) + "/" + corrupt.logDay2Answers);
+
+  // T7: uebergrosser Junk-Sync-Code -> "ungueltig"-Hinweis, kein Haenger.
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#btn-sync-paste"); if (b) b.click(); });
+  await page.waitForTimeout(250);
+  const oversizePaste = await page.evaluate(() => {
+    const ta = document.querySelector(".overlay-textarea");
+    if (!ta) return { ok: false, reason: "kein Textfeld" };
+    ta.value = new Array(1400002).join("A"); // > 1.4M Zeichen
+    const b = [...document.querySelectorAll(".overlay-actions .btn")].find(x => /übernehmen/i.test(x.textContent));
+    if (!b) return { ok: false, reason: "kein Uebernehmen-Button" };
+    b.click();
+    return { ok: true, toastShown: !!document.querySelector(".toast"), overlayStillOpen: !!document.querySelector(".overlay") };
+  });
+  check("Sync-Limit: uebergrosser Code zeigt Hinweis und haengt nicht (T7)",
+    oversizePaste.ok && oversizePaste.toastShown && oversizePaste.overlayStillOpen,
+    JSON.stringify(oversizePaste));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".overlay-actions .btn")].find(x => /abbrechen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(200);
+
+  // T9: Placement-Distraktoren sind untereinander eindeutig (kein doppelter de-/he-Text).
+  const dedupe = await page.evaluate(() => {
+    const C = window.TACHELES_CONTENT;
+    const BANDS = window.TACHELES_DEBUG.BANDS;
+    // Nachbau der Option-Logik aus renderPlacementQuestion.
+    function buildOptions(item, pool) {
+      const seenDe = {}, seenHe = {}, distr = [];
+      seenDe[item.de] = true; seenHe[item.he] = true;
+      pool.forEach(x => {
+        if (distr.length >= 3) return;
+        if (x.id === item.id || seenDe[x.de] || seenHe[x.he]) return;
+        seenDe[x.de] = true; seenHe[x.he] = true; distr.push(x);
+      });
+      return [item].concat(distr);
+    }
+    let dupCount = 0, checked = 0;
+    BANDS.forEach(band => {
+      const themeIds = {}; C.themes.forEach(t => { if (t.band === band) themeIds[t.id] = 1; });
+      const pool = C.items.filter(i => themeIds[i.theme] && ["word", "phrase", "sign", "number", "letter"].indexOf(i.type) >= 0);
+      pool.forEach(item => {
+        const opts = buildOptions(item, pool);
+        const des = {}, hes = {};
+        opts.forEach(o => { if (des[o.de] || hes[o.he]) dupCount++; des[o.de] = 1; hes[o.he] = 1; });
+        checked++;
+      });
+    });
+    return { dupCount, checked };
+  });
+  check("Placement-Distraktoren untereinander eindeutig (T9)",
+    dedupe.dupCount === 0, dedupe.dupCount + " Duplikate über " + dedupe.checked + " Items");
+
+  // --- 13. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
   await browser.close();
