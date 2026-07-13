@@ -307,6 +307,20 @@ function check(name, ok, detail) {
     check("Gating: mit levelCap=B2 startet dasselbe Thema eine Session", true, "n/a");
   }
 
+  // Dialog-Chooser zeigt nur freigeschaltete Baender (Default: A0+A1).
+  await page.evaluate(() => { const b = document.querySelector('[data-mode="dialog"]'); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const dlgGate = await page.evaluate(() => {
+    const C = window.TACHELES_CONTENT;
+    const open = (C.dialogues || []).filter(d => !d.band || d.band === "A0" || d.band === "A1").length;
+    return { shown: document.querySelectorAll(".dlg-card").length, open, total: (C.dialogues || []).length };
+  });
+  check("Gating: Dialog-Chooser blendet gesperrte Baender aus",
+    dlgGate.shown === dlgGate.open && dlgGate.shown < dlgGate.total,
+    dlgGate.shown + "/" + dlgGate.open + " von " + dlgGate.total);
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(200);
+
   // --- 11. Module (Lernen-Kacheln, oeffnen, Quiz zaehlt Antwort) ---
   await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
   await page.waitForTimeout(300);

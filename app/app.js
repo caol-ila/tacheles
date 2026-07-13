@@ -1503,7 +1503,7 @@
       // Dialog-Modus: erst Gespraech waehlen, dann Zeile fuer Zeile durchspielen.
       session.dialogue = null;
       session.lineIdx = 0;
-      if (!(CONTENT.dialogues || []).length) { session = null; toast("Keine Dialoge vorhanden."); return; }
+      if (!unlockedDialogues().length) { session = null; toast("Keine Dialoge vorhanden."); return; }
     } else if (modeId === "exam") {
       // Survival-Check: 12 zufaellige A0-Vokabeln, Lesen ohne Stuetzraeder.
       // Geprueft wird nur, was schon einmal gelernt wurde — sonst ist es Raten,
@@ -2190,8 +2190,12 @@
     if (item.type === "letter" && CONFUSABLES[item.id]) {
       CONFUSABLES[item.id].forEach(function (cid) { tryAdd(itemById(cid)); });
     }
-    // 2. Gegenteil immer einbauen (beide Richtungen der klassischen Falle)
-    if (item.opposite) tryAdd(itemById(item.opposite));
+    // 2. Gegenteil immer einbauen (beide Richtungen der klassischen Falle);
+    // defensiv nur innerhalb derselben Typ-Gruppe (Satz nie als Wort-Option).
+    if (item.opposite) {
+      var oppo = itemById(item.opposite);
+      if (oppo && typeGroup(oppo.type) === typeGroup(item.type)) tryAdd(oppo);
+    }
 
     var grp = typeGroup(item.type);
     var pool = CONTENT.items.filter(function (x) {
@@ -2850,13 +2854,20 @@
     return b;
   }
 
+  /** Dialoge des freigeschalteten Level-Bereichs (Dialoge ohne band sind immer offen). */
+  function unlockedDialogues() {
+    return (CONTENT.dialogues || []).filter(function (d) {
+      return !d.band || bandUnlocked(d.band);
+    });
+  }
+
   function renderDialog() {
-    // Schritt 1: Gespraech auswaehlen
+    // Schritt 1: Gespraech auswaehlen (nur freigeschaltete Level, wie beim Pfad)
     if (!session.dialogue) {
       var body = sessionShell("Dialog · wähle ein Gespräch", 0);
       body.appendChild(el("div", "task-question", "Welches Gespräch möchtest du üben?"));
       var list = el("div", "dlg-list");
-      CONTENT.dialogues.forEach(function (d) {
+      unlockedDialogues().forEach(function (d) {
         var card = el("button", "dlg-card");
         card.appendChild(el("span", "dlg-emoji", d.emoji));
         var info = el("div", "dlg-info");
@@ -3273,6 +3284,23 @@
     var app = $("#app");
     app.innerHTML = "";
     var wrap = el("div", "onb placement");
+    // Ausweg statt Sackgasse: Abbrechen fuehrt zurueck, ohne etwas zu veraendern.
+    var head = el("div", "session-head");
+    var quit = btn("✕", "quit-btn", function () {
+      var fromOnb = p.fromOnboarding;
+      clearPlacementKeys();
+      placement = null;
+      if (fromOnb) {
+        renderOnboarding("know");
+      } else {
+        document.body.classList.remove("in-session");
+        showScreen("profile");
+      }
+    });
+    quit.title = "Einstufung abbrechen";
+    head.appendChild(quit);
+    head.appendChild(el("div", "session-info"));
+    wrap.appendChild(head);
     wrap.appendChild(el("div", "onb-step", "Einstufung · Level " + p.band));
     wrap.appendChild(el("div", "placement-progress", "Frage " + (p.q + 1) + " von " + p.questions.length));
     wrap.appendChild(el("div", "onb-title small", "Was bedeutet das?"));
@@ -3619,6 +3647,9 @@
     var achSet = {};
     (ga.achievements || []).concat(gb.achievements || []).forEach(function (x) { achSet[x] = 1; });
     m.gamification.achievements = Object.keys(achSet);
+    // Vereinigung kann mehr verbrauchte Freezes ergeben, als EIN Geraet je
+    // verdient haette — bewusst akzeptiert: gerettete Tage bleiben gerettet,
+    // dafuer sinkt freezesAvailable() nach dem Merge eher auf 0.
     var fz = {};
     Object.keys(ga.frozenDays || {}).forEach(function (k) { fz[k] = true; });
     Object.keys(gb.frozenDays || {}).forEach(function (k) { fz[k] = true; });

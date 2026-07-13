@@ -10,17 +10,21 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
   Doppelklick auf `index.html` (file://) oder über `Tacheles-starten.cmd` (Node-Mini-Server auf
   http://localhost:8017 → Browser merkt sich Mikrofon-Erlaubnis, PWA installierbar).
 - Dateien: `index.html`, `app.js` (gesamte Logik, Sektions-Kommentare im Kopf), `content.js`
-  (~300 Items, 20 Themen, 8 Dialoge, EMOJI-Map am Ende), `styles.css`, `sw.js` (+`manifest`,
-  `icon.svg`, `server.js`).
-- 13 Modi + Survival-Check; SRS (SM-2-artig) mit Niqqud-/Umschrift-Fade; alle Modi schreiben in
-  EINEN Zustand pro Item.
+  (~533 Items in 33 Themen mit Bändern A0–B2, 12 Dialoge, 6 Module, EMOJI-Map am Ende),
+  `styles.css`, `sw.js` (+`manifest`, `icon.svg`, `server.js`).
+- 13 Modi + Survival-Check + geführte Module (explain/teach/quiz/pairquiz) + Einstufungstest;
+  SRS (SM-2-artig) mit Niqqud-/Umschrift-Fade; alle Modi schreiben in EINEN Zustand pro Item.
+- **Level-System:** Themen haben `band` (A0–B2); Freischaltung progressiv (40 % gemeistert)
+  oder per Profil-Override (`profile.levelCap`); Einstufungstest schreibt NIE SRS/XP.
+- **Sync:** Datei-Export/-Import (mit Zusammenführen), Clipboard-Sync-Code; Merge-Logik in
+  `mergeStates` (für Tests via `window.TACHELES_DEBUG` exponiert).
 
 ## Tests
 
 ```
 cd app && node test/regression.cjs
 ```
-30 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
+58 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
 Default `c:/Source/SofaSuche/node_modules/playwright-core`). Nach JEDER Änderung laufen lassen;
 zusätzlich `node --check app.js content.js`.
 
@@ -37,7 +41,7 @@ zusätzlich `node --check app.js content.js`.
 - In Tests Onboarding überspringen: `profile.onboarded=true`, `autoplay=false`,
   `micHintDismissed=true` in localStorage seeden, dann reload.
 - **Service Worker:** bei Content-/Code-Release `CACHE_NAME` in `sw.js` hochzählen
-  (aktuell v4), sonst bekommen localhost-Nutzer alten Cache.
+  (aktuell v6), sonst bekommen localhost-Nutzer alten Cache.
 - Hebräisch immer RTL (`dir="rtl"`, `lang="he"`); zentrale Anzeige via `heEl()` (respektiert
   Fade + Prüfungsmodus). TTS über `spoken(item)` (Buchstaben haben `speak` = Namen).
 - Neue Inhalte: Schema im Kopf von `content.js`; Niqqud/Umschrift sorgfältig, muttersprachliches
