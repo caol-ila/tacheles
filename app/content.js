@@ -36,7 +36,7 @@
 window.TACHELES_CONTENT = {
   version: 2,
   themes: [
-    { id: "alefbet",   title: "Aleph-Bet (Buchstaben)",   emoji: "🔤", band: "A0" },
+    { id: "alefbet",   title: "Alef-Bet (Buchstaben)",   emoji: "🔤", band: "A0" },
     { id: "greetings", title: "Begrüßung & Höflichkeit", emoji: "👋", band: "A0" },
     { id: "self",      title: "Ich & Du",                 emoji: "🧑", band: "A0" },
     { id: "questions", title: "Fragewörter",              emoji: "❓", band: "A0" },
@@ -60,7 +60,7 @@ window.TACHELES_CONTENT = {
     { id: "work",         title: "Arbeit & Beruf",             emoji: "💼", band: "A2" },
     { id: "home",         title: "Wohnen & Zuhause",           emoji: "🏠", band: "A2" },
     { id: "weather",      title: "Wetter & Natur",             emoji: "🌤️", band: "A2" },
-    { id: "hobbies",      title: "Hobbys & Freizeit",          emoji: "🎨", band: "A2" },
+    { id: "hobbies",      title: "Hobbys & Freizeit",          emoji: "⚽", band: "A2" },
     { id: "verbs_tense",  title: "Verben: gestern & morgen",   emoji: "⏳", band: "A2" },
     // --- Band B1 ---
     { id: "opinion",      title: "Meinung & Diskussion",       emoji: "💭", band: "B1" },
@@ -74,7 +74,7 @@ window.TACHELES_CONTENT = {
     { id: "work_adv",     title: "Arbeitswelt für Profis",     emoji: "📈", band: "B2" }
   ],
   items: [
-    // --- Aleph-Bet (type 'letter') ---
+    // --- Alef-Bet (type 'letter') ---
     // freq ist so gewaehlt, dass die Buchstaben der haeufigsten Woerter zuerst kommen:
     // nach Stufe 1-2 kann man שלום lesen, nach Stufe 3 auch תודה, לא, כן ...
     // 'speak' = ausgeschriebener Buchstabenname fuer die Sprachausgabe.

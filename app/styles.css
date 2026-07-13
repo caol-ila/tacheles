@@ -218,7 +218,7 @@ body.in-session .bottom-nav { display: none; }
 .theme-row:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
 
 /* Zusatz im Abschnitts-Titel ("antippen zum gezielten Üben") */
-.h2-sub { font-size: .78rem; font-weight: 500; color: var(--muted); }
+.h2-sub { font-size: .78rem; font-weight: 500; color: #6b7a83; }
 
 /* Mikrofon-Hinweis im Sprechen-Modus (nur auf file://) */
 .mic-hint {
@@ -488,7 +488,7 @@ body.in-session .bottom-nav { display: none; }
 .theme-info { flex: 1; }
 .theme-title { font-size: .9rem; font-weight: 600; }
 .theme-row .bar { margin-top: 5px; }
-.theme-count { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.theme-count { font-size: .78rem; color: #6b7a83; white-space: nowrap; }
 
 .footer-tag { text-align: center; color: var(--muted); font-size: .85rem; margin: 26px 0 10px; }
 
@@ -800,6 +800,9 @@ body.in-session .bottom-nav { display: none; }
 
 .data-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .data-actions .btn { flex: 1; min-width: 120px; }
+/* Vier Daten-Aktionen als sauberes 2x2-Raster. */
+.data-actions.data-grid { display: grid; grid-template-columns: repeat(2, 1fr); }
+.data-actions.data-grid .btn { min-width: 0; }
 
 /* ---------- Konfetti ---------- */
 
@@ -837,16 +840,18 @@ body.in-session .bottom-nav { display: none; }
 
 /* ---------- Level-Baender: gesperrte Themen & Module ---------- */
 .band-tag {
-  font-size: .66rem; font-weight: 700; color: var(--muted);
+  font-size: .72rem; font-weight: 700; color: #5d6b73;
   background: var(--bg); border: 1px solid var(--line);
   border-radius: 999px; padding: 1px 8px; vertical-align: 2px; margin-left: 4px;
 }
 .theme-row.locked, .path-row.locked { opacity: .72; }
 .theme-row.locked:hover, .path-row.locked:hover { box-shadow: var(--shadow); }
 .path-row.locked .path-status { background: var(--bg); color: var(--muted); }
+/* Das "ab A2"-Taegchen soll trotz Abdunklung der Zeile gut lesbar bleiben. */
+.theme-row.locked .band-tag, .path-row.locked .band-tag, .module-tile.locked .band-tag { opacity: 1; }
 
 /* ---------- Module (Lernen-Screen) ---------- */
-.module-list { display: flex; flex-direction: column; gap: 8px; }
+.module-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .module-tile {
   display: flex; align-items: center; gap: 12px; text-align: left;
   background: var(--card); border-radius: 14px; box-shadow: var(--shadow);
@@ -861,21 +866,26 @@ body.in-session .bottom-nav { display: none; }
 .module-body { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .module-title { font-weight: 700; font-size: .95rem; }
 .module-done { color: var(--good); }
-.module-sub { font-size: .78rem; color: var(--muted); line-height: 1.35; }
+.module-sub { font-size: .78rem; color: #6b7a83; line-height: 1.35; }
 
 .module-explain { text-align: left; }
 .module-text { margin: 0; line-height: 1.55; white-space: pre-wrap; }
 .module-examples { display: flex; flex-direction: column; gap: 8px; }
 .module-example {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: flex; align-items: center; gap: 12px;
+  flex-direction: row-reverse; /* RTL-App: Hebraeisch rechts, Meta/🔊 links */
   background: var(--card); border: 2px solid var(--line); border-radius: 12px;
   padding: 10px 14px; box-shadow: var(--shadow); transition: transform .08s ease;
+  cursor: pointer;
 }
 .module-example:active { transform: scale(.98); }
 .module-ex-he { font-family: var(--font-he); font-size: 1.7rem; }
-.module-ex-meta { font-size: .82rem; color: var(--muted); text-align: right; }
+.module-ex-meta { font-size: .82rem; color: var(--muted); text-align: left; flex: 1; }
 
 /* ---------- Einstufungstest ---------- */
+/* Der Session-Kopf steht im zentrierten .onb-Layout; ohne Breite floatet das ✕
+   mittig statt links. Volle Breite ruecken das ✕ nach links und den Balken daneben. */
+.onb .session-head { width: 100%; }
 .placement-progress { font-size: .82rem; color: var(--muted); }
 .onb.placement .opt-list, .onb.placement .learn-card { width: 100%; max-width: 380px; }
 .onb .btn.big { width: 100%; max-width: 340px; }

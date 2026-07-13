@@ -436,14 +436,29 @@
     state.gamification.masteredCount = n;
   }
 
+  /** Fällige/neue Zaehler nur ueber freigeschaltete Baender (gesperrte zaehlen nicht). */
   function dueCount() {
     var now = Date.now(), n = 0;
-    for (var i = 0; i < CONTENT.items.length; i++) if (isDue(CONTENT.items[i].id, now)) n++;
+    for (var i = 0; i < CONTENT.items.length; i++) {
+      var it = CONTENT.items[i];
+      if (bandUnlocked(itemBand(it)) && isDue(it.id, now)) n++;
+    }
     return n;
   }
   function newCount() {
     var n = 0;
-    for (var i = 0; i < CONTENT.items.length; i++) if (isNew(CONTENT.items[i].id)) n++;
+    for (var i = 0; i < CONTENT.items.length; i++) {
+      var it = CONTENT.items[i];
+      if (bandUnlocked(itemBand(it)) && isNew(it.id)) n++;
+    }
+    return n;
+  }
+  /** Anzahl Items in freigeschalteten Baendern (Nenner der Fortschritts-Kennzahl). */
+  function unlockedItemCount() {
+    var n = 0;
+    for (var i = 0; i < CONTENT.items.length; i++) {
+      if (bandUnlocked(itemBand(CONTENT.items[i]))) n++;
+    }
     return n;
   }
 
@@ -1048,7 +1063,8 @@
     var band = themeBand(theme);
     var locked = !bandUnlocked(band);
     return '<div class="theme-row' + (locked ? ' locked' : '') + '" role="button" tabindex="0" data-theme="' + esc(theme.id) + '"' +
-      (locked ? ' data-locked="' + esc(band) + '"' : '') +
+      (locked ? ' data-locked="' + esc(band) + '" aria-disabled="true" aria-label="' +
+        esc(theme.title) + ' – gesperrt bis Level ' + esc(band) + '"' : '') +
       ' title="' + (locked ? 'Gesperrt bis Level ' + esc(band) : 'Gezielt üben: ' + esc(theme.title)) + '">' +
       '<span class="theme-emoji">' + (locked ? '🔒' : esc(theme.emoji)) + '</span>' +
       '<div class="theme-info"><div class="theme-title">' + esc(theme.title) +
@@ -1071,6 +1087,41 @@
       } else {
         go = function () { startSession("smart", { theme: row.dataset.theme }); };
       }
+      row.addEventListener("click", go);
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+    });
+  }
+
+  /**
+   * Themen-Liste fuer Home & Fortschritt: nur freigeschaltete Themen, die
+   * gesperrten in EINE Sammelzeile zusammengefasst (weniger Rauschen). Der
+   * vollstaendige Pfad mit allen Themen bleibt im Lernen-Tab.
+   */
+  function themeListHtml() {
+    var unlocked = CONTENT.themes.filter(function (t) { return bandUnlocked(themeBand(t)); });
+    var locked = CONTENT.themes.filter(function (t) { return !bandUnlocked(themeBand(t)); });
+    var html = unlocked.map(themeRowHtml).join("");
+    if (locked.length) {
+      var firstBand = locked.map(function (t) { return themeBand(t); })
+        .sort(function (a, b) { return bandIndex(a) - bandIndex(b); })[0];
+      html += '<div class="theme-row locked-summary" role="button" tabindex="0" data-locked-summary="1" ' +
+        'aria-label="' + locked.length + ' weitere Themen ab Level ' + esc(firstBand) +
+        ', im Lernen-Tab freischalten">' +
+        '<span class="theme-emoji">🔒</span>' +
+        '<div class="theme-info"><div class="theme-title">' + locked.length +
+        ' weitere Themen ab Level ' + esc(firstBand) + '</div>' +
+        '<div class="setting-sub">dein Pfad im Lernen-Tab schaltet sie frei</div></div>' +
+        '<span class="next-go">▶</span></div>';
+    }
+    return html;
+  }
+
+  /** Sammelzeile der gesperrten Themen: fuehrt in den Lernen-Tab (voller Pfad). */
+  function wireLockedSummary(root) {
+    root.querySelectorAll("[data-locked-summary]").forEach(function (row) {
+      var go = function () { showScreen("modes"); };
       row.addEventListener("click", go);
       row.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
@@ -1106,13 +1157,18 @@
         var band = (BANDS.indexOf(m.band) >= 0) ? m.band : "A0";
         var locked = !bandUnlocked(band);
         var isDone = !!done[m.id];
+        // Umfang transparent machen: Schrittzahl + grobe Dauer (~2 Schritte/Min).
+        var steps = (m.steps || []).length;
+        var mins = Math.max(1, Math.ceil(steps / 2));
+        var stepInfo = ' · ' + steps + ' Schritte · ~' + mins + ' Min';
+        // Fertige Module zeigen den Haken im Emoji-Slot (nicht nur am Rahmen).
+        var emoji = locked ? '🔒' : (isDone ? '✅' : esc(m.emoji || "📚"));
         return '<button class="module-tile' + (locked ? ' locked' : '') + (isDone ? ' done' : '') +
           '" data-module="' + esc(m.id) + '"' + (locked ? ' data-locked="' + esc(band) + '"' : '') + '>' +
-          '<span class="module-emoji">' + (locked ? '🔒' : esc(m.emoji || "📚")) + '</span>' +
+          '<span class="module-emoji">' + emoji + '</span>' +
           '<span class="module-body"><span class="module-title">' + esc(m.title) +
-          (isDone ? ' <span class="module-done">✓</span>' : '') +
           (locked ? ' <span class="band-tag">ab ' + esc(band) + '</span>' : '') + '</span>' +
-          '<span class="module-sub">' + esc(m.sub || "") + '</span></span>' +
+          '<span class="module-sub">' + esc(m.sub || "") + stepInfo + '</span></span>' +
           '</button>';
       }).join("") + '</div>';
   }
@@ -1142,7 +1198,7 @@
       '</header>' +
       '<section class="stats-row">' +
       '<div class="stat" title="Streak-Freezes retten verpasste Tage"><div class="stat-num">🔥 ' + g.streakDays +
-      (freezesAvailable() > 0 ? ' <span class="freeze-mini">❄️' + freezesAvailable() + '</span>' : '') +
+      (g.streakDays > 0 && freezesAvailable() > 0 ? ' <span class="freeze-mini">❄️' + freezesAvailable() + '</span>' : '') +
       '</div><div class="stat-label">Streak</div></div>' +
       '<div class="stat"><div class="stat-num">⭐ ' + g.xpTotal + '</div><div class="stat-label">XP</div></div>' +
       '<div class="stat"><div class="stat-num">🏅 ' + g.masteredCount + '</div><div class="stat-label">gemeistert</div></div>' +
@@ -1172,11 +1228,12 @@
       })() +
       '<h2 class="h2">Modi</h2>' + modeTilesHtml(false) +
       '<h2 class="h2">Themen <span class="h2-sub">· antippen zum gezielten Üben</span></h2>' +
-      '<div class="theme-list">' + CONTENT.themes.map(themeRowHtml).join("") + '</div>' +
+      '<div class="theme-list">' + themeListHtml() + '</div>' +
       '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>';
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
     wireModeTiles(app);
     wireThemeRows(app);
+    wireLockedSummary(app);
   }
 
   /** Eine Station des gefuehrten Pfads (Lernen-Screen). */
@@ -1191,9 +1248,10 @@
     else if (s.started) { status = "…"; cls = "started"; }
     else { status = ""; cls = "todo"; }
     return '<div class="path-row ' + cls + '" role="button" tabindex="0" data-theme="' + esc(theme.id) + '"' +
-      (locked ? ' data-locked="' + esc(band) + '"' : '') + '>' +
+      (locked ? ' data-locked="' + esc(band) + '" aria-disabled="true" aria-label="' +
+        esc(theme.title) + ' – gesperrt bis Level ' + esc(band) + '"' : '') + '>' +
       '<span class="path-status">' + status + '</span>' +
-      '<span class="theme-emoji">' + (locked ? '🔒' : esc(theme.emoji)) + '</span>' +
+      '<span class="theme-emoji">' + esc(theme.emoji) + '</span>' +
       '<div class="theme-info"><div class="theme-title">' + esc(theme.title) +
       (isNext ? ' <span class="path-next-tag">als Nächstes</span>' : (locked ? ' <span class="band-tag">ab ' + esc(band) + '</span>' : '')) + '</div>' +
       '<div class="bar mini"><div class="bar-fill" style="width:' + s.pct + '%"></div></div></div>' +
@@ -1244,8 +1302,9 @@
       '<header class="brand"><div class="brand-title">Fortschritt</div>' +
       '<div class="brand-sub">ehrlich gemessen: was wirklich sitzt</div></header>' +
       '<section class="card big-metric">' +
-      '<div class="big-metric-num">' + state.gamification.masteredCount + ' / ' + totalItems + '</div>' +
-      '<div class="big-metric-label">Wörter gemeistert (auch ohne Niqqud abrufbar)</div>' +
+      '<div class="big-metric-num">' + state.gamification.masteredCount + ' / ' + unlockedItemCount() + '</div>' +
+      '<div class="big-metric-label">Wörter gemeistert · in deinen Leveln<br>' +
+      '<span class="h2-sub">insgesamt ' + totalItems + ' Wörter</span></div>' +
       '</section>' +
       (function () {
         // Survival-Check ehrlich einordnen: vor ~30 gemeisterten A0-Woertern
@@ -1337,7 +1396,7 @@
       }).join("") +
       '</div></section>' +
       '<h2 class="h2">Themen <span class="h2-sub">· antippen zum gezielten Üben</span></h2>' +
-      '<div class="theme-list">' + CONTENT.themes.map(themeRowHtml).join("") + '</div>' +
+      '<div class="theme-list">' + themeListHtml() + '</div>' +
       '<h2 class="h2">Daten</h2>' +
       '<section class="card"><div class="data-actions">' +
       '<button class="btn" id="btn-export">📤 Export</button>' +
@@ -1360,6 +1419,7 @@
       });
     });
     wireThemeRows(app);
+    wireLockedSummary(app);
   }
 
   function renderProfile() {
@@ -1393,9 +1453,12 @@
       '<div class="setting-row"><div><div class="setting-label">Inhalts-Level</div>' +
       '<div class="setting-sub">Bis zu welchem Niveau Themen erscheinen. „Automatisch“ schaltet mit deinem Fortschritt frei.</div></div>' +
       '<select id="level-sel">' +
-      opt("auto", "Automatisch", p.levelCap) + opt("A1", "A1", p.levelCap) + opt("A2", "A2", p.levelCap) +
-      opt("B1", "B1", p.levelCap) + opt("B2", "B2", p.levelCap) +
+      opt("auto", "Automatisch", p.levelCap) + opt("A0", "A0", p.levelCap) + opt("A1", "A1", p.levelCap) +
+      opt("A2", "A2", p.levelCap) + opt("B1", "B1", p.levelCap) + opt("B2", "B2", p.levelCap) +
       '</select></div>' +
+      (p.levelCap !== "auto" && bandIndex(p.levelCap) < bandIndex(p.unlockedBand) ?
+        '<div class="setting-sub" style="margin-top:-4px;color:var(--accent)">Du siehst gerade weniger, ' +
+        'als du schon freigeschaltet hast (' + esc(p.levelCap) + ' &lt; ' + esc(p.unlockedBand) + ').</div>' : '') +
       '<div class="kv-row"><span>Erreichtes Level</span><b>' + esc(p.unlockedBand) + '</b></div>' +
       '<div class="setting-row"><div><div class="setting-label">Einstufungstest</div>' +
       '<div class="setting-sub">Schon Vorkenntnisse? Lass dich passend einstufen.' +
@@ -1417,20 +1480,20 @@
       '<div class="kv-row"><span>Streak-Freezes übrig</span><b>❄️ ' + freezesAvailable() + '</b></div>' +
       '</section>' +
       '<h2 class="h2">Daten</h2>' +
-      '<section class="card"><div class="data-actions">' +
+      '<section class="card">' +
+      '<div class="data-actions data-grid">' +
       '<button class="btn" id="btn-export">📤 Export</button>' +
       '<button class="btn" id="btn-import">📥 Import</button>' +
-      '<button class="btn danger" id="btn-reset">🗑 Zurücksetzen</button>' +
-      '</div>' +
-      '<p class="setting-sub" style="margin:12px 0 0">Dein Fortschritt liegt nur auf diesem Gerät (localStorage). ' +
-      'Mit Export/Import nimmst du ihn als Datei mit. Tipp: Leg die Export-Datei in einen ' +
-      'OneDrive- oder Google-Drive-Ordner, dann hast du sie auf jedem Gerät zum Importieren parat.</p>' +
-      '<div class="data-actions" style="margin-top:12px">' +
       '<button class="btn" id="btn-sync-copy">🔗 Sync-Code kopieren</button>' +
       '<button class="btn" id="btn-sync-paste">📋 Sync-Code einfügen</button>' +
       '</div>' +
-      '<p class="setting-sub" style="margin:12px 0 0">Ohne Datei: Sync-Code auf dem alten Gerät kopieren, ' +
-      'auf dem neuen einfügen. Beim Import kannst du zusammenführen statt ersetzen.</p></section>' +
+      '<p class="setting-sub" style="margin:12px 0 0">Dein Fortschritt liegt nur auf diesem Gerät. ' +
+      'Per Datei (Export/Import) oder Sync-Code nimmst du ihn mit – beim Einspielen kannst du ' +
+      'zusammenführen statt ersetzen. Tipp: Die Export-Datei kann auch in einem ' +
+      'OneDrive-/Google-Drive-Ordner liegen.</p>' +
+      '<div class="data-actions" style="margin-top:14px">' +
+      '<button class="btn danger" id="btn-reset">🗑 Zurücksetzen</button>' +
+      '</div></section>' +
       '<div class="footer-tag">Tacheles · Version ' + esc(CONTENT.version) + ' · Reden wir Tacheles. 🕊️</div>';
     $("#goal-sel").addEventListener("change", function (e) {
       state.profile.dailyGoalMin = parseInt(e.target.value, 10) || 5;
@@ -3201,10 +3264,11 @@
       wrap.appendChild(el("div", "onb-title small", "Kennst du schon etwas Hebräisch?"));
       wrap.appendChild(el("div", "onb-sub",
         "Wenn du schon Wörter kannst, stufen wir dich passend ein. Sonst fangen wir gemütlich bei null an."));
-      var nein = btn("Nein, ich fange bei null an", "btn ghost big", function () { renderOnboarding(3); });
-      var ja = btn("Ja, einstufen lassen", "btn primary big", function () { startPlacement(true); });
-      wrap.appendChild(ja);
+      // Anfaenger sind die Regel: "bei null anfangen" steht oben und primaer.
+      var nein = btn("Nein, ich fange bei null an", "btn primary big", function () { renderOnboarding(3); });
+      var ja = btn("Ja, einstufen lassen", "btn ghost big", function () { startPlacement(true); });
       wrap.appendChild(nein);
+      wrap.appendChild(ja);
     } else {
       var shalom = itemById("shalom");
       wrap.appendChild(el("div", "onb-step", "Schritt 3 von 3"));
@@ -3299,7 +3363,14 @@
     });
     quit.title = "Einstufung abbrechen";
     head.appendChild(quit);
-    head.appendChild(el("div", "session-info"));
+    // Gesamtfortschritt ueber alle Baender (max. 5 Stufen), damit klar ist, wie weit es noch geht.
+    var info = el("div", "session-info");
+    var barWrap = el("div", "bar mini");
+    var barFill = el("div", "bar-fill");
+    barFill.style.width = Math.round(p.bandIdx / BANDS.length * 100) + "%";
+    barWrap.appendChild(barFill);
+    info.appendChild(barWrap);
+    head.appendChild(info);
     wrap.appendChild(head);
     wrap.appendChild(el("div", "onb-step", "Einstufung · Level " + p.band));
     wrap.appendChild(el("div", "placement-progress", "Frage " + (p.q + 1) + " von " + p.questions.length));
@@ -3339,6 +3410,20 @@
       list.appendChild(b);
     });
     wrap.appendChild(list);
+
+    // "Weiß ich nicht": zaehlt als Fehlversuch, geht sofort weiter (weniger Rate-Glueck).
+    var unsure = btn("Weiß ich nicht", "btn ghost", function () {
+      if (done) return;
+      done = true;
+      list.querySelectorAll(".opt").forEach(function (ob) { ob.disabled = true; ob.classList.add("dim"); });
+      list.querySelectorAll(".opt").forEach(function (ob) {
+        if (ob.dataset.itemId === item.id) { ob.classList.add("correct"); ob.classList.remove("dim"); }
+      });
+      setTimeout(placementAnswerNext, 900);
+    });
+    unsure.style.marginTop = "6px";
+    wrap.appendChild(unsure);
+
     app.appendChild(wrap);
     setPlacementKeys(function (e) {
       if (e.key >= "1" && e.key <= "4") {
@@ -3375,13 +3460,14 @@
     else resultIdx = Math.min(p.highestPassed + 1, BANDS.length - 1);
     resultIdx = Math.max(resultIdx, bandIndex(state.profile.unlockedBand));
     var band = BANDS[resultIdx];
+    var passedBand = p.highestPassed >= 0 ? BANDS[p.highestPassed] : null;
     state.profile.unlockedBand = band;
     state.profile.placementDone = true;
     saveState();
-    renderPlacementResult(band);
+    renderPlacementResult(band, passedBand);
   }
 
-  function renderPlacementResult(band) {
+  function renderPlacementResult(band, passedBand) {
     var fromOnb = placement && placement.fromOnboarding;
     placement = null;
     var app = $("#app");
@@ -3390,7 +3476,11 @@
     wrap.appendChild(el("div", "onb-logo", "🎯"));
     wrap.appendChild(el("div", "onb-title small", "Einstufung fertig"));
     wrap.appendChild(el("div", "onb-sub",
-      "Du startest mit Level " + band + ". Passende Themen sind jetzt frei, den Rest schaltest du beim Lernen frei."));
+      passedBand
+        ? "Stark – Level " + passedBand + " sitzt schon! Du startest mit Level " + band +
+          ", passende Themen sind jetzt frei."
+        : "Wir fangen gemütlich vorne an. Die Themen der Level A0 und A1 sind offen, " +
+          "weitere schalten sich frei, während du lernst."));
     wrap.appendChild(btn("Und los! 🚀", "btn primary big", function () {
       if (fromOnb) {
         renderOnboarding(3); // zurueck in den Onboarding-Fluss: Shalom-Karte
@@ -3445,6 +3535,8 @@
 
   function renderModuleExplain(step, title) {
     var body = sessionShell(title, session.stepIdx / session.steps.length);
+    // Lehr-Schritte vergeben keine XP: den "⭐"-Zaehler leer lassen (erst ab Quiz).
+    var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
     if (step.title) body.appendChild(el("div", "task-question", step.title));
     var card = el("div", "card module-explain");
     if (step.text) card.appendChild(el("p", "module-text", step.text));
@@ -3452,13 +3544,20 @@
     if (step.examples && step.examples.length) {
       var ex = el("div", "module-examples");
       step.examples.forEach(function (e) {
-        var row = el("button", "module-example");
+        // RTL-App: Hebraeisch rechts, Umschrift/Bedeutung links, 🔊 auf der Meta-Seite.
+        var row = el("div", "module-example");
         var he = el("span", "module-ex-he", e.he);
         he.dir = "rtl"; he.lang = "he";
         row.appendChild(he);
         row.appendChild(el("span", "module-ex-meta",
           (e.translit || "") + (e.de ? " · " + e.de : "")));
-        row.addEventListener("click", function () { if (e.he) TTS.speak(e.he); });
+        var say = btn("🔊", "icon-btn small-btn", function (ev) {
+          ev.stopPropagation();
+          if (e.he) TTS.speak(e.he);
+        });
+        say.title = "Anhören";
+        row.appendChild(say);
+        if (e.he) row.addEventListener("click", function () { TTS.speak(e.he); });
         ex.appendChild(row);
       });
       body.appendChild(ex);
@@ -3470,6 +3569,8 @@
     var item = itemById(step.itemId);
     if (!item) return moduleStepNext();
     var body = sessionShell(title, session.stepIdx / session.steps.length);
+    // Vorstellungs-Schritt vergibt keine XP: "⭐"-Zaehler leer lassen (erst ab Quiz).
+    var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
     body.appendChild(el("div", "intro-tag", INTRO_TAGS[item.type] || INTRO_TAGS.word));
     var card = el("div", "card learn-card intro-card");
     if (item.emoji) card.appendChild(el("div", "intro-emoji", item.emoji));
@@ -3692,20 +3793,45 @@
     toast(mode === "merge" ? "Fortschritt zusammengeführt 🔀" : "Fortschritt ersetzt 📥");
   }
 
+  /**
+   * Modales Overlay mit Dialog-Semantik: role=dialog, aria-modal, aria-labelledby
+   * auf den Titel; Escape und Klick auf den Hintergrund schliessen. Gibt Container
+   * und eine close()-Funktion zurueck.
+   */
+  var overlayIdSeq = 0;
+  function buildOverlay(titleText) {
+    var id = "ov-title-" + (++overlayIdSeq);
+    var ov = el("div", "overlay");
+    ov.setAttribute("role", "dialog");
+    ov.setAttribute("aria-modal", "true");
+    ov.setAttribute("aria-labelledby", id);
+    var box = el("div", "overlay-box");
+    var title = el("div", "overlay-title", titleText);
+    title.id = id;
+    box.appendChild(title);
+    ov.appendChild(box);
+    function close() {
+      document.removeEventListener("keydown", onKey);
+      ov.remove();
+    }
+    function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
+    document.addEventListener("keydown", onKey);
+    // Klick auf den abgedunkelten Hintergrund (nicht die Box) schliesst.
+    ov.addEventListener("click", function (e) { if (e.target === ov) close(); });
+    return { ov: ov, box: box, title: title, close: close };
+  }
+
   /** Overlay: Zusammenfuehren / Ersetzen / Abbrechen (statt bare confirm()). */
   function showImportChoice(obj, onChoose) {
-    var ov = el("div", "overlay");
-    var box = el("div", "overlay-box");
-    box.appendChild(el("div", "overlay-title", "Fortschritt importieren"));
-    box.appendChild(el("div", "overlay-text",
+    var o = buildOverlay("Fortschritt importieren");
+    o.box.appendChild(el("div", "overlay-text",
       "Zusammenführen behält beides (empfohlen). Ersetzen überschreibt deinen aktuellen Fortschritt."));
     var actions = el("div", "overlay-actions");
-    actions.appendChild(btn("Zusammenführen (empfohlen)", "btn primary big", function () { ov.remove(); onChoose("merge"); }));
-    actions.appendChild(btn("Ersetzen", "btn ghost big", function () { ov.remove(); onChoose("replace"); }));
-    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { ov.remove(); }));
-    box.appendChild(actions);
-    ov.appendChild(box);
-    document.body.appendChild(ov);
+    actions.appendChild(btn("Zusammenführen (empfohlen)", "btn primary big", function () { o.close(); onChoose("merge"); }));
+    actions.appendChild(btn("Ersetzen", "btn ghost big", function () { o.close(); onChoose("replace"); }));
+    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
   }
 
   /** State als unicode-sicherer Base64-Code in die Zwischenablage. */
@@ -3737,31 +3863,30 @@
   }
 
   function showSyncCodeText(code) {
-    var ov = el("div", "overlay");
-    var box = el("div", "overlay-box");
-    box.appendChild(el("div", "overlay-title", "Sync-Code"));
-    box.appendChild(el("div", "overlay-text",
+    var o = buildOverlay("Sync-Code");
+    o.box.appendChild(el("div", "overlay-text",
       "Automatisches Kopieren ging nicht. Markiere den Code und kopiere ihn von Hand."));
     var ta = el("textarea", "overlay-textarea");
     ta.rows = 4; ta.value = code; ta.readOnly = true;
-    box.appendChild(ta);
+    ta.setAttribute("aria-label", "Sync-Code");
+    ta.placeholder = "Code hier einfügen…";
+    o.box.appendChild(ta);
     var actions = el("div", "overlay-actions");
-    actions.appendChild(btn("Schließen", "btn primary big", function () { ov.remove(); }));
-    box.appendChild(actions);
-    ov.appendChild(box);
-    document.body.appendChild(ov);
+    actions.appendChild(btn("Schließen", "btn primary big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
     ta.focus(); ta.select();
   }
 
   /** Overlay mit Textfeld: Sync-Code einfuegen -> dekodieren -> Merge/Ersetzen-Overlay. */
   function pasteSyncCode() {
-    var ov = el("div", "overlay");
-    var box = el("div", "overlay-box");
-    box.appendChild(el("div", "overlay-title", "Sync-Code einfügen"));
-    box.appendChild(el("div", "overlay-text", "Füge den Sync-Code vom anderen Gerät ein."));
+    var o = buildOverlay("Sync-Code einfügen");
+    o.box.appendChild(el("div", "overlay-text", "Füge den Sync-Code vom anderen Gerät ein."));
     var ta = el("textarea", "overlay-textarea");
     ta.rows = 4;
-    box.appendChild(ta);
+    ta.setAttribute("aria-label", "Sync-Code");
+    ta.placeholder = "Code hier einfügen…";
+    o.box.appendChild(ta);
     var actions = el("div", "overlay-actions");
     actions.appendChild(btn("Übernehmen", "btn primary big", function () {
       var code = ta.value.trim();
@@ -3775,13 +3900,12 @@
         toast("Das ist kein gültiger Tacheles-Code.");
         return;
       }
-      ov.remove();
+      o.close();
       showImportChoice(obj, function (mode) { applyImportedState(obj, mode); });
     }));
-    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { ov.remove(); }));
-    box.appendChild(actions);
-    ov.appendChild(box);
-    document.body.appendChild(ov);
+    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
     ta.focus();
   }
 
