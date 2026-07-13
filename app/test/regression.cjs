@@ -628,7 +628,53 @@ function check(name, ok, detail) {
   check("Placement-Distraktoren untereinander eindeutig (T9)",
     dedupe.dupCount === 0, dedupe.dupCount + " Duplikate über " + dedupe.checked + " Items");
 
-  // --- 13. Konsolenfehler ---
+  // --- 13. Abwaertskompatibilitaet: Alt-State (Initial-Release-Schema) verliert nichts ---
+  // Exakt das Schema von Commit 66c5c3a: keine Level-/Modul-/Sync-Felder.
+  await page.evaluate(() => {
+    localStorage.setItem("tacheles_state_v1", JSON.stringify({
+      version: 1,
+      profile: { dailyGoalMin: 10, fadeMode: "auto", autoplay: false, micHintDismissed: true, onboarded: true },
+      gamification: {
+        xpTotal: 1234, streakDays: 0, lastActiveDay: "2026-07-01", masteredCount: 0,
+        achievements: ["first_word", "mastered_10"], frozenDays: { "2026-06-20": true },
+        answersTotal: 456,
+        counters: { bestBlitz: 12, bestExam: 9, sessionsDone: 33, dialogsDone: { cafe: true } }
+      },
+      srs: {
+        shalom: { ease: 2.7, intervalDays: 21, dueTs: 1790000000000, reps: 9, lapses: 1, mastery: 5, lastReviewTs: 1750000000000 },
+        toda:   { ease: 2.5, intervalDays: 3,  dueTs: 1750000000000, reps: 3, lapses: 0, mastery: 2, lastReviewTs: 1749000000000 }
+      },
+      log: { "2026-07-01": { answers: 40, correct: 36, xp: 200, goalMet: true } }
+    }));
+  });
+  await page.reload(); await page.waitForTimeout(600);
+  const legacy = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return {
+      shalom: s.srs.shalom, todaReps: s.srs.toda.reps,
+      xp: s.gamification.xpTotal, ach: s.gamification.achievements.join(","),
+      frozen: s.gamification.frozenDays["2026-06-20"], blitz: s.gamification.counters.bestBlitz,
+      logOk: s.log["2026-07-01"] && s.log["2026-07-01"].answers === 40 && s.log["2026-07-01"].goalMet === true,
+      goal: s.profile.dailyGoalMin,
+      defaults: s.profile.levelCap === "auto" && s.profile.unlockedBand === "A1" &&
+        s.profile.placementDone === false && s.profile.sttNoticeConfirmed === false,
+      noOnb: !document.querySelector(".onb"), home: !!document.querySelector("#cta-start"),
+      themeRows: document.querySelectorAll(".theme-list .theme-row[data-theme]").length
+    };
+  });
+  check("Alt-State: SRS-Fortschritt bleibt exakt erhalten",
+    legacy.shalom && legacy.shalom.reps === 9 && legacy.shalom.mastery === 5 &&
+    legacy.shalom.ease === 2.7 && legacy.shalom.intervalDays === 21 && legacy.todaReps === 3,
+    JSON.stringify(legacy.shalom));
+  check("Alt-State: XP/Abzeichen/Freezes/Counters/Log/Ziel erhalten",
+    legacy.xp === 1234 && legacy.ach === "first_word,mastered_10" && legacy.frozen === true &&
+    legacy.blitz === 12 && legacy.logOk && legacy.goal === 10,
+    legacy.xp + "/" + legacy.ach + "/" + legacy.blitz);
+  check("Alt-State: neue Felder mit Defaults, kein Re-Onboarding, A0+A1 offen (20 Themen)",
+    legacy.defaults && legacy.noOnb && legacy.home && legacy.themeRows === 20,
+    "defaults=" + legacy.defaults + " themen=" + legacy.themeRows);
+
+  // --- 14. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
   await browser.close();

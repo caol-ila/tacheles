@@ -34,7 +34,7 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
 ```
 cd app && node test/regression.cjs
 ```
-79 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
+82 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
 Default `c:/Source/SofaSuche/node_modules/playwright-core`). Nach JEDER Änderung laufen lassen;
 zusätzlich `node --check app.js content.js grammar.js`.
 
