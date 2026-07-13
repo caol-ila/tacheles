@@ -874,7 +874,7 @@ window.TACHELES_CONTENT = {
     { id: "humor",       type: "word",   he: "הומור",      niqqud: "הוּמוֹר",          translit: "humor",        de: "Humor",                      theme: "irony", freq: 4 },
     { id: "bdicha",      type: "word",   he: "בדיחה",      niqqud: "בְּדִיחָה",        translit: "bdicha",       de: "Witz",                       theme: "irony", freq: 5 },
     { id: "liglug",      type: "word",   he: "לגלוג",      niqqud: "לִגְלוּג",         translit: "liglug",       de: "Spott",                      theme: "irony", freq: 6 },
-    { id: "mischak_milim", type: "phrase", he: "משחק מילים", niqqud: "מִשְׂחַק מִילִּים", translit: "mischak milim", de: "Wortspiel",                theme: "irony", freq: 7 },
+    { id: "mischak_milim", type: "phrase", he: "משחק מילים", niqqud: "מִשְׂחָק מִלִּים", translit: "mischak milim", de: "Wortspiel",                theme: "irony", freq: 7 },
     { id: "remez",       type: "word",   he: "רמז",        niqqud: "רֶמֶז",            translit: "remez",        de: "Anspielung / Hinweis",       theme: "irony", freq: 8 },
     { id: "kinui",       type: "word",   he: "כינוי",      niqqud: "כִּינּוּי",        translit: "kinui",        de: "Spitzname / Beiname",        theme: "irony", freq: 9 },
     { id: "hagzama",     type: "word",   he: "הגזמה",      niqqud: "הַגְזָמָה",        translit: "hagzama",      de: "Übertreibung",               theme: "irony", freq: 10 },
@@ -1081,7 +1081,7 @@ window.TACHELES_CONTENT = {
       id: "contract_talk", title: "Beim Anwalt", emoji: "📜", partner: "Anwältin", band: "C2",
       lines: [
         { who: "partner", he: "קראת את כל הסעיפים בחוזה?",   translit: "karata et kol ha-se'ifim ba-choze?", de: "Hast du alle Klauseln im Vertrag gelesen?", itemId: "saif" },
-        { who: "me",      he: "כן, אבל סעיף אחד מדאיג אותי",  translit: "ken, aval saif echad mad'ig oti", de: "Ja, aber eine Klausel beunruhigt mich.", itemId: "choze" },
+        { who: "me",      he: "כן, אבל סעיף אחד מדאיג אותי",  translit: "ken, aval saif echad mad'ig oti", de: "Ja, aber eine Klausel beunruhigt mich.", itemId: "saif" },
         { who: "partner", he: "מדובר בהפרה או בפיצוי?",       translit: "medubar be-hafara o be-pitsui?", de: "Geht es um einen Verstoß oder um Entschädigung?", itemId: "pitsui" },
         { who: "me",      he: "אני רוצה להבין את החובות שלי",  translit: "ani rotze lehavin et ha-chovot sheli", de: "Ich will meine Pflichten verstehen.", itemId: "chova" },
         { who: "partner", he: "החוזה מחייב את שני הצדדים",     translit: "ha-choze mechayev et shnei ha-tsdadim", de: "Der Vertrag verpflichtet beide Seiten.", itemId: "mechayev" },

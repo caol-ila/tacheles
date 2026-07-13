@@ -20,7 +20,7 @@
  *   12. Gruppen-Modi: Paare, Wisch (Pfeiltasten), Reels (Chooser),
  *       Dialog (8 Gespraeche), Audio-Kurs (hands-free), Blitz (60s), Exam
  *   13. Abschluss-Screen (Rueckblick), Alef-Bet-Tafel, Onboarding, Init
- *   14. Band-System (A0..B2), Level-Gating & Auto-Aufstieg
+ *   14. Band-System (A0..C2), Level-Gating & Auto-Aufstieg
  *   15. Einstufungstest (Placement, eigenstaendiger Screen-Fluss)
  *   16. Module-Runner (gefuehrte Mini-Lektionen: explain/teach/quiz/pairquiz)
  *   17. Sync: Merge-Import, Sync-Code (Base64), Import-Overlay
@@ -165,7 +165,7 @@
         micHintDismissed: false,// Hinweis zum Mikrofon auf file:// wurde weggeklickt
         sttNoticeConfirmed: false, // Cloud-Hinweis vor der ERSTEN Sprachaufnahme bestaetigt?
         onboarded: false,       // Willkommens-Tour beim ersten Start gezeigt?
-        levelCap: "auto",       // 'auto' | 'A0'..'B2' — manuelle Level-Grenze
+        levelCap: "auto",       // 'auto' | 'A0'..'C2' — manuelle Level-Grenze
         unlockedBand: "A1",     // hoechstes ERREICHTES Band (Default A1 = A0+A1 offen)
         placementDone: false    // Einstufungstest schon einmal gemacht?
       },
@@ -3423,7 +3423,7 @@
   /* ==========================================================
    * 15. Einstufungstest (Placement)
    * Eigenstaendiger Screen-Fluss (wie Onboarding, NICHT die Session-Engine).
-   * Pro Band A0..B2 vier MC-Fragen he->de in Ziel-Ansicht (ohne Stuetzraeder).
+   * Pro Band A0..C2 vier MC-Fragen he->de in Ziel-Ansicht (ohne Stuetzraeder).
    * Bestanden ab 3/4, Stopp beim ersten Fehlversuch. KEIN SRS/XP/Log.
    * ========================================================== */
 
@@ -3487,7 +3487,7 @@
     });
     quit.title = "Einstufung abbrechen";
     head.appendChild(quit);
-    // Gesamtfortschritt ueber alle Baender (max. 5 Stufen), damit klar ist, wie weit es noch geht.
+    // Gesamtfortschritt ueber alle Baender (BANDS.length Stufen), damit klar ist, wie weit es noch geht.
     var info = el("div", "session-info");
     var barWrap = el("div", "bar mini");
     var barFill = el("div", "bar-fill");
@@ -3584,7 +3584,7 @@
   function placementFinish() {
     var p = placement;
     clearPlacementKeys();
-    // Ergebnis-Band = Band NACH dem hoechsten bestandenen (max B2),
+    // Ergebnis-Band = Band NACH dem hoechsten bestandenen (max. letztes Band),
     // aber nie unter dem aktuellen Stand (Einstufung nimmt nichts weg).
     var resultIdx;
     if (p.highestPassed < 0) resultIdx = bandIndex("A1"); // A0 nicht bestanden -> Default A1
@@ -3833,6 +3833,15 @@
    */
   function moduleChoiceButtons(body, step, afterAnswer) {
     var options = (step.options || []).filter(function (o) { return o && o.he; });
+    // Defekter Schritt (Optionen ohne he): nicht in einer Sackgasse enden,
+    // sondern ueberspringbar machen.
+    if (!options.length) {
+      var skip = btn("Weiter", "btn primary big", moduleStepNext);
+      skip.dataset.k = "cont";
+      body.appendChild(skip);
+      skip.focus();
+      return;
+    }
     var shuffled = shuffle(options.slice());
     var list = el("div", "opt-list");
     var done = false;

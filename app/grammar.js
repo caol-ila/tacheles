@@ -282,10 +282,10 @@ window.TACHELES_GRAMMAR = {
     },
     {
       id: "mod_gram_zukunft", title: "Zukunft", emoji: "⏩", band: "A2", group: "grammar",
-      sub: "Vorsilben statt Endungen: e-, ti-, yi-, ni-.",
+      sub: "Die Zukunft kommt von vorn: e-, ti-, yi-, ni-.",
       steps: [
         { type: "explain", title: "Die Zukunft kommt von vorn",
-          text: "Anders als die Vergangenheit baut sich die Zukunft mit VORsilben: א (e-, ich), ת (ti-, du und sie-f), י (yi-, er), נ (ni-, wir). Aus dem Wortschatz kennst du schon אלך (elech, ich werde gehen), אשתה (eshte, ich werde trinken), אבוא (avo, ich werde kommen).",
+          text: "Anders als die Vergangenheit baut sich die Zukunft vor allem mit VORsilben: א (e-, ich), ת (ti-, du und sie-f), י (yi-, er), נ (ni-, wir). Einige Personen bekommen zusätzlich eine Endung (z. B. תכתבי tichtevi, du-f; תכתבו tichtevu, ihr) – die hebst du dir für später auf. Aus dem Wortschatz kennst du schon אלך (elech, ich werde gehen), אשתה (eshte, ich werde trinken), אבוא (avo, ich werde kommen).",
           examples: [ { he: "אלך", translit: "elech", de: "ich werde gehen" }, { he: "אשתה", translit: "eshte", de: "ich werde trinken" }, { he: "יהיה", translit: "yihye", de: "es wird sein" } ] },
         { type: "explain", title: "Ein Verb durch die Personen",
           text: "Am Beispiel כתב (schreiben): אכתוב (ektov, ich), תכתוב (tichtov, du m / sie-f), יכתוב (yichtov, er), נכתוב (nichtov, wir). Merke: das ת steht für „du“ genauso wie für „sie“ (f), das י nur für „er“.",
@@ -315,7 +315,7 @@ window.TACHELES_GRAMMAR = {
       sub: "Kleine Vorsilben - und wie sie mit Pronomen verschmelzen.",
       steps: [
         { type: "explain", title: "Drei angeklebte Präpositionen",
-          text: "Drei häufige Präpositionen klebt man direkt ans Wort: ב (be-, in/mit), ל (le-, zu/für), מ (mi-, von/aus). בתל אביב (be-tel aviv, in Tel Aviv), לעבודה (le-avoda, zur Arbeit), מברלין (mi-berlin, aus Berlin).",
+          text: "Drei häufige Präpositionen klebt man direkt ans Wort: ב (be-, in/mit), ל (le-, zu/für), מ (mi-, von/aus). בתל אביב (be-tel aviv, in Tel Aviv), לעבודה (le-avoda, zur Arbeit), מברלין (mi-berlin, aus Berlin). Trifft be-/le- auf den Artikel ha-, verschmelzen sie: be+ha wird ba- (בבית, ba-bayit, im Haus), le+ha wird la- (לעבודה, la-avoda, zur Arbeit).",
           examples: [ { he: "בבית", translit: "ba-bayit", de: "im Haus" }, { he: "לעבודה", translit: "la-avoda", de: "zur Arbeit" }, { he: "מברלין", translit: "mi-berlin", de: "aus Berlin" } ] },
         { type: "explain", title: "Mit Pronomen verschmolzen",
           text: "Mit einem Pronomen wird ל zu einer eigenen kleinen Reihe: לי (li, mir), לך (lecha/lach, dir m/f), לו (lo, ihm), לה (la, ihr), לנו (lanu, uns). Das steckt auch in „יש לי“ (yesh li, ich habe - wörtlich „es gibt mir“).",
@@ -583,14 +583,14 @@ window.TACHELES_GRAMMAR = {
       sub: "Amtssprache oder Straße - dasselbe meinen, anders klingen.",
       steps: [
         { type: "explain", title: "Zwei Ebenen derselben Sprache",
-          text: "Hebräisch hat einen deutlichen Abstand zwischen gehobener Schrift-/Amtssprache und lockerer Umgangssprache. „Ich möchte“ heißt im Alltag אני רוצה (ani rotze), formell eher אני מעוניין (ani meunyan) oder אני מבקש (ani mevakesh). Auf Schildern liest du נא (na, „bitte“) statt eines direkten Befehls.",
-          examples: [ { he: "אני רוצה", translit: "ani rotze", de: "ich will (Alltag)" }, { he: "אני מעוניין", translit: "ani meunyan", de: "ich möchte (formell)" }, { he: "נא לא לעשן", translit: "na lo le'ashen", de: "bitte nicht rauchen (Schild)" } ] },
+          text: "Hebräisch hat einen deutlichen Abstand zwischen gehobener Schrift-/Amtssprache und lockerer Umgangssprache. „Ich möchte“ heißt im Alltag אני רוצה (ani rotze), formell eher אני מעוניין (ani me'unyan) oder אני מבקש (ani mevakesh). Auf Schildern liest du נא (na, „bitte“) statt eines direkten Befehls.",
+          examples: [ { he: "אני רוצה", translit: "ani rotze", de: "ich will (Alltag)" }, { he: "אני מעוניין", translit: "ani me'unyan", de: "ich möchte (formell)" }, { he: "נא לא לעשן", translit: "na lo le'ashen", de: "bitte nicht rauchen (Schild)" } ] },
         { type: "explain", title: "Der Slang-Werkzeugkasten",
           text: "Umgekehrt gibt es viele Alltagswörtchen, die in einem Brief oder Antrag nichts verloren haben: סבבה (sababa, super), אחלה (achla, klasse), יאללה (yalla, los/komm), וואלה (walla, echt?). Erkennen ist wichtig - selbst benutzen nur im richtigen Rahmen.",
           examples: [ { he: "סבבה", translit: "sababa", de: "super/okay (Slang)" }, { he: "יאללה", translit: "yalla", de: "los, komm (Slang)" }, { he: "וואלה", translit: "walla", de: "echt?/wow (Slang)" } ] },
         { type: "form", prompt: "„ich möchte“ - die gehobene, formelle Variante",
-          options: [ { he: "מעוניין", translit: "meunyan", correct: true }, { he: "רוצה", translit: "rotze" } ],
-          note: "Formell: מעוניין (meunyan). רוצה (rotze) ist Alltag." },
+          options: [ { he: "מעוניין", translit: "me'unyan", correct: true }, { he: "רוצה", translit: "rotze" } ],
+          note: "Formell: מעוניין (me'unyan). רוצה (rotze) ist Alltag." },
         { type: "form", prompt: "„bitte nicht rauchen“ - so steht es formell auf dem Schild",
           options: [ { he: "נא לא לעשן", translit: "na lo le'ashen", correct: true }, { he: "אסור לעשן", translit: "asur le'ashen" } ],
           note: "נא (na) klingt höflich-formell; אסור (asur, „verboten“) ist direkter." },
@@ -612,7 +612,7 @@ window.TACHELES_GRAMMAR = {
       sub: "Literarisches Hebräisch, das im modernen Text noch lebt.",
       steps: [
         { type: "explain", title: "Wörter für die Schriftsprache",
-          text: "In gehobenen Texten (Literatur, Reden, Zeitungskommentar) tauchen Formen auf, die man kaum spricht: אשר (asher) statt ש, כאשר (ka'asher) statt כש (kshe-), und die nachdrückliche Verneinung mit אין (ein) im Nominalsatz statt לא.",
+          text: "In gehobenen Texten (Literatur, Reden, Zeitungskommentar) tauchen Formen auf, die man kaum spricht: אשר (asher) statt ש, כאשר (ka'asher) statt כש (kshe-). Auch אין (ein) hat eine gehobene Seite: im Alltag heißt es schlicht „es gibt nicht“, in der Schriftsprache verneint es ganze Nominalsätze, z. B. אין הדבר נכון (ein ha-davar nachon, „dem ist nicht so“).",
           examples: [ { he: "אשר", translit: "asher", de: "der/welcher (gehoben)" }, { he: "כאשר", translit: "ka'asher", de: "als/wenn (gehoben)" }, { he: "בטרם", translit: "beterem", de: "bevor (literarisch)" } ] },
         { type: "explain", title: "Zeit- und Grad-Partikel mit Stil",
           text: "Gehobene Zeitwörter: טרם (terem, „noch nicht“), בטרם (beterem, „bevor“), לעולם לא (le'olam lo, „niemals“). Sie klingen bewusst formell und ersetzen im Text die Alltagsformen wie עוד לא (od lo) oder אף פעם (af pa'am).",
@@ -632,9 +632,9 @@ window.TACHELES_GRAMMAR = {
         { type: "form", prompt: "„niemals“ - nachdrücklich/gehoben",
           options: [ { he: "לעולם לא", translit: "le'olam lo", correct: true }, { he: "אף פעם", translit: "af pa'am" } ],
           note: "לעולם לא (le'olam lo) ist nachdrücklich; אף פעם (af pa'am) ist Umgangssprache." },
-        { type: "cloze", he: "___ ברירה אחרת", translit: "___ brera acheret", de: "Es gibt keine andere Wahl. (gehobener Nominalsatz)",
+        { type: "cloze", he: "___ ברירה אחרת", translit: "___ brera acheret", de: "Es gibt keine andere Wahl.",
           options: [ { he: "אין", translit: "ein", correct: true }, { he: "לא", translit: "lo" } ],
-          note: "„es gibt kein“ im Nominalsatz = אין (ein); לא (lo) verneint Verben." }
+          note: "„es gibt kein“ = אין (ein); לא (lo) verneint Verben." }
       ]
     },
     {
