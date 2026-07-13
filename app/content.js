@@ -1,7 +1,16 @@
 /*
- * Tacheles - Content-Daten (Band A0 "Survival" + A1, ~300 Eintraege, 20 Themen)
+ * Tacheles - Content-Daten (Baender A0 "Survival" bis B2, ~530 Eintraege, 33 Themen)
  * Klassisches Script (kein ES-Modul), damit es per file:// direkt im Browser laeuft.
- * Definiert global: window.TACHELES_CONTENT = { version, themes, items, dialogues }
+ * Definiert global: window.TACHELES_CONTENT = { version, themes, items, dialogues, modules }
+ *
+ * Baender (band): "A0" | "A1" | "A2" | "B1" | "B2" (jedes Thema/Dialog traegt eines).
+ *   A0/A1 = Survival + Grundwortschatz; A2 = Alltag (Arbeit, Wohnen, Wetter, Hobbys,
+ *   Vergangenheit/Zukunft); B1 = Meinung, Medien, Behoerden, Beziehungen;
+ *   B2 = Gesellschaft/Politik, Abstraktes, Slang, Arbeitswelt fuer Fortgeschrittene.
+ *
+ * modules: gefuehrte Themen-Lektionen (Buchstaben, Aussprache, Gegensaetze) mit
+ *   Schritten (explain/teach/quiz/pairquiz). Schema siehe unten bei "modules:".
+ * opposite: optionale Item-ID des Gegenteils (symmetrisch, nur gleiche Typgruppe).
  *
  * Schema pro Item:
  *   id        eindeutig, stabil (NIE aendern - der Lern-Fortschritt haengt daran)
@@ -25,7 +34,7 @@
  * "echten" Release muttersprachlich gegengelesen werden.
  */
 window.TACHELES_CONTENT = {
-  version: 1,
+  version: 2,
   themes: [
     { id: "alefbet",   title: "Aleph-Bet (Buchstaben)",   emoji: "🔤", band: "A0" },
     { id: "greetings", title: "Begrüßung & Höflichkeit", emoji: "👋", band: "A0" },
@@ -46,7 +55,23 @@ window.TACHELES_CONTENT = {
     { id: "family",    title: "Menschen & Familie",       emoji: "👪", band: "A1" },
     { id: "emergency", title: "Notfall & Gesundheit",     emoji: "🚑", band: "A1" },
     { id: "colors",    title: "Farben",                   emoji: "🎨", band: "A1" },
-    { id: "numbers2",  title: "Zahlen 11–1000 & Geld",    emoji: "💯", band: "A1" }
+    { id: "numbers2",  title: "Zahlen 11–1000 & Geld",    emoji: "💯", band: "A1" },
+    // --- Band A2 ---
+    { id: "work",         title: "Arbeit & Beruf",             emoji: "💼", band: "A2" },
+    { id: "home",         title: "Wohnen & Zuhause",           emoji: "🏠", band: "A2" },
+    { id: "weather",      title: "Wetter & Natur",             emoji: "🌤️", band: "A2" },
+    { id: "hobbies",      title: "Hobbys & Freizeit",          emoji: "🎨", band: "A2" },
+    { id: "verbs_tense",  title: "Verben: gestern & morgen",   emoji: "⏳", band: "A2" },
+    // --- Band B1 ---
+    { id: "opinion",      title: "Meinung & Diskussion",       emoji: "💭", band: "B1" },
+    { id: "media",        title: "Medien & Nachrichten",       emoji: "📰", band: "B1" },
+    { id: "bureaucracy",  title: "Behörden & Papierkram",      emoji: "📑", band: "B1" },
+    { id: "relationships",title: "Beziehungen & Gefühle",      emoji: "💞", band: "B1" },
+    // --- Band B2 ---
+    { id: "society",      title: "Gesellschaft & Politik",     emoji: "🏛️", band: "B2" },
+    { id: "abstract",     title: "Abstraktes & Ideen",         emoji: "🧠", band: "B2" },
+    { id: "slang",        title: "Slang & Redewendungen",      emoji: "😎", band: "B2" },
+    { id: "work_adv",     title: "Arbeitswelt für Profis",     emoji: "📈", band: "B2" }
   ],
   items: [
     // --- Aleph-Bet (type 'letter') ---
@@ -147,8 +172,8 @@ window.TACHELES_CONTENT = {
     { id: "yashar",     type: "word",   he: "ישר",         niqqud: "יָשָׁר",           translit: "yashar",       de: "geradeaus",             theme: "directions", freq: 13 },
     { id: "po",         type: "word",   he: "פה",          niqqud: "פֹּה",             translit: "po",           de: "hier",                  theme: "directions", freq: 10 },
     { id: "sham",       type: "word",   he: "שם",          niqqud: "שָׁם",             translit: "sham",         de: "dort",                  theme: "directions", freq: 11 },
-    { id: "karov",      type: "word",   he: "קרוב",        niqqud: "קָרוֹב",           translit: "karov",        de: "nah",                   theme: "directions", freq: 16 },
-    { id: "rachok",     type: "word",   he: "רחוק",        niqqud: "רָחוֹק",           translit: "rachok",       de: "weit",                  theme: "directions", freq: 16 },
+    { id: "karov",      type: "word",   he: "קרוב",        niqqud: "קָרוֹב",           translit: "karov",        de: "nah",                   theme: "directions", freq: 16, opposite: "rachok" },
+    { id: "rachok",     type: "word",   he: "רחוק",        niqqud: "רָחוֹק",           translit: "rachok",       de: "weit",                  theme: "directions", freq: 16, opposite: "karov" },
 
     // --- Café & Bestellen ---
     { id: "mayim",      type: "word",   he: "מים",         niqqud: "מַיִם",            translit: "mayim",        de: "Wasser",                theme: "cafe", freq: 8 },
@@ -168,8 +193,8 @@ window.TACHELES_CONTENT = {
     { id: "etmol",      type: "word",   he: "אתמול",       niqqud: "אֶתְמוֹל",          translit: "etmol",        de: "gestern",               theme: "time", freq: 14 },
 
     // --- Small Talk & Gefühle ---
-    { id: "tov",        type: "word",   he: "טוב",         niqqud: "טוֹב",             translit: "tov",          de: "gut",                   theme: "feelings", freq: 7 },
-    { id: "ra",         type: "word",   he: "רע",          niqqud: "רַע",              translit: "ra",           de: "schlecht",              theme: "feelings", freq: 13 },
+    { id: "tov",        type: "word",   he: "טוב",         niqqud: "טוֹב",             translit: "tov",          de: "gut",                   theme: "feelings", freq: 7, opposite: "ra" },
+    { id: "ra",         type: "word",   he: "רע",          niqqud: "רַע",              translit: "ra",           de: "schlecht",              theme: "feelings", freq: 13, opposite: "tov" },
     { id: "raev",       type: "word",   he: "רעב",         niqqud: "רָעֵב",            translit: "ra'ev",        de: "hungrig",               theme: "feelings", freq: 16, note: "männlich" },
     { id: "ayef",       type: "word",   he: "עייף",        niqqud: "עָיֵף",            translit: "ayef",         de: "müde",                  theme: "feelings", freq: 16, note: "männlich" },
     { id: "sababa",     type: "word",   he: "סבבה",        niqqud: "סַבַּבָּה",          translit: "sababa",       de: "super / passt (Slang)", theme: "feelings", freq: 14, note: "sehr gängiger Alltags-Slang" },
@@ -237,8 +262,8 @@ window.TACHELES_CONTENT = {
     { id: "ein",        type: "word",   he: "אין",         niqqud: "אֵין",             translit: "ein",          de: "es gibt nicht",         theme: "shopping", freq: 12 },
     { id: "chanut",     type: "word",   he: "חנות",        niqqud: "חֲנוּת",            translit: "chanut",       de: "Laden / Geschäft",      theme: "shopping", freq: 20 },
     { id: "shuk",       type: "word",   he: "שוק",         niqqud: "שׁוּק",             translit: "shuk",         de: "Markt",                 theme: "shopping", freq: 20 },
-    { id: "yakar",      type: "word",   he: "יקר",         niqqud: "יָקָר",            translit: "yakar",        de: "teuer",                 theme: "shopping", freq: 19 },
-    { id: "zol",        type: "word",   he: "זול",         niqqud: "זוֹל",             translit: "zol",          de: "billig / günstig",      theme: "shopping", freq: 19 },
+    { id: "yakar",      type: "word",   he: "יקר",         niqqud: "יָקָר",            translit: "yakar",        de: "teuer",                 theme: "shopping", freq: 19, opposite: "zol" },
+    { id: "zol",        type: "word",   he: "זול",         niqqud: "זוֹל",             translit: "zol",          de: "billig / günstig",      theme: "shopping", freq: 19, opposite: "yakar" },
     { id: "od",         type: "word",   he: "עוד",         niqqud: "עוֹד",             translit: "od",           de: "noch / mehr",           theme: "shopping", freq: 15 },
     { id: "ze",         type: "word",   he: "זה",          niqqud: "זֶה",              translit: "ze",           de: "das / dieses",          theme: "shopping", freq: 9, note: "extrem häufig: כמה זה? = Wie viel (kostet) das?" },
     { id: "hakol",      type: "word",   he: "הכל",         niqqud: "הַכֹּל",            translit: "hakol",        de: "alles",                 theme: "shopping", freq: 18 },
@@ -258,14 +283,14 @@ window.TACHELES_CONTENT = {
     { id: "germanya",type: "word", he: "גרמניה", niqqud: "גֶּרְמַנְיָה", translit: "germanya", de: "Deutschland",     theme: "self", freq: 13 },
 
     // --- Gegensatz-Paare (A1, männliche Form) ---
-    { id: "cham",    type: "word", he: "חם",    niqqud: "חַם",     translit: "cham",    de: "heiß / warm",       theme: "adjectives", freq: 18 },
-    { id: "kar",     type: "word", he: "קר",    niqqud: "קַר",     translit: "kar",     de: "kalt",              theme: "adjectives", freq: 18 },
-    { id: "gadol",   type: "word", he: "גדול",  niqqud: "גָּדוֹל",  translit: "gadol",   de: "groß",              theme: "adjectives", freq: 17, note: "weiblich: gdola" },
-    { id: "katan",   type: "word", he: "קטן",   niqqud: "קָטָן",    translit: "katan",   de: "klein",             theme: "adjectives", freq: 17, note: "weiblich: ktana" },
-    { id: "chadash", type: "word", he: "חדש",   niqqud: "חָדָשׁ",   translit: "chadash", de: "neu",               theme: "adjectives", freq: 19, note: "weiblich: chadasha" },
-    { id: "yashan",  type: "word", he: "ישן",   niqqud: "יָשָׁן",   translit: "yashan",  de: "alt (Sache)",       theme: "adjectives", freq: 20, note: "gleich geschrieben wie „schläft“ (yashen)" },
-    { id: "maher",   type: "word", he: "מהר",   niqqud: "מַהֵר",    translit: "maher",   de: "schnell",           theme: "adjectives", freq: 19 },
-    { id: "le_at",   type: "word", he: "לאט",   niqqud: "לְאַט",    translit: "le'at",   de: "langsam",           theme: "adjectives", freq: 18, note: "le'at le'at = immer mit der Ruhe (Redewendung)" },
+    { id: "cham",    type: "word", he: "חם",    niqqud: "חַם",     translit: "cham",    de: "heiß / warm",       theme: "adjectives", freq: 18, opposite: "kar" },
+    { id: "kar",     type: "word", he: "קר",    niqqud: "קַר",     translit: "kar",     de: "kalt",              theme: "adjectives", freq: 18, opposite: "cham" },
+    { id: "gadol",   type: "word", he: "גדול",  niqqud: "גָּדוֹל",  translit: "gadol",   de: "groß",              theme: "adjectives", freq: 17, opposite: "katan", note: "weiblich: gdola" },
+    { id: "katan",   type: "word", he: "קטן",   niqqud: "קָטָן",    translit: "katan",   de: "klein",             theme: "adjectives", freq: 17, opposite: "gadol", note: "weiblich: ktana" },
+    { id: "chadash", type: "word", he: "חדש",   niqqud: "חָדָשׁ",   translit: "chadash", de: "neu",               theme: "adjectives", freq: 19, opposite: "yashan", note: "weiblich: chadasha" },
+    { id: "yashan",  type: "word", he: "ישן",   niqqud: "יָשָׁן",   translit: "yashan",  de: "alt (Sache)",       theme: "adjectives", freq: 20, opposite: "chadash", note: "gleich geschrieben wie „schläft“ (yashen)" },
+    { id: "maher",   type: "word", he: "מהר",   niqqud: "מַהֵר",    translit: "maher",   de: "schnell",           theme: "adjectives", freq: 19, opposite: "le_at" },
+    { id: "le_at",   type: "word", he: "לאט",   niqqud: "לְאַט",    translit: "le'at",   de: "langsam",           theme: "adjectives", freq: 18, opposite: "maher", note: "le'at le'at = immer mit der Ruhe (Redewendung)" },
 
     // --- Unterwegs & Reisen (A1) ---
     { id: "otobus",     type: "word",   he: "אוטובוס",     niqqud: "אוֹטוֹבּוּס",        translit: "otobus",       de: "Bus",                   theme: "transport", freq: 20 },
@@ -438,7 +463,284 @@ window.TACHELES_CONTENT = {
     { id: "s_kafe_cham",   type: "sentence", he: "הקפה חם",                niqqud: "הקפה חם",                translit: "ha-kafe cham",              de: "Der Kaffee ist heiß.",             theme: "adjectives", freq: 42,
       tokens: [ { he: "הקפה", translit: "ha-kafe", de: "der Kaffee" }, { he: "חם", translit: "cham", de: "heiß" } ] },
     { id: "s_chof_gadol",  type: "sentence", he: "החוף גדול",              niqqud: "החוף גדול",              translit: "ha-chof gadol",             de: "Der Strand ist groß.",             theme: "adjectives", freq: 42,
-      tokens: [ { he: "החוף", translit: "ha-chof", de: "der Strand" }, { he: "גדול", translit: "gadol", de: "groß" } ] }
+      tokens: [ { he: "החוף", translit: "ha-chof", de: "der Strand" }, { he: "גדול", translit: "gadol", de: "groß" } ] },
+
+    // ================================================================
+    // Erweiterung: Baender A2, B1, B2 (muttersprachliches Review steht aus)
+    // ================================================================
+
+    // ===== Band A2 =====
+
+    // --- Arbeit & Beruf (A2) ---
+    { id: "avoda",      type: "word",   he: "עבודה",   niqqud: "עֲבוֹדָה",     translit: "avoda",      de: "Arbeit",                 theme: "work", freq: 1 },
+    { id: "miktsoa",    type: "word",   he: "מקצוע",   niqqud: "מִקְצוֹעַ",     translit: "miktsoa",    de: "Beruf",                  theme: "work", freq: 2 },
+    { id: "misrad",     type: "word",   he: "משרד",    niqqud: "מִשְׂרָד",      translit: "misrad",     de: "Büro",                   theme: "work", freq: 3 },
+    { id: "menahel",    type: "word",   he: "מנהל",    niqqud: "מְנַהֵל",      translit: "menahel",    de: "Chef / Manager",         theme: "work", freq: 4, note: "weiblich: menahelet" },
+    { id: "chevra",     type: "word",   he: "חברה",    niqqud: "חֶבְרָה",      translit: "chevra",     de: "Firma",                  theme: "work", freq: 5, note: "gleiches Wort wie „Gesellschaft“" },
+    { id: "lakoach",    type: "word",   he: "לקוח",    niqqud: "לָקוֹחַ",      translit: "lakoach",    de: "Kunde",                  theme: "work", freq: 6, note: "weiblich: lakocha" },
+    { id: "pgisha",     type: "word",   he: "פגישה",   niqqud: "פְּגִישָׁה",    translit: "pgisha",     de: "Treffen / Termin",       theme: "work", freq: 7 },
+    { id: "yeshiva_w",  type: "word",   he: "ישיבה",   niqqud: "יְשִׁיבָה",     translit: "yeshiva",    de: "Besprechung / Sitzung",  theme: "work", freq: 8 },
+    { id: "proyekt",    type: "word",   he: "פרויקט",  niqqud: "פְּרוֹיֶקְט",   translit: "proyekt",    de: "Projekt",                theme: "work", freq: 9 },
+    { id: "mesima",     type: "word",   he: "משימה",   niqqud: "מְשִׂימָה",     translit: "mesima",     de: "Aufgabe",                theme: "work", freq: 10 },
+    { id: "maskoret",   type: "word",   he: "משכורת",  niqqud: "מַשְׂכֹּרֶת",   translit: "maskoret",   de: "Gehalt",                 theme: "work", freq: 11 },
+    { id: "chufsha",    type: "word",   he: "חופשה",   niqqud: "חֻפְשָׁה",      translit: "chufsha",    de: "Urlaub",                 theme: "work", freq: 12, note: "verwandt mit „chofesh“ (Freiheit)" },
+    { id: "reayon",     type: "word",   he: "ריאיון",  niqqud: "רֵאָיוֹן",     translit: "re'ayon",    de: "Vorstellungsgespräch",   theme: "work", freq: 13, note: "auch: Interview" },
+    { id: "korot_chaim",type: "phrase", he: "קורות חיים", niqqud: "קוֹרוֹת חַיִּים", translit: "korot chaim", de: "Lebenslauf",        theme: "work", freq: 14 },
+    { id: "machshev",   type: "word",   he: "מחשב",    niqqud: "מַחְשֵׁב",      translit: "machshev",   de: "Computer",               theme: "work", freq: 15 },
+    { id: "telefon",    type: "word",   he: "טלפון",   niqqud: "טֶלֶפוֹן",     translit: "telefon",    de: "Telefon",                theme: "work", freq: 16 },
+    { id: "email",      type: "word",   he: "אימייל",  niqqud: "אִימֵייל",     translit: "imeyl",      de: "E-Mail",                 theme: "work", freq: 17 },
+    { id: "mumche",     type: "word",   he: "מומחה",   niqqud: "מֻמְחֶה",      translit: "mumche",     de: "Experte / Fachmann",     theme: "work", freq: 18, note: "weiblich: mumchit" },
+    { id: "s_oved_misrad", type: "sentence", he: "אני עובד במשרד", niqqud: "אני עובד במשרד", translit: "ani oved be-misrad", de: "Ich arbeite im Büro.", theme: "work", freq: 19, note: "männlich; weiblich: ovedet",
+      tokens: [ { he: "אני", translit: "ani", de: "ich" }, { he: "עובד", translit: "oved", de: "arbeite" }, { he: "במשרד", translit: "be-misrad", de: "im Büro" } ] },
+
+    // --- Wohnen & Zuhause (A2) ---
+    { id: "bayit",      type: "word",   he: "בית",     niqqud: "בַּיִת",       translit: "bayit",      de: "Haus",                   theme: "home", freq: 1, note: "verbunden wird es zu „beit-“, wie in „beit cholim“" },
+    { id: "dira",       type: "word",   he: "דירה",    niqqud: "דִּירָה",      translit: "dira",       de: "Wohnung",                theme: "home", freq: 2 },
+    { id: "cheder",     type: "word",   he: "חדר",     niqqud: "חֶדֶר",       translit: "cheder",     de: "Zimmer",                 theme: "home", freq: 3 },
+    { id: "mitbach",    type: "word",   he: "מטבח",    niqqud: "מִטְבָּח",     translit: "mitbach",    de: "Küche",                  theme: "home", freq: 4 },
+    { id: "ambatya",    type: "word",   he: "אמבטיה",  niqqud: "אַמְבַּטְיָה",   translit: "ambatya",    de: "Bad / Badewanne",        theme: "home", freq: 5 },
+    { id: "salon",      type: "word",   he: "סלון",    niqqud: "סָלוֹן",      translit: "salon",      de: "Wohnzimmer",             theme: "home", freq: 6 },
+    { id: "delet",      type: "word",   he: "דלת",     niqqud: "דֶּלֶת",       translit: "delet",      de: "Tür",                    theme: "home", freq: 7 },
+    { id: "chalon",     type: "word",   he: "חלון",    niqqud: "חַלּוֹן",      translit: "chalon",     de: "Fenster",                theme: "home", freq: 8 },
+    { id: "shulchan",   type: "word",   he: "שולחן",   niqqud: "שֻׁלְחָן",      translit: "shulchan",   de: "Tisch",                  theme: "home", freq: 9 },
+    { id: "kise",       type: "word",   he: "כיסא",    niqqud: "כִּסֵּא",      translit: "kise",       de: "Stuhl",                  theme: "home", freq: 10 },
+    { id: "mita",       type: "word",   he: "מיטה",    niqqud: "מִטָּה",       translit: "mita",       de: "Bett",                   theme: "home", freq: 11 },
+    { id: "aron",       type: "word",   he: "ארון",    niqqud: "אָרוֹן",      translit: "aron",       de: "Schrank",                theme: "home", freq: 12 },
+    { id: "mekarer",    type: "word",   he: "מקרר",    niqqud: "מְקָרֵר",      translit: "mekarer",    de: "Kühlschrank",            theme: "home", freq: 13, note: "von „kar“ (kalt)" },
+    { id: "sapa",       type: "word",   he: "ספה",     niqqud: "סַפָּה",       translit: "sapa",       de: "Sofa",                   theme: "home", freq: 14 },
+    { id: "mafteach",   type: "word",   he: "מפתח",    niqqud: "מַפְתֵּחַ",     translit: "mafteach",   de: "Schlüssel",              theme: "home", freq: 15 },
+    { id: "shachen",    type: "word",   he: "שכן",     niqqud: "שָׁכֵן",       translit: "shachen",    de: "Nachbar",                theme: "home", freq: 16, note: "weiblich: shchena" },
+    { id: "shchirut",   type: "word",   he: "שכירות",  niqqud: "שְׂכִירוּת",    translit: "shchirut",   de: "Miete",                  theme: "home", freq: 17 },
+    { id: "male",       type: "word",   he: "מלא",     niqqud: "מָלֵא",       translit: "male",       de: "voll",                   theme: "home", freq: 18, opposite: "rek", note: "Gegenteil von leer" },
+    { id: "rek",        type: "word",   he: "ריק",     niqqud: "רֵיק",        translit: "rek",        de: "leer",                   theme: "home", freq: 18, opposite: "male", note: "Gegenteil von voll" },
+
+    // --- Wetter & Natur (A2) ---
+    { id: "mezeg_avir", type: "phrase", he: "מזג אוויר", niqqud: "מֶזֶג אֲוִיר", translit: "mezeg avir", de: "Wetter",                theme: "weather", freq: 1 },
+    { id: "shemesh",    type: "word",   he: "שמש",     niqqud: "שֶׁמֶשׁ",      translit: "shemesh",    de: "Sonne",                  theme: "weather", freq: 2 },
+    { id: "geshem",     type: "word",   he: "גשם",     niqqud: "גֶּשֶׁם",      translit: "geshem",     de: "Regen",                  theme: "weather", freq: 3 },
+    { id: "anan",       type: "word",   he: "ענן",     niqqud: "עָנָן",       translit: "anan",       de: "Wolke",                  theme: "weather", freq: 4 },
+    { id: "ruach",      type: "word",   he: "רוח",     niqqud: "רוּחַ",       translit: "ruach",      de: "Wind",                   theme: "weather", freq: 5, note: "heißt auch „Geist“" },
+    { id: "sheleg",     type: "word",   he: "שלג",     niqqud: "שֶׁלֶג",       translit: "sheleg",     de: "Schnee",                 theme: "weather", freq: 6 },
+    { id: "shamayim",   type: "word",   he: "שמיים",   niqqud: "שָׁמַיִם",     translit: "shamayim",   de: "Himmel",                 theme: "weather", freq: 7 },
+    { id: "chom",       type: "word",   he: "חום",     niqqud: "חֹם",         translit: "chom",       de: "Hitze / Fieber",         theme: "weather", freq: 8, note: "gleich geschrieben wie „chum“ (braun)" },
+    { id: "kor",        type: "word",   he: "קור",     niqqud: "קֹר",         translit: "kor",        de: "Kälte",                  theme: "weather", freq: 9 },
+    { id: "etz",        type: "word",   he: "עץ",      niqqud: "עֵץ",         translit: "etz",        de: "Baum / Holz",            theme: "weather", freq: 10 },
+    { id: "perach",     type: "word",   he: "פרח",     niqqud: "פֶּרַח",       translit: "perach",     de: "Blume",                  theme: "weather", freq: 11 },
+    { id: "har",        type: "word",   he: "הר",      niqqud: "הַר",         translit: "har",        de: "Berg",                   theme: "weather", freq: 12 },
+    { id: "nahar",      type: "word",   he: "נהר",     niqqud: "נָהָר",       translit: "nahar",      de: "Fluss",                  theme: "weather", freq: 13 },
+    { id: "kayitz",     type: "word",   he: "קיץ",     niqqud: "קַיִץ",       translit: "kayitz",     de: "Sommer",                 theme: "weather", freq: 14 },
+    { id: "choref",     type: "word",   he: "חורף",    niqqud: "חֹרֶף",       translit: "choref",     de: "Winter",                 theme: "weather", freq: 15 },
+    { id: "stav",       type: "word",   he: "סתיו",    niqqud: "סְתָיו",       translit: "stav",       de: "Herbst",                 theme: "weather", freq: 16 },
+    { id: "aviv",       type: "word",   he: "אביב",    niqqud: "אָבִיב",      translit: "aviv",       de: "Frühling",               theme: "weather", freq: 17, note: "steckt in „Tel Aviv“" },
+    { id: "yavesh",     type: "word",   he: "יבש",     niqqud: "יָבֵשׁ",       translit: "yavesh",     de: "trocken",                theme: "weather", freq: 18, opposite: "ratuv", note: "Gegenteil von nass" },
+    { id: "ratuv",      type: "word",   he: "רטוב",    niqqud: "רָטֹב",       translit: "ratuv",      de: "nass / feucht",          theme: "weather", freq: 18, opposite: "yavesh", note: "Gegenteil von trocken" },
+    { id: "s_hayom_cham", type: "sentence", he: "היום חם מאוד", niqqud: "היום חם מאוד", translit: "hayom cham me'od", de: "Heute ist es sehr heiß.", theme: "weather", freq: 19,
+      tokens: [ { he: "היום", translit: "hayom", de: "heute" }, { he: "חם", translit: "cham", de: "heiß" }, { he: "מאוד", translit: "me'od", de: "sehr" } ] },
+
+    // --- Hobbys & Freizeit (A2) ---
+    { id: "tachbiv",    type: "word",   he: "תחביב",   niqqud: "תַּחְבִּיב",    translit: "tachbiv",    de: "Hobby",                  theme: "hobbies", freq: 1 },
+    { id: "sport",      type: "word",   he: "ספורט",   niqqud: "סְפּוֹרְט",     translit: "sport",      de: "Sport",                  theme: "hobbies", freq: 2 },
+    { id: "kaduregel",  type: "word",   he: "כדורגל",  niqqud: "כַּדּוּרֶגֶל",   translit: "kaduregel",  de: "Fußball",                theme: "hobbies", freq: 3, note: "kadur = Ball, regel = Fuß" },
+    { id: "muzika",     type: "word",   he: "מוזיקה",  niqqud: "מוּזִיקָה",     translit: "muzika",     de: "Musik",                  theme: "hobbies", freq: 4 },
+    { id: "seret",      type: "word",   he: "סרט",     niqqud: "סֶרֶט",       translit: "seret",      de: "Film",                   theme: "hobbies", freq: 5 },
+    { id: "sefer",      type: "word",   he: "ספר",     niqqud: "סֵפֶר",       translit: "sefer",      de: "Buch",                   theme: "hobbies", freq: 6 },
+    { id: "shir",       type: "word",   he: "שיר",     niqqud: "שִׁיר",       translit: "shir",       de: "Lied",                   theme: "hobbies", freq: 7 },
+    { id: "mischak",    type: "word",   he: "משחק",    niqqud: "מִשְׂחָק",     translit: "mischak",    de: "Spiel",                  theme: "hobbies", freq: 8 },
+    { id: "tsiyur",     type: "word",   he: "ציור",    niqqud: "צִיּוּר",      translit: "tsiyur",     de: "Zeichnung / Malen",      theme: "hobbies", freq: 9 },
+    { id: "ritsa",      type: "word",   he: "ריצה",    niqqud: "רִיצָה",       translit: "ritsa",      de: "Laufen / Joggen",        theme: "hobbies", freq: 10 },
+    { id: "sechiya",    type: "word",   he: "שחייה",   niqqud: "שְׂחִיָּה",     translit: "sechiya",    de: "Schwimmen",              theme: "hobbies", freq: 11 },
+    { id: "tiyul",      type: "word",   he: "טיול",    niqqud: "טִיּוּל",      translit: "tiyul",      de: "Ausflug / Wanderung",    theme: "hobbies", freq: 12 },
+    { id: "mesiba",     type: "word",   he: "מסיבה",   niqqud: "מְסִבָּה",     translit: "mesiba",     de: "Party",                  theme: "hobbies", freq: 13 },
+    { id: "rikud",      type: "word",   he: "ריקוד",   niqqud: "רִקּוּד",      translit: "rikud",      de: "Tanz",                   theme: "hobbies", freq: 14 },
+    { id: "tsilum",     type: "word",   he: "צילום",   niqqud: "צִלּוּם",      translit: "tsilum",     de: "Fotografie",             theme: "hobbies", freq: 15 },
+    { id: "bishul",     type: "word",   he: "בישול",   niqqud: "בִּשּׁוּל",     translit: "bishul",     de: "Kochen",                 theme: "hobbies", freq: 16 },
+    { id: "teatron",    type: "word",   he: "תיאטרון", niqqud: "תֵּיאַטְרוֹן",  translit: "teatron",    de: "Theater",                theme: "hobbies", freq: 17 },
+    { id: "muzeon",     type: "word",   he: "מוזיאון", niqqud: "מוּזֵיאוֹן",    translit: "muzeon",     de: "Museum",                 theme: "hobbies", freq: 18 },
+
+    // --- Verben: gestern & morgen (A2, Vergangenheit & Zukunft, 1. Person) ---
+    { id: "hayiti",     type: "word",   he: "הייתי",   niqqud: "הָיִיתִי",     translit: "hayiti",     de: "ich war",                theme: "verbs_tense", freq: 1 },
+    { id: "halachti",   type: "word",   he: "הלכתי",   niqqud: "הָלַכְתִּי",    translit: "halachti",   de: "ich ging",               theme: "verbs_tense", freq: 2 },
+    { id: "amarti",     type: "word",   he: "אמרתי",   niqqud: "אָמַרְתִּי",    translit: "amarti",     de: "ich sagte",              theme: "verbs_tense", freq: 3 },
+    { id: "raiti",      type: "word",   he: "ראיתי",   niqqud: "רָאִיתִי",     translit: "ra'iti",     de: "ich sah",                theme: "verbs_tense", freq: 4 },
+    { id: "achalti",    type: "word",   he: "אכלתי",   niqqud: "אָכַלְתִּי",    translit: "achalti",    de: "ich aß",                 theme: "verbs_tense", freq: 5 },
+    { id: "shatiti",    type: "word",   he: "שתיתי",   niqqud: "שָׁתִיתִי",     translit: "shatiti",    de: "ich trank",              theme: "verbs_tense", freq: 6 },
+    { id: "kaniti",     type: "word",   he: "קניתי",   niqqud: "קָנִיתִי",     translit: "kaniti",     de: "ich kaufte",             theme: "verbs_tense", freq: 7 },
+    { id: "avadti",     type: "word",   he: "עבדתי",   niqqud: "עָבַדְתִּי",    translit: "avadti",     de: "ich arbeitete",          theme: "verbs_tense", freq: 8 },
+    { id: "ratsiti",    type: "word",   he: "רציתי",   niqqud: "רָצִיתִי",     translit: "ratsiti",    de: "ich wollte",             theme: "verbs_tense", freq: 9 },
+    { id: "elech",      type: "word",   he: "אלך",     niqqud: "אֵלֵךְ",       translit: "elech",      de: "ich werde gehen",        theme: "verbs_tense", freq: 10 },
+    { id: "eshte",      type: "word",   he: "אשתה",    niqqud: "אֶשְׁתֶּה",     translit: "eshte",      de: "ich werde trinken",      theme: "verbs_tense", freq: 11 },
+    { id: "avo",        type: "word",   he: "אבוא",    niqqud: "אָבוֹא",      translit: "avo",        de: "ich werde kommen",       theme: "verbs_tense", freq: 12 },
+    { id: "ekne",       type: "word",   he: "אקנה",    niqqud: "אֶקְנֶה",      translit: "ekne",       de: "ich werde kaufen",       theme: "verbs_tense", freq: 13 },
+    { id: "yihye",      type: "word",   he: "יהיה",    niqqud: "יִהְיֶה",      translit: "yihye",      de: "es wird sein",           theme: "verbs_tense", freq: 14, note: "„yihye beseder“ = wird schon" },
+    { id: "shavua_avar",type: "phrase", he: "שבוע שעבר", niqqud: "שָׁבוּעַ שֶׁעָבַר", translit: "shavua she'avar", de: "letzte Woche",   theme: "verbs_tense", freq: 15 },
+    { id: "shavua_haba",type: "phrase", he: "שבוע הבא", niqqud: "שָׁבוּעַ הַבָּא", translit: "shavua ha-ba", de: "nächste Woche",       theme: "verbs_tense", freq: 16 },
+    { id: "s_etmol_yam", type: "sentence", he: "אתמול הלכתי לים", niqqud: "אתמול הלכתי לים", translit: "etmol halachti la-yam", de: "Gestern ging ich zum Meer.", theme: "verbs_tense", freq: 17,
+      tokens: [ { he: "אתמול", translit: "etmol", de: "gestern" }, { he: "הלכתי", translit: "halachti", de: "ging ich" }, { he: "לים", translit: "la-yam", de: "zum Meer" } ] },
+
+    // ===== Band B1 =====
+
+    // --- Meinung & Diskussion (B1) ---
+    { id: "dea",        type: "word",   he: "דעה",     niqqud: "דֵּעָה",       translit: "de'a",       de: "Meinung",                theme: "opinion", freq: 1 },
+    { id: "choshev",    type: "word",   he: "חושב",    niqqud: "חוֹשֵׁב",      translit: "choshev",    de: "ich denke / meine",      theme: "opinion", freq: 2, note: "weiblich: choshevet" },
+    { id: "maskim",     type: "word",   he: "מסכים",   niqqud: "מַסְכִּים",     translit: "maskim",     de: "einverstanden",          theme: "opinion", freq: 3, note: "weiblich: maskima" },
+    { id: "neged",      type: "word",   he: "נגד",     niqqud: "נֶגֶד",       translit: "neged",      de: "gegen",                  theme: "opinion", freq: 4 },
+    { id: "bishvil",    type: "word",   he: "בשביל",   niqqud: "בִּשְׁבִיל",    translit: "bishvil",    de: "für",                    theme: "opinion", freq: 5 },
+    { id: "batuach",    type: "word",   he: "בטוח",    niqqud: "בָּטוּחַ",     translit: "batuach",    de: "sicher / überzeugt",     theme: "opinion", freq: 6, note: "weiblich: betucha" },
+    { id: "kanire",     type: "word",   he: "כנראה",   niqqud: "כַּנִּרְאֶה",    translit: "kanir'e",    de: "wahrscheinlich",         theme: "opinion", freq: 7 },
+    { id: "ledaati",    type: "phrase", he: "לדעתי",   niqqud: "לְדַעְתִּי",    translit: "leda'ati",   de: "meiner Meinung nach",    theme: "opinion", freq: 8 },
+    { id: "beemet",     type: "word",   he: "באמת",    niqqud: "בֶּאֱמֶת",     translit: "be'emet",    de: "wirklich / echt",        theme: "opinion", freq: 9 },
+    { id: "nachon",     type: "word",   he: "נכון",    niqqud: "נָכוֹן",      translit: "nachon",     de: "richtig / stimmt",       theme: "opinion", freq: 10 },
+    { id: "taut",       type: "word",   he: "טעות",    niqqud: "טָעוּת",       translit: "ta'ut",      de: "Fehler / Irrtum",        theme: "opinion", freq: 11 },
+    { id: "beaya",      type: "word",   he: "בעיה",    niqqud: "בְּעָיָה",      translit: "be'aya",     de: "Problem",                theme: "opinion", freq: 12 },
+    { id: "pitaron",    type: "word",   he: "פתרון",   niqqud: "פִּתְרוֹן",     translit: "pitaron",    de: "Lösung",                 theme: "opinion", freq: 13 },
+    { id: "siba",       type: "word",   he: "סיבה",    niqqud: "סִבָּה",       translit: "siba",       de: "Grund",                  theme: "opinion", freq: 14 },
+    { id: "dugma",      type: "word",   he: "דוגמה",   niqqud: "דֻּגְמָה",     translit: "dugma",      de: "Beispiel",               theme: "opinion", freq: 15, note: "„le-dugma“ = zum Beispiel" },
+    { id: "vikuach",    type: "word",   he: "ויכוח",   niqqud: "וִיכּוּחַ",     translit: "vikuach",    de: "Streit / Debatte",       theme: "opinion", freq: 16 },
+    { id: "chashuv",    type: "word",   he: "חשוב",    niqqud: "חָשׁוּב",      translit: "chashuv",    de: "wichtig",                theme: "opinion", freq: 17 },
+    { id: "muzar",      type: "word",   he: "מוזר",    niqqud: "מוּזָר",       translit: "muzar",      de: "seltsam / komisch",      theme: "opinion", freq: 18 },
+    { id: "efshari",    type: "word",   he: "אפשרי",   niqqud: "אֶפְשָׁרִי",    translit: "efshari",    de: "möglich",                theme: "opinion", freq: 19 },
+    { id: "s_ledaati_nachon", type: "sentence", he: "לדעתי זה נכון", niqqud: "לדעתי זה נכון", translit: "leda'ati ze nachon", de: "Meiner Meinung nach ist das richtig.", theme: "opinion", freq: 20,
+      tokens: [ { he: "לדעתי", translit: "leda'ati", de: "meiner Meinung nach" }, { he: "זה", translit: "ze", de: "das" }, { he: "נכון", translit: "nachon", de: "richtig" } ] },
+
+    // --- Medien & Nachrichten (B1) ---
+    { id: "chadashot",  type: "word",   he: "חדשות",   niqqud: "חֲדָשׁוֹת",     translit: "chadashot",  de: "Nachrichten",            theme: "media", freq: 1, note: "verwandt mit „chadash“ (neu)" },
+    { id: "iton",       type: "word",   he: "עיתון",   niqqud: "עִיתּוֹן",     translit: "iton",       de: "Zeitung",                theme: "media", freq: 2 },
+    { id: "televizya",  type: "word",   he: "טלוויזיה", niqqud: "טֶלֶוִיזְיָה",  translit: "televizya",  de: "Fernsehen",              theme: "media", freq: 3 },
+    { id: "radyo",      type: "word",   he: "רדיו",    niqqud: "רַדְיוֹ",      translit: "radyo",      de: "Radio",                  theme: "media", freq: 4 },
+    { id: "internet",   type: "word",   he: "אינטרנט", niqqud: "אִינְטֶרְנֶט",  translit: "internet",   de: "Internet",               theme: "media", freq: 5 },
+    { id: "maamar",     type: "word",   he: "מאמר",    niqqud: "מַאֲמָר",      translit: "ma'amar",    de: "Artikel",                theme: "media", freq: 6 },
+    { id: "katava",     type: "word",   he: "כתבה",    niqqud: "כַּתָּבָה",     translit: "katava",     de: "Reportage / Bericht",    theme: "media", freq: 7 },
+    { id: "pirsomet",   type: "word",   he: "פרסומת",  niqqud: "פִּרְסֹמֶת",    translit: "pirsomet",   de: "Werbung",                theme: "media", freq: 8 },
+    { id: "sirton",     type: "word",   he: "סרטון",   niqqud: "סִרְטוֹן",     translit: "sirton",     de: "Videoclip",              theme: "media", freq: 9, note: "kleine Form von „seret“ (Film)" },
+    { id: "reshet_chevratit", type: "phrase", he: "רשת חברתית", niqqud: "רֶשֶׁת חֶבְרָתִית", translit: "reshet chevratit", de: "soziales Netzwerk", theme: "media", freq: 10 },
+    { id: "hodaa",      type: "word",   he: "הודעה",   niqqud: "הוֹדָעָה",     translit: "hoda'a",     de: "Nachricht (Mitteilung)", theme: "media", freq: 11 },
+    { id: "mismach",    type: "word",   he: "מסמך",    niqqud: "מִסְמָךְ",     translit: "mismach",    de: "Dokument",               theme: "media", freq: 12 },
+    { id: "tmuna",      type: "word",   he: "תמונה",   niqqud: "תְּמוּנָה",     translit: "tmuna",      de: "Bild / Foto",            theme: "media", freq: 13 },
+    { id: "idkun",      type: "word",   he: "עדכון",   niqqud: "עִדְכּוּן",     translit: "idkun",      de: "Update / Aktualisierung", theme: "media", freq: 14 },
+    { id: "arutz",      type: "word",   he: "ערוץ",    niqqud: "עָרוּץ",       translit: "arutz",      de: "Kanal / Sender",         theme: "media", freq: 15 },
+    { id: "shidur",     type: "word",   he: "שידור",   niqqud: "שִׁדּוּר",      translit: "shidur",     de: "Sendung / Übertragung",  theme: "media", freq: 16 },
+    { id: "magish",     type: "word",   he: "מגיש",    niqqud: "מַגִּישׁ",     translit: "magish",     de: "Moderator",              theme: "media", freq: 17, note: "weiblich: magisha" },
+
+    // --- Behörden & Papierkram (B1) ---
+    { id: "teuda",      type: "word",   he: "תעודה",   niqqud: "תְּעוּדָה",     translit: "te'uda",     de: "Urkunde / Bescheinigung", theme: "bureaucracy", freq: 1 },
+    { id: "teudat_zehut", type: "phrase", he: "תעודת זהות", niqqud: "תְּעוּדַת זֶהוּת", translit: "te'udat zehut", de: "Personalausweis",  theme: "bureaucracy", freq: 2 },
+    { id: "darkon",     type: "word",   he: "דרכון",   niqqud: "דַּרְכּוֹן",    translit: "darkon",     de: "Reisepass",              theme: "bureaucracy", freq: 3 },
+    { id: "tofes",      type: "word",   he: "טופס",    niqqud: "טֹפֶס",       translit: "tofes",      de: "Formular",               theme: "bureaucracy", freq: 4 },
+    { id: "bakasha",    type: "word",   he: "בקשה",    niqqud: "בַּקָּשָׁה",     translit: "bakasha",    de: "Antrag / Bitte",         theme: "bureaucracy", freq: 5, note: "steckt in „bevakasha“ (bitte)" },
+    { id: "ishur",      type: "word",   he: "אישור",   niqqud: "אִישׁוּר",     translit: "ishur",      de: "Genehmigung / Bestätigung", theme: "bureaucracy", freq: 6 },
+    { id: "chatima",    type: "word",   he: "חתימה",   niqqud: "חֲתִימָה",     translit: "chatima",    de: "Unterschrift",           theme: "bureaucracy", freq: 7 },
+    { id: "tor",        type: "word",   he: "תור",     niqqud: "תּוֹר",        translit: "tor",        de: "Termin / Warteschlange", theme: "bureaucracy", freq: 8 },
+    { id: "pakid",      type: "word",   he: "פקיד",    niqqud: "פָּקִיד",      translit: "pakid",      de: "Beamter / Sachbearbeiter", theme: "bureaucracy", freq: 9, note: "weiblich: pkida" },
+    { id: "mas",        type: "word",   he: "מס",      niqqud: "מַס",         translit: "mas",        de: "Steuer",                 theme: "bureaucracy", freq: 10 },
+    { id: "bituach",    type: "word",   he: "ביטוח",   niqqud: "בִּיטּוּחַ",    translit: "bituach",    de: "Versicherung",           theme: "bureaucracy", freq: 11 },
+    { id: "bituach_leumi", type: "phrase", he: "ביטוח לאומי", niqqud: "בִּיטּוּחַ לְאֻמִּי", translit: "bituach le'umi", de: "Sozialversicherung", theme: "bureaucracy", freq: 12 },
+    { id: "cheshbon_bank", type: "phrase", he: "חשבון בנק", niqqud: "חֶשְׁבּוֹן בַּנְק", translit: "cheshbon bank", de: "Bankkonto",       theme: "bureaucracy", freq: 13 },
+    { id: "rishayon",   type: "word",   he: "רישיון",  niqqud: "רִישָׁיוֹן",    translit: "rishayon",   de: "Lizenz / Führerschein",  theme: "bureaucracy", freq: 14 },
+    { id: "ashra",      type: "word",   he: "אשרה",    niqqud: "אַשְׁרָה",     translit: "ashra",      de: "Visum",                  theme: "bureaucracy", freq: 15 },
+    { id: "knas",       type: "word",   he: "קנס",     niqqud: "קְנָס",        translit: "knas",       de: "Strafe / Bußgeld",       theme: "bureaucracy", freq: 16 },
+    { id: "iriya",      type: "word",   he: "עירייה",  niqqud: "עִירִיָּה",     translit: "iriya",      de: "Stadtverwaltung / Rathaus", theme: "bureaucracy", freq: 17, note: "von „ir“ (Stadt)" },
+
+    // --- Beziehungen & Gefühle (B1) ---
+    { id: "ahava",      type: "word",   he: "אהבה",    niqqud: "אַהֲבָה",      translit: "ahava",      de: "Liebe",                  theme: "relationships", freq: 1 },
+    { id: "regesh",     type: "word",   he: "רגש",     niqqud: "רֶגֶשׁ",       translit: "regesh",     de: "Gefühl",                 theme: "relationships", freq: 2 },
+    { id: "sameach",    type: "word",   he: "שמח",     niqqud: "שָׂמֵחַ",      translit: "sameach",    de: "fröhlich / froh",        theme: "relationships", freq: 3, opposite: "atsuv", note: "weiblich: smecha; Gegenteil von traurig" },
+    { id: "atsuv",      type: "word",   he: "עצוב",    niqqud: "עָצוּב",       translit: "atsuv",      de: "traurig",                theme: "relationships", freq: 3, opposite: "sameach", note: "weiblich: atsuva; Gegenteil von fröhlich" },
+    { id: "koes",       type: "word",   he: "כועס",    niqqud: "כּוֹעֵס",      translit: "ko'es",      de: "wütend / verärgert",     theme: "relationships", freq: 4, note: "weiblich: ko'eset" },
+    { id: "mefached",   type: "word",   he: "מפחד",    niqqud: "מְפַחֵד",      translit: "mefached",   de: "hat Angst",              theme: "relationships", freq: 5, note: "weiblich: mefachedet" },
+    { id: "mitragesh",  type: "word",   he: "מתרגש",   niqqud: "מִתְרַגֵּשׁ",   translit: "mitragesh",  de: "aufgeregt / gerührt",    theme: "relationships", freq: 6, note: "weiblich: mitragéshet" },
+    { id: "boded",      type: "word",   he: "בודד",    niqqud: "בּוֹדֵד",      translit: "boded",      de: "einsam",                 theme: "relationships", freq: 7 },
+    { id: "zug",        type: "word",   he: "זוג",     niqqud: "זוּג",         translit: "zug",        de: "Paar",                   theme: "relationships", freq: 8, note: "„ben zug“ = Partner" },
+    { id: "chatuna",    type: "word",   he: "חתונה",   niqqud: "חֲתֻנָּה",     translit: "chatuna",    de: "Hochzeit",               theme: "relationships", freq: 9 },
+    { id: "nasui",      type: "word",   he: "נשוי",    niqqud: "נָשׂוּי",      translit: "nasui",      de: "verheiratet",            theme: "relationships", freq: 10, note: "weiblich: nesu'a" },
+    { id: "garush",     type: "word",   he: "גרוש",    niqqud: "גָּרוּשׁ",      translit: "garush",     de: "geschieden",             theme: "relationships", freq: 11, note: "weiblich: grusha" },
+    { id: "ravak",      type: "word",   he: "רווק",    niqqud: "רַוָּק",       translit: "ravak",      de: "ledig / Single",         theme: "relationships", freq: 12, note: "weiblich: ravaka" },
+    { id: "neshika",    type: "word",   he: "נשיקה",   niqqud: "נְשִׁיקָה",     translit: "neshika",    de: "Kuss",                   theme: "relationships", freq: 13 },
+    { id: "chibuk",     type: "word",   he: "חיבוק",   niqqud: "חִיבּוּק",     translit: "chibuk",     de: "Umarmung",               theme: "relationships", freq: 14 },
+    { id: "gaagua",     type: "word",   he: "געגוע",   niqqud: "גַּעְגּוּעַ",    translit: "ga'agua",    de: "Sehnsucht",              theme: "relationships", freq: 15 },
+    { id: "kina",       type: "word",   he: "קנאה",    niqqud: "קִנְאָה",      translit: "kin'a",      de: "Eifersucht / Neid",      theme: "relationships", freq: 16 },
+    { id: "yedidut",    type: "word",   he: "ידידות",  niqqud: "יְדִידוּת",     translit: "yedidut",    de: "Freundschaft",           theme: "relationships", freq: 17 },
+    { id: "emun",       type: "word",   he: "אמון",    niqqud: "אֵמוּן",       translit: "emun",       de: "Vertrauen",              theme: "relationships", freq: 18 },
+    { id: "s_ohev_otach", type: "sentence", he: "אני אוהב אותך", niqqud: "אני אוהב אותך", translit: "ani ohev otach", de: "Ich liebe dich.", theme: "relationships", freq: 19, note: "männlich zu einer Frau; zu einem Mann: ohev otcha",
+      tokens: [ { he: "אני", translit: "ani", de: "ich" }, { he: "אוהב", translit: "ohev", de: "liebe" }, { he: "אותך", translit: "otach", de: "dich" } ] },
+
+    // ===== Band B2 =====
+
+    // --- Gesellschaft & Politik (B2) ---
+    { id: "chevra_soc", type: "word",   he: "חברה",    niqqud: "חֶבְרָה",      translit: "chevra",     de: "Gesellschaft",           theme: "society", freq: 1, note: "gleiches Wort wie „Firma“" },
+    { id: "memshala",   type: "word",   he: "ממשלה",   niqqud: "מֶמְשָׁלָה",    translit: "memshala",   de: "Regierung",              theme: "society", freq: 2 },
+    { id: "politika",   type: "word",   he: "פוליטיקה", niqqud: "פּוֹלִיטִיקָה", translit: "politika",   de: "Politik",                theme: "society", freq: 3 },
+    { id: "bchirot",    type: "word",   he: "בחירות",  niqqud: "בְּחִירוֹת",    translit: "bchirot",    de: "Wahlen",                 theme: "society", freq: 4 },
+    { id: "medina",     type: "word",   he: "מדינה",   niqqud: "מְדִינָה",     translit: "medina",     de: "Staat / Land",           theme: "society", freq: 5 },
+    { id: "ezrach",     type: "word",   he: "אזרח",    niqqud: "אֶזְרָח",      translit: "ezrach",     de: "Bürger",                 theme: "society", freq: 6, note: "weiblich: ezrachit" },
+    { id: "zchuyot",    type: "word",   he: "זכויות",  niqqud: "זְכֻיּוֹת",     translit: "zchuyot",    de: "Rechte",                 theme: "society", freq: 7 },
+    { id: "chok",       type: "word",   he: "חוק",     niqqud: "חֹק",         translit: "chok",       de: "Gesetz",                 theme: "society", freq: 8 },
+    { id: "mishpat",    type: "word",   he: "משפט",    niqqud: "מִשְׁפָּט",     translit: "mishpat",    de: "Gericht / Prozess",      theme: "society", freq: 9, note: "auch: Satz (Grammatik)" },
+    { id: "shofet",     type: "word",   he: "שופט",    niqqud: "שׁוֹפֵט",      translit: "shofet",     de: "Richter",                theme: "society", freq: 10, note: "auch: Schiedsrichter" },
+    { id: "milchama",   type: "word",   he: "מלחמה",   niqqud: "מִלְחָמָה",     translit: "milchama",   de: "Krieg",                  theme: "society", freq: 11 },
+    { id: "shvita",     type: "word",   he: "שביתה",   niqqud: "שְׁבִיתָה",     translit: "shvita",     de: "Streik",                 theme: "society", freq: 12 },
+    { id: "hafgana",    type: "word",   he: "הפגנה",   niqqud: "הַפְגָּנָה",     translit: "hafgana",    de: "Demonstration",          theme: "society", freq: 13 },
+    { id: "kalkala",    type: "word",   he: "כלכלה",   niqqud: "כַּלְכָּלָה",    translit: "kalkala",    de: "Wirtschaft",             theme: "society", freq: 14 },
+    { id: "rov",        type: "word",   he: "רוב",     niqqud: "רֹב",         translit: "rov",        de: "Mehrheit",               theme: "society", freq: 15, opposite: "miut", note: "Gegenteil von Minderheit" },
+    { id: "miut",       type: "word",   he: "מיעוט",   niqqud: "מִיעוּט",      translit: "mi'ut",      de: "Minderheit",             theme: "society", freq: 15, opposite: "rov", note: "Gegenteil von Mehrheit" },
+
+    // --- Abstraktes & Ideen (B2) ---
+    { id: "raayon",     type: "word",   he: "רעיון",   niqqud: "רַעְיוֹן",     translit: "ra'ayon",    de: "Idee",                   theme: "abstract", freq: 1 },
+    { id: "machshava",  type: "word",   he: "מחשבה",   niqqud: "מַחְשָׁבָה",    translit: "machshava",  de: "Gedanke",                theme: "abstract", freq: 2, note: "verwandt mit „choshev“ (denken)" },
+    { id: "emet",       type: "word",   he: "אמת",     niqqud: "אֱמֶת",       translit: "emet",       de: "Wahrheit",               theme: "abstract", freq: 3, opposite: "sheker", note: "Gegenteil von Lüge" },
+    { id: "sheker",     type: "word",   he: "שקר",     niqqud: "שֶׁקֶר",       translit: "sheker",     de: "Lüge",                   theme: "abstract", freq: 3, opposite: "emet", note: "Gegenteil von Wahrheit" },
+    { id: "chofesh",    type: "word",   he: "חופש",    niqqud: "חֹפֶשׁ",       translit: "chofesh",    de: "Freiheit",               theme: "abstract", freq: 4, note: "verwandt mit „chufsha“ (Urlaub)" },
+    { id: "tikva",      type: "word",   he: "תקווה",   niqqud: "תִּקְוָה",      translit: "tikva",      de: "Hoffnung",               theme: "abstract", freq: 5, note: "die Hymne heißt „ha-Tikva“" },
+    { id: "matara",     type: "word",   he: "מטרה",    niqqud: "מַטָּרָה",     translit: "matara",     de: "Ziel",                   theme: "abstract", freq: 6 },
+    { id: "chalom",     type: "word",   he: "חלום",    niqqud: "חֲלוֹם",      translit: "chalom",     de: "Traum",                  theme: "abstract", freq: 7 },
+    { id: "zikaron",    type: "word",   he: "זיכרון",  niqqud: "זִכָּרוֹן",     translit: "zikaron",    de: "Erinnerung / Gedächtnis", theme: "abstract", freq: 8 },
+    { id: "yeda",       type: "word",   he: "ידע",     niqqud: "יֶדַע",        translit: "yeda",       de: "Wissen",                 theme: "abstract", freq: 9 },
+    { id: "chochma",    type: "word",   he: "חוכמה",   niqqud: "חָכְמָה",      translit: "chochma",    de: "Weisheit",               theme: "abstract", freq: 10 },
+    { id: "koach",      type: "word",   he: "כוח",     niqqud: "כֹּחַ",        translit: "koach",      de: "Kraft / Macht",          theme: "abstract", freq: 11 },
+    { id: "shinui",     type: "word",   he: "שינוי",   niqqud: "שִׁינּוּי",     translit: "shinui",     de: "Veränderung",            theme: "abstract", freq: 12 },
+    { id: "mashmaut",   type: "word",   he: "משמעות",  niqqud: "מַשְׁמָעוּת",   translit: "mashmaut",   de: "Bedeutung",              theme: "abstract", freq: 13 },
+    { id: "pashut",     type: "word",   he: "פשוט",    niqqud: "פָּשׁוּט",      translit: "pashut",     de: "einfach",                theme: "abstract", freq: 14, opposite: "mesubach", note: "auch Füllwort „einfach so“; Gegenteil von kompliziert" },
+    { id: "mesubach",   type: "word",   he: "מסובך",   niqqud: "מְסֻבָּךְ",     translit: "mesubach",   de: "kompliziert",            theme: "abstract", freq: 14, opposite: "pashut", note: "Gegenteil von einfach" },
+    { id: "kal",        type: "word",   he: "קל",      niqqud: "קַל",         translit: "kal",        de: "leicht",                 theme: "abstract", freq: 15, opposite: "kaved", note: "Gegenteil von schwer" },
+    { id: "kaved",      type: "word",   he: "כבד",     niqqud: "כָּבֵד",       translit: "kaved",      de: "schwer",                 theme: "abstract", freq: 15, opposite: "kal", note: "auch: Leber; Gegenteil von leicht" },
+
+    // --- Slang & Redewendungen (B2) ---
+    { id: "achla",      type: "word",   he: "אחלה",    niqqud: "אַחְלָה",      translit: "achla",      de: "super / top (Slang)",    theme: "slang", freq: 1, note: "aus dem Arabischen" },
+    { id: "yalla",      type: "word",   he: "יאללה",   niqqud: "יַאללָּה",     translit: "yalla",      de: "los! / komm!",           theme: "slang", freq: 2, note: "aus dem Arabischen, überall zu hören" },
+    { id: "walla",      type: "word",   he: "וואלה",   niqqud: "וָואלָּה",     translit: "walla",      de: "echt? / wirklich!",      theme: "slang", freq: 3 },
+    { id: "stam",       type: "word",   he: "סתם",     niqqud: "סְתָם",        translit: "stam",       de: "einfach so / nur Spaß",  theme: "slang", freq: 4 },
+    { id: "chaval_zman",type: "phrase", he: "חבל על הזמן", niqqud: "חֲבָל עַל הַזְּמַן", translit: "chaval al ha-zman", de: "sagenhaft (Idiom)", theme: "slang", freq: 5, note: "wörtl. „schade um die Zeit“, meint aber: der Hammer" },
+    { id: "eize_basa",  type: "phrase", he: "איזה באסה", niqqud: "אֵיזֶה בָּאסָה", translit: "eize basa", de: "wie ärgerlich / so ein Mist", theme: "slang", freq: 6 },
+    { id: "dai",        type: "word",   he: "די",      niqqud: "דַּי",         translit: "dai",        de: "genug! / hör auf!",      theme: "slang", freq: 7 },
+    { id: "nu",         type: "word",   he: "נו",      niqqud: "נוּ",          translit: "nu",         de: "na? / und?",             theme: "slang", freq: 8, note: "Drängel-Laut, wie im Jiddischen" },
+    { id: "magniv",     type: "word",   he: "מגניב",   niqqud: "מַגְנִיב",     translit: "magniv",     de: "cool / geil",            theme: "slang", freq: 9 },
+    { id: "sof_haderech", type: "phrase", he: "סוף הדרך", niqqud: "סוֹף הַדֶּרֶךְ", translit: "sof ha-derech", de: "spitze (Idiom)", theme: "slang", freq: 10, note: "wörtl. „Ende des Weges“" },
+    { id: "al_hapanim", type: "phrase", he: "על הפנים", niqqud: "עַל הַפָּנִים", translit: "al ha-panim", de: "mies / grottig", theme: "slang", freq: 11, note: "wörtl. „auf dem Gesicht“" },
+    { id: "ein_matzav", type: "phrase", he: "אין מצב", niqqud: "אֵין מַצָּב",   translit: "ein matzav", de: "auf keinen Fall / unglaublich", theme: "slang", freq: 12, note: "wörtl. „es gibt keine Lage“" },
+    { id: "tachles",    type: "word",   he: "תכלס",    niqqud: "תַּכְלֶס",     translit: "tachles",    de: "im Grunde / Butter bei die Fische", theme: "slang", freq: 13, note: "genau das Wort hinter dem App-Namen „Tacheles“" },
+    { id: "beseder_gamur", type: "phrase", he: "בסדר גמור", niqqud: "בְּסֵדֶר גָּמוּר", translit: "beseder gamur", de: "absolut in Ordnung", theme: "slang", freq: 14 },
+    { id: "mabsut",     type: "word",   he: "מבסוט",   niqqud: "מַבְּסוּט",     translit: "mabsut",     de: "zufrieden (Slang)",      theme: "slang", freq: 15, note: "aus dem Arabischen" },
+    { id: "sof_sof",    type: "phrase", he: "סוף סוף", niqqud: "סוֹף סוֹף",   translit: "sof sof",    de: "endlich",                theme: "slang", freq: 16 },
+    { id: "s_yalla_nelech", type: "sentence", he: "יאללה, בוא נלך", niqqud: "יאללה, בוא נלך", translit: "yalla, bo nelech", de: "Komm, lass uns gehen!", theme: "slang", freq: 17, note: "„bo“ zu einem Mann, „bo'i“ zu einer Frau",
+      tokens: [ { he: "יאללה", translit: "yalla", de: "los / komm" }, { he: "בוא", translit: "bo", de: "komm" }, { he: "נלך", translit: "nelech", de: "lass uns gehen" } ] },
+
+    // --- Arbeitswelt für Fortgeschrittene (B2) ---
+    { id: "yazamut",    type: "word",   he: "יזמות",   niqqud: "יַזָּמוּת",     translit: "yazamut",    de: "Unternehmertum",         theme: "work_adv", freq: 1 },
+    { id: "yazam",      type: "word",   he: "יזם",     niqqud: "יַזָּם",       translit: "yazam",      de: "Unternehmer / Gründer",  theme: "work_adv", freq: 2, note: "weiblich: yazamit" },
+    { id: "startap",    type: "word",   he: "סטארטאפ", niqqud: "סְטַארְטַאפּ",  translit: "startap",    de: "Start-up",               theme: "work_adv", freq: 3, note: "Israel gilt als „Start-up-Nation“" },
+    { id: "hashkaa",    type: "word",   he: "השקעה",   niqqud: "הַשְׁקָעָה",    translit: "hashka'a",   de: "Investition",            theme: "work_adv", freq: 4 },
+    { id: "revach",     type: "word",   he: "רווח",    niqqud: "רֶוַח",       translit: "revach",     de: "Gewinn / Profit",        theme: "work_adv", freq: 5, opposite: "hefsed", note: "Gegenteil von Verlust" },
+    { id: "hefsed",     type: "word",   he: "הפסד",    niqqud: "הֶפְסֵד",      translit: "hefsed",     de: "Verlust",                theme: "work_adv", freq: 5, opposite: "revach", note: "Gegenteil von Gewinn" },
+    { id: "taktziv",    type: "word",   he: "תקציב",   niqqud: "תַּקְצִיב",     translit: "taktziv",    de: "Budget",                 theme: "work_adv", freq: 6 },
+    { id: "mimun",      type: "word",   he: "מימון",   niqqud: "מִימוּן",      translit: "mimun",      de: "Finanzierung",           theme: "work_adv", freq: 7 },
+    { id: "yaad",       type: "word",   he: "יעד",     niqqud: "יַעַד",        translit: "ya'ad",      de: "Ziel / Vorgabe",         theme: "work_adv", freq: 8 },
+    { id: "tafkid",     type: "word",   he: "תפקיד",   niqqud: "תַּפְקִיד",     translit: "tafkid",     de: "Rolle / Position",       theme: "work_adv", freq: 9 },
+    { id: "kidum",      type: "word",   he: "קידום",   niqqud: "קִידּוּם",     translit: "kidum",      de: "Beförderung",            theme: "work_adv", freq: 10 },
+    { id: "tsevet",     type: "word",   he: "צוות",    niqqud: "צֶוֶת",        translit: "tsevet",     de: "Team",                   theme: "work_adv", freq: 11 },
+    { id: "lachatz",    type: "word",   he: "לחץ",     niqqud: "לַחַץ",        translit: "lachatz",    de: "Druck / Stress",         theme: "work_adv", freq: 12 },
+    { id: "eichut",     type: "word",   he: "איכות",   niqqud: "אֵיכוּת",      translit: "eichut",     de: "Qualität",               theme: "work_adv", freq: 13 },
+    { id: "yeilut",     type: "word",   he: "יעילות",  niqqud: "יְעִילוּת",     translit: "ye'ilut",    de: "Effizienz",              theme: "work_adv", freq: 14 },
+    { id: "tacharut",   type: "word",   he: "תחרות",   niqqud: "תַּחֲרוּת",     translit: "tacharut",   de: "Wettbewerb / Konkurrenz", theme: "work_adv", freq: 15 },
+    { id: "hizdamnut",  type: "word",   he: "הזדמנות", niqqud: "הִזְדַּמְּנוּת", translit: "hizdamnut",  de: "Gelegenheit / Chance",   theme: "work_adv", freq: 16 }
   ],
 
   /*
@@ -535,6 +837,148 @@ window.TACHELES_CONTENT = {
         { who: "partner", he: "עשרים שקל",                translit: "esrim shekel",                   de: "Zwanzig Schekel." },
         { who: "me",      he: "בסדר, תודה רבה!",          translit: "beseder, toda raba!",            de: "In Ordnung, vielen Dank!", itemId: "beseder" }
       ]
+    },
+    {
+      id: "apartment", title: "Wohnungssuche", emoji: "🏠", partner: "Vermieter", band: "A2",
+      lines: [
+        { who: "partner", he: "שלום, אתה מחפש דירה?",       translit: "shalom, ata mechapes dira?",     de: "Hallo, suchst du eine Wohnung?" },
+        { who: "me",      he: "כן, יש דירה פנויה?",         translit: "ken, yesh dira pnuya?",          de: "Ja, gibt es eine freie Wohnung?", itemId: "dira" },
+        { who: "partner", he: "יש דירה עם שני חדרים",       translit: "yesh dira im shnei chadarim",    de: "Es gibt eine Wohnung mit zwei Zimmern.", itemId: "cheder" },
+        { who: "me",      he: "כמה השכירות?",               translit: "kama ha-shchirut?",              de: "Wie hoch ist die Miete?", itemId: "shchirut" },
+        { who: "partner", he: "ארבעת אלפים שקל בחודש",      translit: "arba'at alafim shekel ba-chodesh", de: "Viertausend Schekel im Monat." },
+        { who: "me",      he: "זה יקר, אבל בסדר",           translit: "ze yakar, aval beseder",         de: "Das ist teuer, aber okay.", itemId: "yakar" }
+      ]
+    },
+    {
+      id: "weather_chat", title: "Über das Wetter reden", emoji: "🌦️", partner: "Nachbarin", band: "A2",
+      lines: [
+        { who: "partner", he: "בוקר טוב! איזה מזג אוויר היום?", translit: "boker tov! eize mezeg avir hayom?", de: "Guten Morgen! Was für ein Wetter heute?", itemId: "mezeg_avir" },
+        { who: "me",      he: "חם מאוד, אין עננים",         translit: "cham me'od, ein ananim",         de: "Sehr heiß, keine Wolken.", itemId: "anan" },
+        { who: "partner", he: "כן, השמש חזקה",              translit: "ken, ha-shemesh chazaka",        de: "Ja, die Sonne ist stark.", itemId: "shemesh" },
+        { who: "me",      he: "מחר יהיה גשם",               translit: "machar yihye geshem",            de: "Morgen wird es regnen.", itemId: "geshem" },
+        { who: "partner", he: "טוב, אנחנו צריכים גשם",      translit: "tov, anachnu tsrichim geshem",   de: "Gut, wir brauchen Regen." },
+        { who: "me",      he: "נכון! להתראות",              translit: "nachon! lehitraot",              de: "Stimmt! Auf Wiedersehen.", itemId: "nachon" }
+      ]
+    },
+    {
+      id: "job_talk", title: "Über die Arbeit reden", emoji: "💼", partner: "Kollegin", band: "B1",
+      lines: [
+        { who: "partner", he: "איפה אתה עובד עכשיו?",       translit: "eifo ata oved achshav?",         de: "Wo arbeitest du jetzt?", itemId: "oved" },
+        { who: "me",      he: "בחברת הייטק, במשרד בתל אביב", translit: "be-chevrat hi-tech, be-misrad be-Tel-Aviv", de: "In einer Hightech-Firma, im Büro in Tel Aviv.", itemId: "misrad" },
+        { who: "partner", he: "מעניין! מה התפקיד שלך?",     translit: "me'anyen! ma ha-tafkid shelcha?", de: "Interessant! Was ist deine Rolle?", itemId: "tafkid" },
+        { who: "me",      he: "אני מנהל צוות קטן",          translit: "ani menahel tsevet katan",       de: "Ich leite ein kleines Team.", itemId: "tsevet" },
+        { who: "partner", he: "והמשכורת טובה?",             translit: "ve-ha-maskoret tova?",           de: "Und das Gehalt ist gut?", itemId: "maskoret" },
+        { who: "me",      he: "בסדר גמור, אני מבסוט",        translit: "beseder gamur, ani mabsut",      de: "Absolut in Ordnung, ich bin zufrieden.", itemId: "mabsut" }
+      ]
+    },
+    {
+      id: "opinion_talk", title: "Eine Meinung äußern", emoji: "💬", partner: "Freund", band: "B1",
+      lines: [
+        { who: "partner", he: "ראית את החדשות אתמול?",      translit: "ra'ita et ha-chadashot etmol?",  de: "Hast du gestern die Nachrichten gesehen?", itemId: "chadashot" },
+        { who: "me",      he: "כן, אבל לדעתי זה מוזר",       translit: "ken, aval leda'ati ze muzar",    de: "Ja, aber meiner Meinung nach ist das seltsam.", itemId: "ledaati" },
+        { who: "partner", he: "למה? אני חושב שזה נכון",      translit: "lama? ani choshev she-ze nachon", de: "Warum? Ich denke, das stimmt.", itemId: "choshev" },
+        { who: "me",      he: "יש בעיה אחת גדולה",          translit: "yesh be'aya achat gdola",        de: "Es gibt ein großes Problem.", itemId: "beaya" },
+        { who: "partner", he: "אתה צודק, זו בעיה",          translit: "ata tsodek, zo be'aya",          de: "Du hast recht, das ist ein Problem." },
+        { who: "me",      he: "אבל יש פתרון",               translit: "aval yesh pitaron",              de: "Aber es gibt eine Lösung.", itemId: "pitaron" }
+      ]
+    }
+  ],
+
+  /*
+   * modules: gefuehrte Lektionen (eigener Session-Modus "module").
+   * Schritt-Typen:
+   *   explain  - Lehrkarte: title + text (Klartext) + optionale examples [{he,translit,de}] (antippbar, TTS).
+   *   teach    - Intro-Karte fuer EIN Item (itemId), keine Bewertung.
+   *   quiz     - MC he->de fuer itemId; distractorIds sind FEST gesetzt (1-3), App fuellt auf 3 auf.
+   *   pairquiz - MC; das Gegenteil (pairId) ist garantiert unter den Optionen.
+   * Alle referenzierten IDs (itemId/distractorIds/pairId) existieren in items.
+   */
+  modules: [
+    {
+      id: "mod_letters_frequent", title: "Die häufigsten Buchstaben", emoji: "⭐", band: "A0",
+      sub: "Fünf Buchstaben, mit denen du „Schalom“ fast lesen kannst.",
+      steps: [
+        { type: "explain", title: "Womit anfangen?",
+          text: "22 Buchstaben klingen nach viel. Aber ein paar tauchen ständig auf, und wenn du die kennst, puzzelst du dir das Wichtigste schon zusammen, allen voran שלום (Schalom). Denk immer dran: Hebräisch liest man von rechts nach links.",
+          examples: [ { he: "ש", translit: "schin", de: "sch" }, { he: "ל", translit: "lamed", de: "l" }, { he: "ו", translit: "waw", de: "w/o/u" }, { he: "מ", translit: "mem", de: "m" }, { he: "א", translit: "alef", de: "stumm" } ] },
+        { type: "teach", itemId: "let_shin" },
+        { type: "teach", itemId: "let_lamed" },
+        { type: "teach", itemId: "let_mem" },
+        { type: "quiz", itemId: "let_shin", distractorIds: ["let_mem"] },
+        { type: "quiz", itemId: "let_lamed", distractorIds: ["let_alef"] }
+      ]
+    },
+    {
+      id: "mod_letters_similar", title: "Ähnliche Buchstaben", emoji: "👀", band: "A0",
+      sub: "ד oder ר? ה oder ח? Genau hinschauen lernen.",
+      steps: [
+        { type: "explain", title: "Warum sehen die so ähnlich aus?",
+          text: "Manche Buchstaben unterscheiden sich nur durch eine Ecke oder eine kleine Lücke. Am Anfang fies, aber schnell Gewohnheit. Merke: ד (Dalet) hat oben rechts eine klare Ecke, ר (Resch) ist rund. ה (He) hat links eine Lücke, ח (Chet) ist oben geschlossen.",
+          examples: [ { he: "ד", translit: "dalet", de: "d" }, { he: "ר", translit: "resch", de: "r" }, { he: "ה", translit: "he", de: "h" }, { he: "ח", translit: "chet", de: "ch" } ] },
+        { type: "quiz", itemId: "let_dalet", distractorIds: ["let_resh"] },
+        { type: "quiz", itemId: "let_resh", distractorIds: ["let_dalet"] },
+        { type: "quiz", itemId: "let_he", distractorIds: ["let_chet", "let_tav"] },
+        { type: "quiz", itemId: "let_bet", distractorIds: ["let_kaf"] },
+        { type: "quiz", itemId: "let_vav", distractorIds: ["let_zayin", "let_nun_s"] }
+      ]
+    },
+    {
+      id: "mod_letters_final", title: "Endformen (Sofit)", emoji: "🔚", band: "A0",
+      sub: "Fünf Buchstaben sehen am Wortende anders aus.",
+      steps: [
+        { type: "explain", title: "Am Wortende verwandeln sich fünf Buchstaben",
+          text: "Kaf, Mem, Nun, Pe und Zade bekommen am Wortende eine „lange“ Form, die Sofit heißt. Gleicher Laut, andere Gestalt, meist mit einem Schwanz nach unten. שלום endet zum Beispiel auf ם (Mem sofit). Wenn du sie erkennst, liest du plötzlich viel flüssiger.",
+          examples: [ { he: "מ ← ם", translit: "mem", de: "m" }, { he: "נ ← ן", translit: "nun", de: "n" }, { he: "כ ← ך", translit: "kaf", de: "k/ch" }, { he: "פ ← ף", translit: "pe", de: "p/f" }, { he: "צ ← ץ", translit: "zade", de: "z" } ] },
+        { type: "teach", itemId: "let_mem_s" },
+        { type: "teach", itemId: "let_nun_s" },
+        { type: "quiz", itemId: "let_mem_s", distractorIds: ["let_samech"] },
+        { type: "quiz", itemId: "let_nun_s", distractorIds: ["let_vav"] }
+      ]
+    },
+    {
+      id: "mod_letters_dotted", title: "Punkte-Buchstaben ב כ פ ש", emoji: "🔵", band: "A1",
+      sub: "Ein Punkt entscheidet: b oder w, k oder ch, p oder f.",
+      steps: [
+        { type: "explain", title: "Ein Punkt, zwei Laute",
+          text: "Vier Buchstaben haben je nach Punkt zwei Aussprachen. Der Punkt (Dagesch) in der Mitte macht den harten Laut: בּ = b, ohne Punkt ב = w. כּ = k, כ = ch (wie in „Bach“). פּ = p, פ = f. Bei ש sitzt der Punkt oben: שׁ = sch (rechts), שׂ = s (links). Im Alltag ohne Niqqud musst du oft aus dem Zusammenhang raten, aber das kommt mit der Übung.",
+          examples: [ { he: "בּ / ב", translit: "bet", de: "b / w" }, { he: "כּ / כ", translit: "kaf", de: "k / ch" }, { he: "פּ / פ", translit: "pe", de: "p / f" }, { he: "שׁ / שׂ", translit: "schin", de: "sch / s" } ] },
+        { type: "teach", itemId: "let_bet" },
+        { type: "quiz", itemId: "let_pe", distractorIds: ["let_bet"] },
+        { type: "quiz", itemId: "let_shin", distractorIds: ["let_samech"] }
+      ]
+    },
+    {
+      id: "mod_pronunciation", title: "Aussprache-Werkstatt", emoji: "🗣️", band: "A1",
+      sub: "Das ch, das r, die Betonung und wozu Niqqud gut ist.",
+      steps: [
+        { type: "explain", title: "Das ch wie in „Bach“",
+          text: "Das hebräische ח und das punktlose כ klingen wie das ch in „Bach“ oder „Loch“, nicht wie in „ich“. Kräftig aus dem Rachen. Genau dieser Laut steckt in vielen Alltagswörtern, also lohnt es sich, ihn früh zu üben.",
+          examples: [ { he: "חלב", translit: "chalav", de: "Milch" }, { he: "לחם", translit: "lechem", de: "Brot" }, { he: "חם", translit: "cham", de: "heiß" } ] },
+        { type: "explain", title: "Das r sitzt hinten",
+          text: "Das ר wird meist hinten im Rachen gesprochen, ähnlich dem deutschen Zäpfchen-r, oft etwas kräftiger. Kein amerikanisches r und keine gerollte Zunge nötig, das deutsche r ist schon ziemlich nah dran.",
+          examples: [ { he: "רחוב", translit: "rechov", de: "Straße" }, { he: "בוקר", translit: "boker", de: "Morgen" }, { he: "רק", translit: "rak", de: "nur" } ] },
+        { type: "explain", title: "Betonung meist am Ende",
+          text: "Anders als im Deutschen liegt die Betonung meistens auf der letzten Silbe: schaLOM, toDA, beseDER. Es gibt Ausnahmen (viele Slang- und Lehnwörter werden vorn betont), aber „hinten betonen“ ist die beste Faustregel für den Anfang.",
+          examples: [ { he: "שלום", translit: "scha-LOM", de: "Hallo" }, { he: "תודה", translit: "to-DA", de: "Danke" }, { he: "בסדר", translit: "be-se-DER", de: "okay" } ] },
+        { type: "explain", title: "Niqqud sind die Vokale",
+          text: "Die Punkte und Striche um die Buchstaben (Niqqud) verraten dir den Vokal: ein Punkt unten ist oft i, ein T-förmiges Zeichen ein a, und so weiter. Im Alltag stehen sie fast nie da, deshalb blenden wir sie hier nach und nach aus. Das Schwa (zwei senkrechte Punkte) heißt: hier kommt fast kein Vokal, nur ein ganz kurzes „e“ oder gar nichts, wie das erste e in „gemacht“.",
+          examples: [ { he: "בְּ", translit: "be", de: "Schwa: kurzes e" }, { he: "בִּ", translit: "bi", de: "Chirik: i" }, { he: "בָּ", translit: "ba", de: "Kamatz: a" } ] },
+        { type: "quiz", itemId: "chalav", distractorIds: ["lechem"] },
+        { type: "quiz", itemId: "rechov", distractorIds: ["rak"] }
+      ]
+    },
+    {
+      id: "mod_opposites", title: "Gegensätze-Duell", emoji: "⚖️", band: "A1",
+      sub: "Groß und klein, heiß und kalt: Paare merkt man sich leichter.",
+      steps: [
+        { type: "explain", title: "Warum Paare?",
+          text: "Gegensätze speichert dein Gehirn gern zusammen. Lernst du גדול (groß), kommt קטן (klein) fast von allein mit. In den nächsten Fragen ist der Gegenspieler immer eine der Antwortmöglichkeiten. Lass dich nicht austricksen.",
+          examples: [ { he: "גדול ↔ קטן", translit: "gadol / katan", de: "groß / klein" }, { he: "חם ↔ קר", translit: "cham / kar", de: "heiß / kalt" } ] },
+        { type: "pairquiz", itemId: "gadol", pairId: "katan" },
+        { type: "pairquiz", itemId: "cham", pairId: "kar" },
+        { type: "pairquiz", itemId: "chadash", pairId: "yashan" },
+        { type: "pairquiz", itemId: "maher", pairId: "le_at" }
+      ]
     }
   ]
 };
@@ -578,7 +1022,36 @@ window.TACHELES_CONTENT = {
     kos: "🥂", bakbuk: "🍾", mazleg: "🍴", sakin: "🔪", kaf_l: "🥄", sukar: "🍬", melach: "🧂",
     // Gegensatz-Paare
     cham: "🔥", kar: "❄️", gadol: "🐘", katan: "🐜", chadash: "✨", yashan: "🏚️",
-    maher: "🏎️", le_at: "🐌"
+    maher: "🏎️", le_at: "🐌",
+    // A2: Arbeit
+    avoda: "💼", misrad: "🏢", menahel: "👔", machshev: "💻", telefon: "📱",
+    email: "📧", maskoret: "💵", chufsha: "🏖️", pgisha: "🤝",
+    // A2: Wohnen
+    bayit: "🏠", dira: "🏢", cheder: "🚪", mitbach: "🍳", ambatya: "🛁", salon: "🛋️",
+    delet: "🚪", chalon: "🪟", shulchan: "🪑", kise: "🪑", mita: "🛏️", aron: "🗄️",
+    mekarer: "🧊", sapa: "🛋️", mafteach: "🔑", male: "🈵", rek: "🈳",
+    // A2: Wetter & Natur
+    shemesh: "☀️", geshem: "🌧️", anan: "☁️", ruach: "💨", sheleg: "🌨️", shamayim: "🌌",
+    etz: "🌳", perach: "🌷", har: "⛰️", nahar: "🏞️", kayitz: "🌞", choref: "🥶",
+    stav: "🍂", aviv: "🌸",
+    // A2: Hobbys
+    sport: "🏅", kaduregel: "⚽", muzika: "🎵", seret: "🎬", sefer: "📚", shir: "🎶",
+    mischak: "🎮", tsiyur: "🖌️", ritsa: "🏃", sechiya: "🏊", tiyul: "🥾", mesiba: "🎉",
+    rikud: "💃", tsilum: "📷", bishul: "👨‍🍳", teatron: "🎭", muzeon: "🏛️",
+    // B1: Medien
+    chadashot: "🗞️", iton: "📰", televizya: "📺", radyo: "📻", internet: "🌐",
+    tmuna: "🖼️", hodaa: "💬", mismach: "📄",
+    // B1: Behörden
+    darkon: "🛂", tofes: "📋", chatima: "✍️", mas: "💸", tor: "🎟️",
+    // B1: Beziehungen
+    ahava: "❤️", sameach: "😊", atsuv: "😢", koes: "😠", chatuna: "💒",
+    neshika: "💋", chibuk: "🤗", zug: "👫",
+    // B2: Gesellschaft
+    memshala: "🏛️", bchirot: "🗳️", milchama: "⚔️", hafgana: "📢", shofet: "⚖️",
+    // B2: Abstraktes
+    raayon: "💡", chalom: "💭", matara: "🎯", koach: "💪", tikva: "🤞",
+    // B2: Arbeitswelt
+    startap: "🚀", revach: "📈", hefsed: "📉", tsevet: "👥", yaad: "🎯"
   };
   window.TACHELES_CONTENT.items.forEach(function (it) {
     if (EMOJI[it.id]) it.emoji = EMOJI[it.id];

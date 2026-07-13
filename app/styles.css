@@ -835,6 +835,73 @@ body.in-session .bottom-nav { display: none; }
   text-align: center;
 }
 
+/* ---------- Level-Baender: gesperrte Themen & Module ---------- */
+.band-tag {
+  font-size: .66rem; font-weight: 700; color: var(--muted);
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 8px; vertical-align: 2px; margin-left: 4px;
+}
+.theme-row.locked, .path-row.locked { opacity: .72; }
+.theme-row.locked:hover, .path-row.locked:hover { box-shadow: var(--shadow); }
+.path-row.locked .path-status { background: var(--bg); color: var(--muted); }
+
+/* ---------- Module (Lernen-Screen) ---------- */
+.module-list { display: flex; flex-direction: column; gap: 8px; }
+.module-tile {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  background: var(--card); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 12px 14px; border: 2px solid transparent;
+  transition: transform .08s ease, box-shadow .15s ease;
+}
+.module-tile:hover { box-shadow: 0 4px 14px rgba(23, 126, 137, .18); }
+.module-tile:active { transform: scale(.985); }
+.module-tile.done { border-color: var(--good); }
+.module-tile.locked { opacity: .72; }
+.module-emoji { font-size: 1.6rem; flex-shrink: 0; }
+.module-body { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.module-title { font-weight: 700; font-size: .95rem; }
+.module-done { color: var(--good); }
+.module-sub { font-size: .78rem; color: var(--muted); line-height: 1.35; }
+
+.module-explain { text-align: left; }
+.module-text { margin: 0; line-height: 1.55; white-space: pre-wrap; }
+.module-examples { display: flex; flex-direction: column; gap: 8px; }
+.module-example {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--card); border: 2px solid var(--line); border-radius: 12px;
+  padding: 10px 14px; box-shadow: var(--shadow); transition: transform .08s ease;
+}
+.module-example:active { transform: scale(.98); }
+.module-ex-he { font-family: var(--font-he); font-size: 1.7rem; }
+.module-ex-meta { font-size: .82rem; color: var(--muted); text-align: right; }
+
+/* ---------- Einstufungstest ---------- */
+.placement-progress { font-size: .82rem; color: var(--muted); }
+.onb.placement .opt-list, .onb.placement .learn-card { width: 100%; max-width: 380px; }
+.onb .btn.big { width: 100%; max-width: 340px; }
+.onb .opt-list { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; }
+
+/* ---------- Import-/Sync-Overlay ---------- */
+.overlay {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(43, 57, 64, .55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.overlay-box {
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 22px 20px; width: 100%; max-width: 380px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.overlay-title { font-size: 1.15rem; font-weight: 800; color: var(--primary-dark); }
+.overlay-text { font-size: .9rem; color: var(--muted); line-height: 1.45; }
+.overlay-actions { display: flex; flex-direction: column; gap: 8px; }
+.overlay-textarea {
+  width: 100%; font-family: inherit; font-size: .85rem;
+  border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px;
+  resize: vertical; background: var(--bg); color: var(--ink);
+}
+
 /* ---------- Reduzierte Bewegung ---------- */
 
 @media (prefers-reduced-motion: reduce) {
