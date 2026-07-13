@@ -11,22 +11,28 @@ echten Content-Kern. Erst Wirkung, dann Breite.
 
 Alles darüber (Reels, Dialog, Sprechen, Audio-Kurs, Ligen) ist Ausbau.
 
-## Umsetzungsstand (2026-07-03)
+## Umsetzungsstand (2026-07-13)
 
 Das Web-MVP+ in [`../app`](../app/README.md) ist gebaut, getestet und übertrifft den
 MVP-Leitsatz sowie Teile der Phasen 2–3:
 
 - **13 Modi:** Karten, Auswahl, Paare, Wisch (Pfeiltasten), Reels (Start-Chooser), Schilder,
-  Hören (🐢), Sprechen (STT + 🐢), Dialog (8 Gespräche), Satzbau, Bilder (Emoji), Blitz (60 s),
+  Hören (🐢), Sprechen (STT + 🐢), Dialog (12 Gespräche), Satzbau, Bilder (Emoji), Blitz (60 s),
   Audio-Kurs (hands-free) — plus 🎓 Survival-Check als Prüfungsmodus ohne Stützräder.
+- **Geführte Module:** 6 Lern-Module (Buchstaben-Walkthroughs, ähnliche Buchstaben, Endformen,
+  Punkte-Buchstaben, Aussprache, Gegensatz-Paare) mit Erklär-, Lehr- und Quiz-Schritten.
+- **Level-System:** Bänder A0–B2, progressive Freischaltung (40 % gemeistert), Override im
+  Profil, Einstufungstest im Onboarding und Profil (rein diagnostisch).
 - **Didaktik:** SRS + Niqqud-Fade + Aleph-Bet-Spur (Lese-Reihenfolge) + Alef-Bet-Tafel +
-  Verwechsler-Distraktoren + geführter Pfad + Onboarding + Knacknüsse + Session-Rückblick.
+  Verwechsler-Distraktoren + Ähnlichkeits-Distraktoren (ab mastery 2, inkl. Gegenteil-Falle) +
+  geführter Pfad + Onboarding + Knacknüsse + Session-Rückblick.
 - **Motivation:** 15 Abzeichen (nur Lern-Meilensteine), Streak mit ❄️ Freezes, Heute-Zeile,
-  ehrliche XP. ~300 Content-Einträge in 20 Themen (A0 + A1).
+  ehrliche XP. ~533 Content-Einträge in 33 Themen (A0–B2), 15 Gegensatz-Paare.
 - **Technik:** file:// oder localhost-Starter (Mikrofon-Merken), PWA + Service Worker,
-  Export/Import statt Cloud-Sync (bewusst, siehe 07), Regressionssuite `app/test/regression.cjs`.
+  Export/Import mit Zusammenführen + Clipboard-Sync-Code statt Cloud-Sync (bewusst, siehe 07),
+  Regressionssuite `app/test/regression.cjs` (58 Checks).
 - **Bewusst offen:** Cloud-Sync (Supabase), echte Muttersprachler-Aufnahmen, muttersprachliches
-  Review von Niqqud/Dialogen, Expo/Android-Native, Ligen.
+  Review von Niqqud/Dialogen (jetzt inkl. A2–B2-Inhalten), Expo/Android-Native, Ligen.
 
 ---
 

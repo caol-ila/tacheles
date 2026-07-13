@@ -20,6 +20,10 @@
  *   12. Gruppen-Modi: Paare, Wisch (Pfeiltasten), Reels (Chooser),
  *       Dialog (8 Gespraeche), Audio-Kurs (hands-free), Blitz (60s), Exam
  *   13. Abschluss-Screen (Rueckblick), Alef-Bet-Tafel, Onboarding, Init
+ *   14. Band-System (A0..B2), Level-Gating & Auto-Aufstieg
+ *   15. Einstufungstest (Placement, eigenstaendiger Screen-Fluss)
+ *   16. Module-Runner (gefuehrte Mini-Lektionen: explain/teach/quiz/pairquiz)
+ *   17. Sync: Merge-Import, Sync-Code (Base64), Import-Overlay
  * ============================================================ */
 (function () {
   "use strict";
@@ -73,10 +77,20 @@
   }
   function todayStr() { return dateStr(new Date()); }
 
+  // Gleichzeitige Toasts (z. B. Abzeichen + Level-Up) sollen sich nicht
+  // ueberlappen: jeder neue Toast wird um die Zahl lebender Toasts nach oben
+  // versetzt. Beim Entfernen aus der Liste austragen.
+  var liveToasts = [];
   function toast(msg, cls) {
     var t = el("div", "toast" + (cls ? " " + cls : ""), msg);
+    t.style.bottom = (90 + liveToasts.length * 54) + "px";
+    liveToasts.push(t);
     document.body.appendChild(t);
-    setTimeout(function () { t.remove(); }, cls === "gold" ? 3600 : 2600);
+    setTimeout(function () {
+      var idx = liveToasts.indexOf(t);
+      if (idx >= 0) liveToasts.splice(idx, 1);
+      t.remove();
+    }, cls === "gold" ? 3600 : 2600);
   }
 
   /* ==========================================================
@@ -101,6 +115,21 @@
     return null;
   }
 
+  function moduleById(id) {
+    var mods = (CONTENT && CONTENT.modules) || [];
+    for (var i = 0; i < mods.length; i++) if (mods[i].id === id) return mods[i];
+    return null;
+  }
+
+  /* Level-Baender (Reihenfolge zaehlt). Themen tragen ein `band`; Items erben
+   * das Band ihres Themas. Fehlt ein Band (z. B. altes/fremdes Content), gilt
+   * defensiv "A0" (immer offen). */
+  var BANDS = ["A0", "A1", "A2", "B1", "B2"];
+  var LEVEL_CAPS = ["auto", "A0", "A1", "A2", "B1", "B2"];
+  function bandIndex(b) { var i = BANDS.indexOf(b); return i < 0 ? 0 : i; }
+  function themeBand(theme) { return (theme && BANDS.indexOf(theme.band) >= 0) ? theme.band : "A0"; }
+  function itemBand(item) { return themeBand(themeById(item.theme)); }
+
   /* ==========================================================
    * 3. Persistenter Zustand
    * ========================================================== */
@@ -116,7 +145,11 @@
         fadeMode: "auto",       // 'auto' | 'off_early' | 'keep'
         autoplay: true,         // Audio automatisch abspielen (Reels/Karten)
         micHintDismissed: false,// Hinweis zum Mikrofon auf file:// wurde weggeklickt
-        onboarded: false        // Willkommens-Tour beim ersten Start gezeigt?
+        sttNoticeConfirmed: false, // Cloud-Hinweis vor der ERSTEN Sprachaufnahme bestaetigt?
+        onboarded: false,       // Willkommens-Tour beim ersten Start gezeigt?
+        levelCap: "auto",       // 'auto' | 'A0'..'B2' — manuelle Level-Grenze
+        unlockedBand: "A1",     // hoechstes ERREICHTES Band (Default A1 = A0+A1 offen)
+        placementDone: false    // Einstufungstest schon einmal gemacht?
       },
       gamification: {
         xpTotal: 0,
@@ -130,7 +163,8 @@
           bestBlitz: 0,         // beste Blitz-Runde (richtige Antworten)
           bestExam: 0,          // bestes Survival-Check-Ergebnis (von 12)
           sessionsDone: 0,      // abgeschlossene Sessions (fuer die Erste-Runde-Feier)
-          dialogsDone: {}       // { dialogId: true } abgeschlossene Dialoge
+          dialogsDone: {},      // { dialogId: true } abgeschlossene Dialoge
+          modulesDone: {}       // { moduleId: true } abgeschlossene Module
         }
       },
       // pro Item: { ease, intervalDays, dueTs, reps, lapses, mastery, lastReviewTs }
@@ -149,15 +183,22 @@
       if (["auto", "off_early", "keep"].indexOf(raw.profile.fadeMode) >= 0) s.profile.fadeMode = raw.profile.fadeMode;
       if (typeof raw.profile.autoplay === "boolean") s.profile.autoplay = raw.profile.autoplay;
       if (typeof raw.profile.micHintDismissed === "boolean") s.profile.micHintDismissed = raw.profile.micHintDismissed;
+      if (typeof raw.profile.sttNoticeConfirmed === "boolean") s.profile.sttNoticeConfirmed = raw.profile.sttNoticeConfirmed;
       if (typeof raw.profile.onboarded === "boolean") s.profile.onboarded = raw.profile.onboarded;
+      if (LEVEL_CAPS.indexOf(raw.profile.levelCap) >= 0) s.profile.levelCap = raw.profile.levelCap;
+      if (BANDS.indexOf(raw.profile.unlockedBand) >= 0) s.profile.unlockedBand = raw.profile.unlockedBand;
+      if (typeof raw.profile.placementDone === "boolean") s.profile.placementDone = raw.profile.placementDone;
     }
     // Migration: wer schon Lernfortschritt hat (State von vor dem Onboarding-
     // Feature), soll die Willkommens-Tour nicht erneut durchlaufen.
     if (!s.profile.onboarded && raw.srs && typeof raw.srs === "object" && Object.keys(raw.srs).length > 0) {
       s.profile.onboarded = true;
     }
+    // Alle Zaehler defensiv auf >= 0 klammern (fremde/kaputte Importe koennen
+    // negative oder unsinnige Werte enthalten).
+    var nn = function (x) { return Math.max(0, Number(x) || 0); };
     if (raw.gamification && typeof raw.gamification === "object") {
-      s.gamification.xpTotal = Number(raw.gamification.xpTotal) || 0;
+      s.gamification.xpTotal = nn(raw.gamification.xpTotal);
       s.gamification.lastActiveDay = raw.gamification.lastActiveDay || null;
       if (Array.isArray(raw.gamification.achievements)) {
         s.gamification.achievements = raw.gamification.achievements.filter(function (x) { return typeof x === "string"; });
@@ -165,19 +206,53 @@
       if (raw.gamification.frozenDays && typeof raw.gamification.frozenDays === "object" && !Array.isArray(raw.gamification.frozenDays)) {
         s.gamification.frozenDays = raw.gamification.frozenDays;
       }
-      s.gamification.answersTotal = Number(raw.gamification.answersTotal) || 0;
+      s.gamification.answersTotal = nn(raw.gamification.answersTotal);
       var rc = raw.gamification.counters;
       if (rc && typeof rc === "object") {
-        s.gamification.counters.bestBlitz = Number(rc.bestBlitz) || 0;
-        s.gamification.counters.bestExam = Number(rc.bestExam) || 0;
-        s.gamification.counters.sessionsDone = Number(rc.sessionsDone) || 0;
+        s.gamification.counters.bestBlitz = nn(rc.bestBlitz);
+        s.gamification.counters.bestExam = nn(rc.bestExam);
+        s.gamification.counters.sessionsDone = nn(rc.sessionsDone);
         if (rc.dialogsDone && typeof rc.dialogsDone === "object" && !Array.isArray(rc.dialogsDone)) {
           s.gamification.counters.dialogsDone = rc.dialogsDone;
         }
+        if (rc.modulesDone && typeof rc.modulesDone === "object" && !Array.isArray(rc.modulesDone)) {
+          s.gamification.counters.modulesDone = rc.modulesDone;
+        }
       }
     }
-    if (raw.srs && typeof raw.srs === "object" && !Array.isArray(raw.srs)) s.srs = raw.srs;
-    if (raw.log && typeof raw.log === "object" && !Array.isArray(raw.log)) s.log = raw.log;
+    // srs: pro Item nur echte Objekte uebernehmen und Feld fuer Feld sauber
+    // rekonstruieren (Number-Coercion, Defaults, Clamping). So kann ein
+    // korrupter Eintrag wie srs:{shalom:5} den Scheduler nicht zum Absturz bringen.
+    if (raw.srs && typeof raw.srs === "object" && !Array.isArray(raw.srs)) {
+      Object.keys(raw.srs).forEach(function (id) {
+        var e = raw.srs[id];
+        if (!e || typeof e !== "object" || Array.isArray(e)) return; // z. B. srs.shalom = 5 -> verworfen
+        s.srs[id] = {
+          ease: Math.max(1.3, Number(e.ease) || 2.5),
+          intervalDays: Math.max(0, Number(e.intervalDays) || 0),
+          dueTs: Math.max(0, Number(e.dueTs) || 0),
+          reps: Math.max(0, Number(e.reps) || 0),
+          lapses: Math.max(0, Number(e.lapses) || 0),
+          mastery: clamp(Number(e.mastery) || 0, 0, 5),
+          lastReviewTs: Math.max(0, Number(e.lastReviewTs) || 0)
+        };
+      });
+    }
+    // log: pro Tag nur echte Objekte, Zahlenfelder >= 0, goalMet boolean.
+    if (raw.log && typeof raw.log === "object" && !Array.isArray(raw.log)) {
+      Object.keys(raw.log).forEach(function (day) {
+        var d = raw.log[day];
+        if (!d || typeof d !== "object" || Array.isArray(d)) return; // z. B. log["..."] = 3 -> verworfen
+        var entry = {
+          answers: nn(d.answers),
+          correct: nn(d.correct),
+          xp: nn(d.xp),
+          goalMet: !!d.goalMet
+        };
+        if (d.mastered !== undefined) entry.mastered = nn(d.mastered);
+        s.log[day] = entry;
+      });
+    }
     return s;
   }
 
@@ -221,6 +296,9 @@
     input.addEventListener("change", function () {
       var file = input.files && input.files[0];
       if (!file) return;
+      // Groessenlimit: ein echter Export bleibt weit unter 1 MB. Grosse Dateien
+      // gar nicht erst einlesen (DoS-/Fehlbedienungs-Schutz).
+      if (file.size > 1000000) { toast("Datei ist zu groß für einen Tacheles-Export."); return; }
       var reader = new FileReader();
       reader.onload = function () {
         try {
@@ -229,13 +307,8 @@
             toast("Das sieht nicht wie ein Tacheles-Export aus.");
             return;
           }
-          if (!confirm("Import ersetzt deinen aktuellen Fortschritt. Fortfahren?")) return;
-          state = normalizeState(obj);
-          updateMasteredCount();
-          state.gamification.streakDays = recomputeStreak();
-          saveState();
-          showScreen(currentScreen);
-          toast("Fortschritt importiert 📥");
+          if (Object.keys(obj.srs).length > 10000) { toast("Das sieht nicht wie ein Tacheles-Export aus."); return; }
+          showImportChoice(obj, function (mode) { applyImportedState(obj, mode); });
         } catch (e) {
           toast("Datei konnte nicht gelesen werden.");
         }
@@ -326,7 +399,9 @@
 
   function getSrs(id) {
     var e = state.srs[id];
-    if (!e) {
+    // Belt-and-braces: ein nicht-Objekt (z. B. aus einem kaputten Import, das
+    // normalizeState umgangen haette) wird durch einen frischen Default ersetzt.
+    if (!e || typeof e !== "object" || Array.isArray(e)) {
       e = { ease: 2.5, intervalDays: 0, dueTs: 0, reps: 0, lapses: 0, mastery: 0, lastReviewTs: 0 };
       state.srs[id] = e;
     }
@@ -413,14 +488,29 @@
     state.gamification.masteredCount = n;
   }
 
+  /** Fällige/neue Zaehler nur ueber freigeschaltete Baender (gesperrte zaehlen nicht). */
   function dueCount() {
     var now = Date.now(), n = 0;
-    for (var i = 0; i < CONTENT.items.length; i++) if (isDue(CONTENT.items[i].id, now)) n++;
+    for (var i = 0; i < CONTENT.items.length; i++) {
+      var it = CONTENT.items[i];
+      if (bandUnlocked(itemBand(it)) && isDue(it.id, now)) n++;
+    }
     return n;
   }
   function newCount() {
     var n = 0;
-    for (var i = 0; i < CONTENT.items.length; i++) if (isNew(CONTENT.items[i].id)) n++;
+    for (var i = 0; i < CONTENT.items.length; i++) {
+      var it = CONTENT.items[i];
+      if (bandUnlocked(itemBand(it)) && isNew(it.id)) n++;
+    }
+    return n;
+  }
+  /** Anzahl Items in freigeschalteten Baendern (Nenner der Fortschritts-Kennzahl). */
+  function unlockedItemCount() {
+    var n = 0;
+    for (var i = 0; i < CONTENT.items.length; i++) {
+      if (bandUnlocked(itemBand(CONTENT.items[i]))) n++;
+    }
     return n;
   }
 
@@ -844,6 +934,11 @@
     opts = opts || {};
     var now = Date.now();
     var pool = CONTENT.items;
+    // Level-Gating: nur Items aus freigeschalteten Baendern — ausser bei einer
+    // expliziten Item-Liste (Knacknuesse & Co. sollen immer funktionieren).
+    if (!opts.itemIds) {
+      pool = pool.filter(function (it) { return bandUnlocked(itemBand(it)); });
+    }
     if (opts.types) {
       pool = pool.filter(function (it) { return opts.types.indexOf(it.type) >= 0; });
     }
@@ -907,6 +1002,52 @@
   }
 
   /* ==========================================================
+   * 9b. Band-System: Level-Gating & Auto-Aufstieg
+   * effectiveBand = manuelle Grenze (levelCap) oder das erreichte Band.
+   * Aufstieg passiert automatisch, wenn genug vom aktuellen Band (und allen
+   * darunter) wirklich sitzt.
+   * ========================================================== */
+
+  /** Aktuell wirksames Band: bei 'auto' das erreichte, sonst die manuelle Grenze. */
+  function effectiveBand() {
+    var lc = state.profile.levelCap;
+    return lc === "auto" ? state.profile.unlockedBand : lc;
+  }
+
+  /** Ist ein Band freigeschaltet (<= wirksames Band)? */
+  function bandUnlocked(band) {
+    return bandIndex(band) <= bandIndex(effectiveBand());
+  }
+
+  /** Anteil gemeisterter Items (mastery >= 3) innerhalb eines Bands. */
+  function bandProgress(band) {
+    var total = 0, mastered = 0;
+    for (var i = 0; i < CONTENT.items.length; i++) {
+      var it = CONTENT.items[i];
+      if (itemBand(it) !== band) continue;
+      total++;
+      if (getMastery(it.id) >= 3) mastered++;
+    }
+    return total ? mastered / total : 0;
+  }
+
+  /**
+   * Prueft nach jeder Session, ob das naechste Band freigeschaltet wird:
+   * das aktuelle Band UND alle darunter muessen jeweils >= 40 % sitzen.
+   * Der Level-Cap (levelCap) beeinflusst das Verdienen NICHT — nur die Anzeige.
+   */
+  function maybeAdvanceBand() {
+    var curIdx = bandIndex(state.profile.unlockedBand);
+    if (curIdx >= BANDS.length - 1) return; // schon B2
+    for (var i = 0; i <= curIdx; i++) {
+      if (bandProgress(BANDS[i]) < 0.4) return;
+    }
+    var next = BANDS[curIdx + 1];
+    state.profile.unlockedBand = next;
+    toast("🎉 Neues Level freigeschaltet: " + next + "!", "gold");
+  }
+
+  /* ==========================================================
    * 10. Screens: Home / Lernen / Fortschritt / Profil
    * ========================================================== */
 
@@ -960,7 +1101,9 @@
   /** Empfehlung "als Naechstes": erstes Thema (in Pfad-Reihenfolge) unter 80 % gemeistert. */
   function recommendedTheme() {
     for (var i = 0; i < CONTENT.themes.length; i++) {
-      if (themeStats(CONTENT.themes[i]).pct < 80) return CONTENT.themes[i];
+      var t = CONTENT.themes[i];
+      if (!bandUnlocked(themeBand(t))) continue;
+      if (themeStats(t).pct < 80) return t;
     }
     return null;
   }
@@ -969,18 +1112,68 @@
     var items = CONTENT.items.filter(function (it) { return it.theme === theme.id; });
     var mastered = items.filter(function (it) { return getMastery(it.id) >= 3; }).length;
     var pct = items.length ? Math.round(mastered / items.length * 100) : 0;
-    return '<div class="theme-row" role="button" tabindex="0" data-theme="' + esc(theme.id) + '" title="Gezielt üben: ' + esc(theme.title) + '">' +
-      '<span class="theme-emoji">' + esc(theme.emoji) + '</span>' +
-      '<div class="theme-info"><div class="theme-title">' + esc(theme.title) + '</div>' +
+    var band = themeBand(theme);
+    var locked = !bandUnlocked(band);
+    return '<div class="theme-row' + (locked ? ' locked' : '') + '" role="button" tabindex="0" data-theme="' + esc(theme.id) + '"' +
+      (locked ? ' data-locked="' + esc(band) + '" aria-disabled="true" aria-label="' +
+        esc(theme.title) + ' – gesperrt bis Level ' + esc(band) + '"' : '') +
+      ' title="' + (locked ? 'Gesperrt bis Level ' + esc(band) : 'Gezielt üben: ' + esc(theme.title)) + '">' +
+      '<span class="theme-emoji">' + (locked ? '🔒' : esc(theme.emoji)) + '</span>' +
+      '<div class="theme-info"><div class="theme-title">' + esc(theme.title) +
+      (locked ? ' <span class="band-tag">ab ' + esc(band) + '</span>' : '') + '</div>' +
       '<div class="bar mini"><div class="bar-fill" style="width:' + pct + '%"></div></div></div>' +
       '<span class="theme-count">' + mastered + '/' + items.length + '</span>' +
       '</div>';
   }
 
-  /** Themen-Zeilen anklickbar machen: startet eine gezielte Smart-Session nur mit diesem Thema. */
+  /** Themen-Zeilen anklickbar machen: startet eine gezielte Smart-Session nur mit diesem
+   *  Thema. Gesperrte (Band noch nicht frei) zeigen stattdessen einen Hinweis-Toast. */
   function wireThemeRows(root) {
     root.querySelectorAll("[data-theme]").forEach(function (row) {
-      var go = function () { startSession("smart", { theme: row.dataset.theme }); };
+      var go;
+      if (row.dataset.locked) {
+        go = function () {
+          toast("🔒 Dieses Thema ist ab Level " + row.dataset.locked +
+            " frei. Lern weiter oder stell dein Level im Profil um.");
+        };
+      } else {
+        go = function () { startSession("smart", { theme: row.dataset.theme }); };
+      }
+      row.addEventListener("click", go);
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+    });
+  }
+
+  /**
+   * Themen-Liste fuer Home & Fortschritt: nur freigeschaltete Themen, die
+   * gesperrten in EINE Sammelzeile zusammengefasst (weniger Rauschen). Der
+   * vollstaendige Pfad mit allen Themen bleibt im Lernen-Tab.
+   */
+  function themeListHtml() {
+    var unlocked = CONTENT.themes.filter(function (t) { return bandUnlocked(themeBand(t)); });
+    var locked = CONTENT.themes.filter(function (t) { return !bandUnlocked(themeBand(t)); });
+    var html = unlocked.map(themeRowHtml).join("");
+    if (locked.length) {
+      var firstBand = locked.map(function (t) { return themeBand(t); })
+        .sort(function (a, b) { return bandIndex(a) - bandIndex(b); })[0];
+      html += '<div class="theme-row locked-summary" role="button" tabindex="0" data-locked-summary="1" ' +
+        'aria-label="' + locked.length + ' weitere Themen ab Level ' + esc(firstBand) +
+        ', im Lernen-Tab freischalten">' +
+        '<span class="theme-emoji">🔒</span>' +
+        '<div class="theme-info"><div class="theme-title">' + locked.length +
+        ' weitere Themen ab Level ' + esc(firstBand) + '</div>' +
+        '<div class="setting-sub">dein Pfad im Lernen-Tab schaltet sie frei</div></div>' +
+        '<span class="next-go">▶</span></div>';
+    }
+    return html;
+  }
+
+  /** Sammelzeile der gesperrten Themen: fuehrt in den Lernen-Tab (voller Pfad). */
+  function wireLockedSummary(root) {
+    root.querySelectorAll("[data-locked-summary]").forEach(function (row) {
+      var go = function () { showScreen("modes"); };
       row.addEventListener("click", go);
       row.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
@@ -1005,6 +1198,45 @@
     });
   }
 
+  /** Modul-Kacheln (gefuehrte Mini-Lektionen). Rendert nichts, wenn keine
+   *  Module im Content sind (defensiv, falls Content-Update noch aussteht). */
+  function moduleTilesHtml() {
+    var mods = (CONTENT && CONTENT.modules) || [];
+    if (!mods.length) return "";
+    var done = state.gamification.counters.modulesDone || {};
+    return '<h2 class="h2">📚 Module <span class="h2-sub">· geführte Mini-Lektionen</span></h2>' +
+      '<div class="module-list">' + mods.map(function (m) {
+        var band = (BANDS.indexOf(m.band) >= 0) ? m.band : "A0";
+        var locked = !bandUnlocked(band);
+        var isDone = !!done[m.id];
+        // Umfang transparent machen: Schrittzahl + grobe Dauer (~2 Schritte/Min).
+        var steps = (m.steps || []).length;
+        var mins = Math.max(1, Math.ceil(steps / 2));
+        var stepInfo = ' · ' + steps + ' Schritte · ~' + mins + ' Min';
+        // Fertige Module zeigen den Haken im Emoji-Slot (nicht nur am Rahmen).
+        var emoji = locked ? '🔒' : (isDone ? '✅' : esc(m.emoji || "📚"));
+        return '<button class="module-tile' + (locked ? ' locked' : '') + (isDone ? ' done' : '') +
+          '" data-module="' + esc(m.id) + '"' + (locked ? ' data-locked="' + esc(band) + '"' : '') + '>' +
+          '<span class="module-emoji">' + emoji + '</span>' +
+          '<span class="module-body"><span class="module-title">' + esc(m.title) +
+          (locked ? ' <span class="band-tag">ab ' + esc(band) + '</span>' : '') + '</span>' +
+          '<span class="module-sub">' + esc(m.sub || "") + stepInfo + '</span></span>' +
+          '</button>';
+      }).join("") + '</div>';
+  }
+
+  function wireModuleTiles(root) {
+    root.querySelectorAll("[data-module]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        if (b.dataset.locked) {
+          toast("🔒 Dieses Modul ist ab Level " + b.dataset.locked + " frei.");
+          return;
+        }
+        startSession("module", { moduleId: b.dataset.module });
+      });
+    });
+  }
+
   function renderHome() {
     var app = $("#app");
     var g = state.gamification;
@@ -1018,7 +1250,7 @@
       '</header>' +
       '<section class="stats-row">' +
       '<div class="stat" title="Streak-Freezes retten verpasste Tage"><div class="stat-num">🔥 ' + g.streakDays +
-      (freezesAvailable() > 0 ? ' <span class="freeze-mini">❄️' + freezesAvailable() + '</span>' : '') +
+      (g.streakDays > 0 && freezesAvailable() > 0 ? ' <span class="freeze-mini">❄️' + freezesAvailable() + '</span>' : '') +
       '</div><div class="stat-label">Streak</div></div>' +
       '<div class="stat"><div class="stat-num">⭐ ' + g.xpTotal + '</div><div class="stat-label">XP</div></div>' +
       '<div class="stat"><div class="stat-num">🏅 ' + g.masteredCount + '</div><div class="stat-label">gemeistert</div></div>' +
@@ -1048,26 +1280,32 @@
       })() +
       '<h2 class="h2">Modi</h2>' + modeTilesHtml(false) +
       '<h2 class="h2">Themen <span class="h2-sub">· antippen zum gezielten Üben</span></h2>' +
-      '<div class="theme-list">' + CONTENT.themes.map(themeRowHtml).join("") + '</div>' +
+      '<div class="theme-list">' + themeListHtml() + '</div>' +
       '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>';
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
     wireModeTiles(app);
     wireThemeRows(app);
+    wireLockedSummary(app);
   }
 
   /** Eine Station des gefuehrten Pfads (Lernen-Screen). */
   function pathRowHtml(theme, isNext) {
     var s = themeStats(theme);
+    var band = themeBand(theme);
+    var locked = !bandUnlocked(band);
     var status, cls;
-    if (s.pct >= 80) { status = "✓"; cls = "done"; }
+    if (locked) { status = "🔒"; cls = "locked"; isNext = false; }
+    else if (s.pct >= 80) { status = "✓"; cls = "done"; }
     else if (isNext) { status = "▶"; cls = "next"; }
     else if (s.started) { status = "…"; cls = "started"; }
     else { status = ""; cls = "todo"; }
-    return '<div class="path-row ' + cls + '" role="button" tabindex="0" data-theme="' + esc(theme.id) + '">' +
+    return '<div class="path-row ' + cls + '" role="button" tabindex="0" data-theme="' + esc(theme.id) + '"' +
+      (locked ? ' data-locked="' + esc(band) + '" aria-disabled="true" aria-label="' +
+        esc(theme.title) + ' – gesperrt bis Level ' + esc(band) + '"' : '') + '>' +
       '<span class="path-status">' + status + '</span>' +
       '<span class="theme-emoji">' + esc(theme.emoji) + '</span>' +
       '<div class="theme-info"><div class="theme-title">' + esc(theme.title) +
-      (isNext ? ' <span class="path-next-tag">als Nächstes</span>' : '') + '</div>' +
+      (isNext ? ' <span class="path-next-tag">als Nächstes</span>' : (locked ? ' <span class="band-tag">ab ' + esc(band) + '</span>' : '')) + '</div>' +
       '<div class="bar mini"><div class="bar-fill" style="width:' + s.pct + '%"></div></div></div>' +
       '<span class="theme-count">' + s.mastered + '/' + s.total + '</span>' +
       '</div>';
@@ -1081,6 +1319,7 @@
       '<div class="brand-sub">dein Pfad: ein Thema nach dem anderen</div></header>' +
       '<section class="card"><button class="btn primary big" id="cta-start">▶ Smart-Session starten</button>' +
       '<p class="setting-sub" style="margin:10px 0 0">Mischt fällige Wiederholungen und neue Wörter im passenden Modus-Mix.</p></section>' +
+      moduleTilesHtml() +
       '<h2 class="h2">Dein Pfad <span class="h2-sub">· ✓ sitzt · ▶ dran · antippen zum Üben</span></h2>' +
       '<div class="theme-list path-list">' +
       CONTENT.themes.map(function (t) { return pathRowHtml(t, next && t.id === next.id); }).join("") +
@@ -1088,6 +1327,7 @@
       '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true);
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
     wireModeTiles(app);
+    wireModuleTiles(app);
     wireThemeRows(app);
   }
 
@@ -1114,8 +1354,9 @@
       '<header class="brand"><div class="brand-title">Fortschritt</div>' +
       '<div class="brand-sub">ehrlich gemessen: was wirklich sitzt</div></header>' +
       '<section class="card big-metric">' +
-      '<div class="big-metric-num">' + state.gamification.masteredCount + ' / ' + totalItems + '</div>' +
-      '<div class="big-metric-label">Wörter gemeistert (auch ohne Niqqud abrufbar)</div>' +
+      '<div class="big-metric-num">' + state.gamification.masteredCount + ' / ' + unlockedItemCount() + '</div>' +
+      '<div class="big-metric-label">Wörter gemeistert · in deinen Leveln<br>' +
+      '<span class="h2-sub">insgesamt ' + totalItems + ' Wörter</span></div>' +
       '</section>' +
       (function () {
         // Survival-Check ehrlich einordnen: vor ~30 gemeisterten A0-Woertern
@@ -1207,7 +1448,7 @@
       }).join("") +
       '</div></section>' +
       '<h2 class="h2">Themen <span class="h2-sub">· antippen zum gezielten Üben</span></h2>' +
-      '<div class="theme-list">' + CONTENT.themes.map(themeRowHtml).join("") + '</div>' +
+      '<div class="theme-list">' + themeListHtml() + '</div>' +
       '<h2 class="h2">Daten</h2>' +
       '<section class="card"><div class="data-actions">' +
       '<button class="btn" id="btn-export">📤 Export</button>' +
@@ -1230,6 +1471,7 @@
       });
     });
     wireThemeRows(app);
+    wireLockedSummary(app);
   }
 
   function renderProfile() {
@@ -1258,6 +1500,22 @@
       '<div class="setting-sub">Aussprache automatisch abspielen</div></div>' +
       '<input type="checkbox" id="autoplay-chk"' + (p.autoplay ? " checked" : "") + '></div>' +
       '</section>' +
+      '<h2 class="h2">Inhalt &amp; Level</h2>' +
+      '<section class="card">' +
+      '<div class="setting-row"><div><div class="setting-label">Inhalts-Level</div>' +
+      '<div class="setting-sub">Bis zu welchem Niveau Themen erscheinen. „Automatisch“ schaltet mit deinem Fortschritt frei.</div></div>' +
+      '<select id="level-sel">' +
+      LEVEL_CAPS.map(function (v) { return opt(v, v === "auto" ? "Automatisch" : v, p.levelCap); }).join("") +
+      '</select></div>' +
+      (p.levelCap !== "auto" && bandIndex(p.levelCap) < bandIndex(p.unlockedBand) ?
+        '<div class="setting-sub" style="margin-top:-4px;color:var(--accent)">Du siehst gerade weniger, ' +
+        'als du schon freigeschaltet hast (' + esc(p.levelCap) + ' &lt; ' + esc(p.unlockedBand) + ').</div>' : '') +
+      '<div class="kv-row"><span>Erreichtes Level</span><b>' + esc(p.unlockedBand) + '</b></div>' +
+      '<div class="setting-row"><div><div class="setting-label">Einstufungstest</div>' +
+      '<div class="setting-sub">Schon Vorkenntnisse? Lass dich passend einstufen.' +
+      (p.placementDone ? ' (bereits gemacht)' : '') + '</div></div>' +
+      '<button class="btn" id="btn-placement">Starten</button></div>' +
+      '</section>' +
       '<section class="card">' +
       '<div class="kv-row"><span>Hebräische Stimme (Vorlesen)</span><b>' +
       (TTS.available ? (TTS.hasHebrew() ? "✓ gefunden" : "keine gefunden") : "nicht verfügbar") + '</b></div>' +
@@ -1273,13 +1531,27 @@
       '<div class="kv-row"><span>Streak-Freezes übrig</span><b>❄️ ' + freezesAvailable() + '</b></div>' +
       '</section>' +
       '<h2 class="h2">Daten</h2>' +
-      '<section class="card"><div class="data-actions">' +
+      '<section class="card">' +
+      '<div class="data-actions data-grid">' +
       '<button class="btn" id="btn-export">📤 Export</button>' +
       '<button class="btn" id="btn-import">📥 Import</button>' +
-      '<button class="btn danger" id="btn-reset">🗑 Zurücksetzen</button>' +
+      '<button class="btn" id="btn-sync-copy">🔗 Sync-Code kopieren</button>' +
+      '<button class="btn" id="btn-sync-paste">📋 Sync-Code einfügen</button>' +
       '</div>' +
-      '<p class="setting-sub" style="margin:12px 0 0">Dein Fortschritt liegt nur auf diesem Gerät (localStorage). ' +
-      'Mit Export/Import nimmst du ihn als Datei mit.</p></section>' +
+      '<p class="setting-sub" style="margin:12px 0 0">Dein Fortschritt liegt nur auf diesem Gerät. ' +
+      'Per Datei (Export/Import) oder Sync-Code nimmst du ihn mit – beim Einspielen kannst du ' +
+      'zusammenführen statt ersetzen. Tipp: Die Export-Datei kann auch in einem ' +
+      'OneDrive-/Google-Drive-Ordner liegen.</p>' +
+      '<p class="setting-sub" style="margin:8px 0 0">Der Sync-Code enthält deinen gesamten ' +
+      'Lernfortschritt und landet in der Zwischenablage – auf Geräten mit Cloud-Zwischenablage ' +
+      '(Windows/Android) kann er dabei synchronisiert werden.</p>' +
+      '<p class="setting-sub" style="margin:8px 0 0"><b>Datenschutz:</b> Alle Lerndaten bleiben im ' +
+      'localStorage dieses Geräts. Kein Server, keine Konten, keine Telemetrie. Einzige Ausnahme ist ' +
+      'die Spracherkennung im Sprechen-Modus (Cloud des Browser-Herstellers, siehe Hinweis vor der ' +
+      'ersten Aufnahme). Über Export und Zurücksetzen hast du die volle Kontrolle über deine Daten.</p>' +
+      '<div class="data-actions" style="margin-top:14px">' +
+      '<button class="btn danger" id="btn-reset">🗑 Zurücksetzen</button>' +
+      '</div></section>' +
       '<div class="footer-tag">Tacheles · Version ' + esc(CONTENT.version) + ' · Reden wir Tacheles. 🕊️</div>';
     $("#goal-sel").addEventListener("change", function (e) {
       state.profile.dailyGoalMin = parseInt(e.target.value, 10) || 5;
@@ -1293,9 +1565,17 @@
       state.profile.autoplay = !!e.target.checked;
       saveState();
     });
+    $("#level-sel").addEventListener("change", function (e) {
+      state.profile.levelCap = LEVEL_CAPS.indexOf(e.target.value) >= 0 ? e.target.value : "auto";
+      saveState();
+      renderProfile(); // Sub-Zeile "Erreichtes Level" bleibt, Gating wirkt sofort
+    });
+    $("#btn-placement").addEventListener("click", function () { startPlacement(false); });
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
     $("#btn-reset").addEventListener("click", resetProgress);
+    $("#btn-sync-copy").addEventListener("click", copySyncCode);
+    $("#btn-sync-paste").addEventListener("click", pasteSyncCode);
   }
 
   /* ==========================================================
@@ -1307,7 +1587,8 @@
   var MODE_TITLES = {
     smart: "Smart-Session", flash: "Karten", mc: "Multiple Choice", match: "Paare",
     swipe: "Wisch", reels: "Reels", signs: "Schilder lesen", listen: "Hören", speak: "Sprechen",
-    dialog: "Dialog", build: "Satzbau", image: "Bilder", blitz: "Blitz", audio: "Audio-Kurs"
+    dialog: "Dialog", build: "Satzbau", image: "Bilder", blitz: "Blitz", audio: "Audio-Kurs",
+    module: "Modul"
   };
 
   function startSession(modeId, opts) {
@@ -1343,7 +1624,7 @@
       // Dialog-Modus: erst Gespraech waehlen, dann Zeile fuer Zeile durchspielen.
       session.dialogue = null;
       session.lineIdx = 0;
-      if (!(CONTENT.dialogues || []).length) { session = null; toast("Keine Dialoge vorhanden."); return; }
+      if (!unlockedDialogues().length) { session = null; toast("Keine Dialoge vorhanden."); return; }
     } else if (modeId === "exam") {
       // Survival-Check: 12 zufaellige A0-Vokabeln, Lesen ohne Stuetzraeder.
       // Geprueft wird nur, was schon einmal gelernt wurde — sonst ist es Raten,
@@ -1394,6 +1675,14 @@
         session.feed = null;
         session.reelsSize = size;
       }
+    } else if (modeId === "module") {
+      // Modul: gefuehrte Mini-Lektion, linearer Schritt-Ablauf (kein Task-Mix).
+      var mod = moduleById(opts.moduleId);
+      if (!mod || !mod.steps || !mod.steps.length) { session = null; toast("Modul nicht gefunden."); return; }
+      session.module = mod;
+      session.steps = mod.steps.slice();
+      session.stepIdx = 0;
+      session.label = (mod.emoji || "📚") + " " + mod.title;
     } else {
       // Schilder-Modus: nur Schilder. Sprechen: keine Einzelbuchstaben. Satzbau: nur Saetze.
       // Bilder: nur Items mit Emoji. Blitz: schnelle MC-Runde gegen die Uhr.
@@ -1533,6 +1822,7 @@
     if (m === "reels") return renderReel();
     if (m === "dialog") return renderDialog();
     if (m === "audio") return renderAudio();
+    if (m === "module") return renderModuleStep();
     return renderTask();
   }
 
@@ -1984,40 +2274,74 @@
     let_tsadi:  ["let_ayin"]
   };
 
+  /**
+   * Distraktoren, die mit wachsender Sicherheit haerter werden:
+   *  1. Buchstaben -> optische Verwechsler zuerst (siehe CONFUSABLES).
+   *  2. Gegenteil (item.opposite) IMMER als klassische Falle, wenn gueltig.
+   *  3. Rest der Typ-Gruppe, nach Aehnlichkeit zur Loesung bewertet.
+   * Ab mastery >= 2 werden die AEHNLICHSTEN Distraktoren genommen (mit etwas
+   * Zufall), damit man nicht mehr "an der Wortlaenge" raten kann. Frueher
+   * (mastery <= 1) bleibt es freundlich (gleiches Thema, sonst Zufall).
+   */
+  function wordCount(s) { return String(s || "").trim().split(/\s+/).length; }
+
+  function distractorScore(item, c) {
+    var s = 0;
+    var dw = wordCount(item.de), cw = wordCount(c.de);
+    if (cw === dw) s += 3; else if (Math.abs(cw - dw) === 1) s += 1;
+    if (wordCount(c.he) === wordCount(item.he)) s += 2;
+    if (Math.abs((c.he || "").length - (item.he || "").length) <= 2) s += 2;
+    if (c.theme === item.theme) s += 2;
+    if ((c.he || "").charAt(0) === (item.he || "").charAt(0)) s += 1;
+    return s;
+  }
+
   function pickDistractors(item, n) {
     var seenDe = {}, seenHe = {};
     seenDe[item.de] = true;
     seenHe[item.he] = true;
     var out = [];
-    // Buchstaben: zuerst die Verwechsler (aehnlich aussehende Buchstaben)
+    function tryAdd(c) {
+      if (!c || c.id === item.id || out.length >= n) return;
+      if (seenDe[c.de] || seenHe[c.he]) return;
+      seenDe[c.de] = true; seenHe[c.he] = true;
+      out.push(c);
+    }
+    // 1. Buchstaben: zuerst die Verwechsler (aehnlich aussehende Buchstaben)
     if (item.type === "letter" && CONFUSABLES[item.id]) {
-      CONFUSABLES[item.id].forEach(function (cid) {
-        if (out.length >= n) return;
-        var c = itemById(cid);
-        if (c && !seenDe[c.de] && !seenHe[c.he]) {
-          seenDe[c.de] = true; seenHe[c.he] = true;
-          out.push(c);
-        }
+      CONFUSABLES[item.id].forEach(function (cid) { tryAdd(itemById(cid)); });
+    }
+    // 2. Gegenteil immer einbauen (beide Richtungen der klassischen Falle);
+    // defensiv nur innerhalb derselben Typ-Gruppe (Satz nie als Wort-Option).
+    if (item.opposite) {
+      var oppo = itemById(item.opposite);
+      if (oppo && typeGroup(oppo.type) === typeGroup(item.type)) tryAdd(oppo);
+    }
+
+    var grp = typeGroup(item.type);
+    var pool = CONTENT.items.filter(function (x) {
+      return x.id !== item.id && typeGroup(x.type) === grp && !seenDe[x.de] && !seenHe[x.he];
+    });
+
+    if (getMastery(item.id) >= 2) {
+      // 3a. Schwerer: nach Aehnlichkeit sortiert (+ kleiner Jitter) die Top-n.
+      var scored = pool.map(function (c) { return { c: c, s: distractorScore(item, c) + Math.random() }; });
+      scored.sort(function (a, b) { return b.s - a.s; });
+      for (var i = 0; i < scored.length && out.length < n; i++) tryAdd(scored[i].c);
+    } else {
+      // 3b. Freundlich: gleiches Thema zuerst, dann Rest, jeweils zufaellig.
+      var same = shuffle(pool.filter(function (x) { return x.theme === item.theme; }).slice());
+      var other = shuffle(pool.filter(function (x) { return x.theme !== item.theme; }).slice());
+      [same, other].forEach(function (src) {
+        for (var j = 0; j < src.length && out.length < n; j++) tryAdd(src[j]);
       });
     }
-    var grp = typeGroup(item.type);
-    var pool = CONTENT.items.filter(function (x) { return x.id !== item.id && typeGroup(x.type) === grp; });
-    var same = shuffle(pool.filter(function (x) { return x.theme === item.theme; }).slice());
-    var other = shuffle(pool.filter(function (x) { return x.theme !== item.theme; }).slice());
-    [same, other].forEach(function (src) {
-      for (var i = 0; i < src.length && out.length < n; i++) {
-        var c = src[i];
-        if (seenDe[c.de] || seenHe[c.he]) continue;
-        seenDe[c.de] = true; seenHe[c.he] = true;
-        out.push(c);
-      }
-    });
-    // Notfall-Auffuellung, falls die Gruppe zu klein ist (sollte nicht passieren).
+    // 5. Notfall-Auffuellung, falls die Gruppe zu klein ist (sollte nicht passieren).
     if (out.length < n) {
       var rest = shuffle(CONTENT.items.filter(function (x) {
         return x.id !== item.id && !seenDe[x.de] && !seenHe[x.he];
       }).slice());
-      for (var j = 0; j < rest.length && out.length < n; j++) out.push(rest[j]);
+      for (var k = 0; k < rest.length && out.length < n; k++) tryAdd(rest[k]);
     }
     return out;
   }
@@ -2186,6 +2510,31 @@
 
   /* ---------- 11d. Sprechen ---------- */
 
+  /**
+   * Einmaliger Hinweis vor der ERSTEN Sprachaufnahme: die Browser-eigene
+   * Spracherkennung (Chrome/Edge) schickt die Aufnahme in die Cloud des
+   * Browser-Herstellers. Erst nach Bestaetigung wird STT.listen gestartet;
+   * danach nie wieder gezeigt.
+   */
+  function showSttNotice(onConfirm) {
+    var o = buildOverlay("🎤 Spracherkennung");
+    o.box.appendChild(el("div", "overlay-text",
+      "🎤 Hinweis: Die Spracherkennung von Chrome/Edge sendet deine Sprachaufnahme " +
+      "zur Auswertung an einen Dienst des Browser-Herstellers (meist Google). " +
+      "Die Aufnahme wird von Tacheles nicht gespeichert. Ohne Mikrofon kannst du " +
+      "dich mit '✓ Konnte ich' / '✗ Noch nicht' selbst bewerten."));
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn("Verstanden, aufnehmen", "btn primary big", function () {
+      state.profile.sttNoticeConfirmed = true;
+      saveState();
+      o.close();
+      if (onConfirm) onConfirm();
+    }));
+    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
+  }
+
   function renderSpeak(task, title) {
     var body = sessionShell(title, session.i / session.tasks.length);
     var item = task.item;
@@ -2217,6 +2566,12 @@
     if (STT.available()) {
       var mic = btn("🎤 Jetzt sprechen", "btn big mic-btn", function () {
         if (answered) return;
+        // Vor der ERSTEN Aufnahme einmalig ueber die Cloud-Erkennung aufklaeren.
+        if (!state.profile.sttNoticeConfirmed) { showSttNotice(startListen); return; }
+        startListen();
+      });
+      function startListen() {
+        if (answered) return;
         mic.classList.add("recording");
         status.className = "stt-status";
         status.textContent = "Ich höre zu … sprich jetzt.";
@@ -2246,7 +2601,7 @@
             status.appendChild(document.createTextNode(" – probier’s nochmal oder bewerte selbst."));
           }
         });
-      });
+      }
       body.appendChild(mic);
       // Auf file:// merkt sich der Browser die Mikrofon-Erlaubnis nicht (fragt
       // pro Wort neu). Ueber localhost (Tacheles-starten.cmd) nur einmal.
@@ -2651,13 +3006,20 @@
     return b;
   }
 
+  /** Dialoge des freigeschalteten Level-Bereichs (Dialoge ohne band sind immer offen). */
+  function unlockedDialogues() {
+    return (CONTENT.dialogues || []).filter(function (d) {
+      return !d.band || bandUnlocked(d.band);
+    });
+  }
+
   function renderDialog() {
-    // Schritt 1: Gespraech auswaehlen
+    // Schritt 1: Gespraech auswaehlen (nur freigeschaltete Level, wie beim Pfad)
     if (!session.dialogue) {
       var body = sessionShell("Dialog · wähle ein Gespräch", 0);
       body.appendChild(el("div", "task-question", "Welches Gespräch möchtest du üben?"));
       var list = el("div", "dlg-list");
-      CONTENT.dialogues.forEach(function (d) {
+      unlockedDialogues().forEach(function (d) {
         var card = el("button", "dlg-card");
         card.appendChild(el("span", "dlg-emoji", d.emoji));
         var info = el("div", "dlg-info");
@@ -2775,6 +3137,7 @@
     TTS.stop();
     STT.abort();
     checkAchievements();
+    maybeAdvanceBand(); // Level-Aufstieg pruefen (Gold-Toast bei neuem Band)
     saveState();
     renderDone(stats);
     celebrate();
@@ -2967,7 +3330,7 @@
       wrap.appendChild(pitch);
       wrap.appendChild(btn("Los geht’s →", "btn primary big", function () { renderOnboarding(2); }));
     } else if (step === 2) {
-      wrap.appendChild(el("div", "onb-step", "Schritt 1 von 2"));
+      wrap.appendChild(el("div", "onb-step", "Schritt 1 von 3"));
       wrap.appendChild(el("div", "onb-title small", "Wie viel Zeit pro Tag?"));
       wrap.appendChild(el("div", "onb-sub", "Ehrlich bleiben – dranbleiben schlägt Marathon. Du kannst es jederzeit ändern."));
       var goals = el("div", "onb-goals");
@@ -2979,14 +3342,25 @@
         b.addEventListener("click", function () {
           state.profile.dailyGoalMin = g[0];
           saveState();
-          renderOnboarding(3);
+          renderOnboarding("know");
         });
         goals.appendChild(b);
       });
       wrap.appendChild(goals);
+    } else if (step === "know") {
+      // Vorkenntnisse abfragen: bei null anfangen oder einstufen lassen.
+      wrap.appendChild(el("div", "onb-step", "Schritt 2 von 3"));
+      wrap.appendChild(el("div", "onb-title small", "Kennst du schon etwas Hebräisch?"));
+      wrap.appendChild(el("div", "onb-sub",
+        "Wenn du schon Wörter kannst, stufen wir dich passend ein. Sonst fangen wir gemütlich bei null an."));
+      // Anfaenger sind die Regel: "bei null anfangen" steht oben und primaer.
+      var nein = btn("Nein, ich fange bei null an", "btn primary big", function () { renderOnboarding(3); });
+      var ja = btn("Ja, einstufen lassen", "btn ghost big", function () { startPlacement(true); });
+      wrap.appendChild(nein);
+      wrap.appendChild(ja);
     } else {
       var shalom = itemById("shalom");
-      wrap.appendChild(el("div", "onb-step", "Schritt 2 von 2"));
+      wrap.appendChild(el("div", "onb-step", "Schritt 3 von 3"));
       wrap.appendChild(el("div", "onb-title small", "Dein erstes Wort 🎉"));
       var card = el("div", "card learn-card onb-word");
       var he = el("div", "he-text big", (shalom && shalom.niqqud) || "שָׁלוֹם");
@@ -3011,6 +3385,631 @@
     window.scrollTo(0, 0);
   }
 
+  /* ==========================================================
+   * 15. Einstufungstest (Placement)
+   * Eigenstaendiger Screen-Fluss (wie Onboarding, NICHT die Session-Engine).
+   * Pro Band A0..B2 vier MC-Fragen he->de in Ziel-Ansicht (ohne Stuetzraeder).
+   * Bestanden ab 3/4, Stopp beim ersten Fehlversuch. KEIN SRS/XP/Log.
+   * ========================================================== */
+
+  var placement = null;
+  var placementKeyHandler = null;
+
+  function setPlacementKeys(fn) {
+    clearPlacementKeys();
+    placementKeyHandler = fn;
+    if (fn) document.addEventListener("keydown", fn);
+  }
+  function clearPlacementKeys() {
+    if (placementKeyHandler) {
+      document.removeEventListener("keydown", placementKeyHandler);
+      placementKeyHandler = null;
+    }
+  }
+
+  function startPlacement(fromOnboarding) {
+    cleanupSession();
+    placement = { fromOnboarding: !!fromOnboarding, bandIdx: 0, highestPassed: -1 };
+    document.body.classList.add("in-session");
+    placementNextBand();
+  }
+
+  function placementNextBand() {
+    if (!placement) return;
+    if (placement.bandIdx >= BANDS.length) return placementFinish();
+    var band = BANDS[placement.bandIdx];
+    var pool = CONTENT.items.filter(function (it) {
+      return itemBand(it) === band && (it.type === "word" || it.type === "phrase");
+    });
+    // Zu wenig Material fuer diese Stufe (z. B. Band noch ohne Inhalte): Test endet.
+    if (pool.length < 4) return placementFinish();
+    placement.band = band;
+    placement.pool = pool;
+    placement.questions = shuffle(pool.slice()).slice(0, 4);
+    placement.q = 0;
+    placement.correct = 0;
+    renderPlacementQuestion();
+  }
+
+  function renderPlacementQuestion() {
+    var p = placement;
+    var item = p.questions[p.q];
+    var app = $("#app");
+    app.innerHTML = "";
+    var wrap = el("div", "onb placement");
+    // Ausweg statt Sackgasse: Abbrechen fuehrt zurueck, ohne etwas zu veraendern.
+    var head = el("div", "session-head");
+    var quit = btn("✕", "quit-btn", function () {
+      var fromOnb = p.fromOnboarding;
+      clearPlacementKeys();
+      placement = null;
+      if (fromOnb) {
+        renderOnboarding("know");
+      } else {
+        document.body.classList.remove("in-session");
+        showScreen("profile");
+      }
+    });
+    quit.title = "Einstufung abbrechen";
+    head.appendChild(quit);
+    // Gesamtfortschritt ueber alle Baender (max. 5 Stufen), damit klar ist, wie weit es noch geht.
+    var info = el("div", "session-info");
+    var barWrap = el("div", "bar mini");
+    var barFill = el("div", "bar-fill");
+    barFill.style.width = Math.round(p.bandIdx / BANDS.length * 100) + "%";
+    barWrap.appendChild(barFill);
+    info.appendChild(barWrap);
+    head.appendChild(info);
+    wrap.appendChild(head);
+    wrap.appendChild(el("div", "onb-step", "Einstufung · Level " + p.band));
+    wrap.appendChild(el("div", "placement-progress", "Frage " + (p.q + 1) + " von " + p.questions.length));
+    wrap.appendChild(el("div", "onb-title small", "Was bedeutet das?"));
+    var card = el("div", "card learn-card");
+    var he = el("div", "he-text big", item.he); // Ziel-Ansicht: keine Niqqud-/Umschrift-Hilfe
+    he.dir = "rtl"; he.lang = "he";
+    card.appendChild(he);
+    wrap.appendChild(card);
+
+    // Optionen: richtig + bis zu 3 aus demselben Band. Distraktoren werden auch
+    // untereinander dedupliziert (nach de UND he), damit keine zwei Optionen
+    // denselben Text tragen (seen-set-Muster wie moduleFillDistractors).
+    var seenDe = {}, seenHe = {}, distr = [];
+    seenDe[item.de] = true; seenHe[item.he] = true;
+    shuffle(p.pool.slice()).forEach(function (x) {
+      if (distr.length >= 3) return;
+      if (x.id === item.id || seenDe[x.de] || seenHe[x.he]) return;
+      seenDe[x.de] = true; seenHe[x.he] = true;
+      distr.push(x);
+    });
+    var options = shuffle([item].concat(distr));
+    var list = el("div", "opt-list");
+    var done = false;
+    options.forEach(function (opt) {
+      var b = el("button", "opt", opt.de);
+      b.dataset.itemId = opt.id;
+      b.addEventListener("click", function () {
+        if (done) return;
+        done = true;
+        var correct = opt.id === item.id;
+        list.querySelectorAll(".opt").forEach(function (ob) { ob.disabled = true; ob.classList.add("dim"); });
+        b.classList.remove("dim");
+        if (correct) { b.classList.add("correct"); p.correct++; }
+        else {
+          b.classList.add("wrong");
+          list.querySelectorAll(".opt").forEach(function (ob) {
+            if (ob.dataset.itemId === item.id) { ob.classList.add("correct"); ob.classList.remove("dim"); }
+          });
+        }
+        // Bewusst KEIN recordAnswer/SRS/XP/Log — reine Diagnose.
+        setTimeout(placementAnswerNext, correct ? 650 : 1100);
+      });
+      list.appendChild(b);
+    });
+    wrap.appendChild(list);
+
+    // "Weiß ich nicht": zaehlt als Fehlversuch, geht sofort weiter (weniger Rate-Glueck).
+    var unsure = btn("Weiß ich nicht", "btn ghost", function () {
+      if (done) return;
+      done = true;
+      list.querySelectorAll(".opt").forEach(function (ob) { ob.disabled = true; ob.classList.add("dim"); });
+      list.querySelectorAll(".opt").forEach(function (ob) {
+        if (ob.dataset.itemId === item.id) { ob.classList.add("correct"); ob.classList.remove("dim"); }
+      });
+      setTimeout(placementAnswerNext, 900);
+    });
+    unsure.style.marginTop = "6px";
+    wrap.appendChild(unsure);
+
+    app.appendChild(wrap);
+    setPlacementKeys(function (e) {
+      if (e.key >= "1" && e.key <= "4") {
+        var btns = list.querySelectorAll(".opt");
+        var t = btns[+e.key - 1];
+        if (t && !t.disabled) { e.preventDefault(); t.click(); }
+      }
+    });
+    window.scrollTo(0, 0);
+  }
+
+  function placementAnswerNext() {
+    var p = placement;
+    if (!p) return;
+    p.q++;
+    if (p.q < p.questions.length) return renderPlacementQuestion();
+    // Band ausgewertet: bestanden ab 3/4.
+    if (p.correct >= 3) {
+      p.highestPassed = p.bandIdx;
+      p.bandIdx++;
+      placementNextBand();
+    } else {
+      placementFinish();
+    }
+  }
+
+  function placementFinish() {
+    var p = placement;
+    clearPlacementKeys();
+    // Ergebnis-Band = Band NACH dem hoechsten bestandenen (max B2),
+    // aber nie unter dem aktuellen Stand (Einstufung nimmt nichts weg).
+    var resultIdx;
+    if (p.highestPassed < 0) resultIdx = bandIndex("A1"); // A0 nicht bestanden -> Default A1
+    else resultIdx = Math.min(p.highestPassed + 1, BANDS.length - 1);
+    resultIdx = Math.max(resultIdx, bandIndex(state.profile.unlockedBand));
+    var band = BANDS[resultIdx];
+    var passedBand = p.highestPassed >= 0 ? BANDS[p.highestPassed] : null;
+    state.profile.unlockedBand = band;
+    state.profile.placementDone = true;
+    saveState();
+    renderPlacementResult(band, passedBand);
+  }
+
+  function renderPlacementResult(band, passedBand) {
+    var fromOnb = placement && placement.fromOnboarding;
+    placement = null;
+    var app = $("#app");
+    app.innerHTML = "";
+    var wrap = el("div", "onb");
+    wrap.appendChild(el("div", "onb-logo", "🎯"));
+    wrap.appendChild(el("div", "onb-title small", "Einstufung fertig"));
+    wrap.appendChild(el("div", "onb-sub",
+      passedBand
+        ? "Stark – Level " + passedBand + " sitzt schon! Du startest mit Level " + band +
+          ", passende Themen sind jetzt frei."
+        : "Wir fangen gemütlich vorne an. Die Themen der Level A0 und A1 sind offen, " +
+          "weitere schalten sich frei, während du lernst."));
+    wrap.appendChild(btn("Und los! 🚀", "btn primary big", function () {
+      if (fromOnb) {
+        renderOnboarding(3); // zurueck in den Onboarding-Fluss: Shalom-Karte
+      } else {
+        document.body.classList.remove("in-session");
+        showScreen("profile");
+        toast("Level gesetzt: " + band);
+      }
+    }));
+    app.appendChild(wrap);
+    window.scrollTo(0, 0);
+  }
+
+  /* ==========================================================
+   * 16. Module-Runner (gefuehrte Mini-Lektionen)
+   * Schrittarten: explain (Lehrkarte), teach (Vorstellungskarte, keine Wertung),
+   * quiz (MC he->de mit FESTEN Distraktoren), pairquiz (de-Frage, he-Optionen,
+   * Gegenteil garantiert dabei). recordAnswer als "mc" fuer quiz/pairquiz.
+   * ========================================================== */
+
+  function moduleStepNext() {
+    if (!session) return;
+    session.stepIdx++;
+    renderModuleStep();
+  }
+
+  function renderModuleStep() {
+    var s = session;
+    if (!s) return;
+    var step = s.steps[s.stepIdx];
+    if (!step) {
+      // Modul komplett: Zaehler setzen, dann normaler Abschluss-Screen.
+      state.gamification.counters.modulesDone[s.module.id] = true;
+      saveState();
+      return endSession();
+    }
+    setOptKeys(null);
+    var title = s.label + " · " + (s.stepIdx + 1) + "/" + s.steps.length;
+    if (step.type === "explain") return renderModuleExplain(step, title);
+    if (step.type === "teach") return renderModuleTeach(step, title);
+    if (step.type === "pairquiz") return renderModulePairQuiz(step, title);
+    return renderModuleQuiz(step, title);
+  }
+
+  function moduleContinueBtn(body) {
+    var go = btn("Weiter →", "btn primary big", moduleStepNext);
+    body.appendChild(go);
+    setOptKeys(function (ev) {
+      if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); go.click(); }
+    });
+  }
+
+  function renderModuleExplain(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    // Lehr-Schritte vergeben keine XP: den "⭐"-Zaehler leer lassen (erst ab Quiz).
+    var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
+    if (step.title) body.appendChild(el("div", "task-question", step.title));
+    var card = el("div", "card module-explain");
+    if (step.text) card.appendChild(el("p", "module-text", step.text));
+    body.appendChild(card);
+    if (step.examples && step.examples.length) {
+      var ex = el("div", "module-examples");
+      step.examples.forEach(function (e) {
+        // RTL-App: Hebraeisch rechts, Umschrift/Bedeutung links, 🔊 auf der Meta-Seite.
+        var row = el("div", "module-example");
+        var he = el("span", "module-ex-he", e.he);
+        he.dir = "rtl"; he.lang = "he";
+        row.appendChild(he);
+        row.appendChild(el("span", "module-ex-meta",
+          (e.translit || "") + (e.de ? " · " + e.de : "")));
+        var say = btn("🔊", "icon-btn small-btn", function (ev) {
+          ev.stopPropagation();
+          if (e.he) TTS.speak(e.he);
+        });
+        say.title = "Anhören";
+        row.appendChild(say);
+        if (e.he) row.addEventListener("click", function () { TTS.speak(e.he); });
+        ex.appendChild(row);
+      });
+      body.appendChild(ex);
+    }
+    moduleContinueBtn(body);
+  }
+
+  function renderModuleTeach(step, title) {
+    var item = itemById(step.itemId);
+    if (!item) return moduleStepNext();
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    // Vorstellungs-Schritt vergibt keine XP: "⭐"-Zaehler leer lassen (erst ab Quiz).
+    var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
+    body.appendChild(el("div", "intro-tag", INTRO_TAGS[item.type] || INTRO_TAGS.word));
+    var card = el("div", "card learn-card intro-card");
+    if (item.emoji) card.appendChild(el("div", "intro-emoji", item.emoji));
+    card.appendChild(heEl(item, { big: true, tapReveal: false }));
+    if (item.type === "sign") card.appendChild(el("div", "translit", item.translit));
+    card.appendChild(el("div", "de-prompt", item.de));
+    if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
+    card.appendChild(speakRow(item, true));
+    body.appendChild(card);
+    if (state.profile.autoplay) TTS.speak(spoken(item));
+    moduleContinueBtn(body);
+  }
+
+  /** Options-UI fuer Module: explizite Distraktoren, verbucht als "mc",
+   *  geht danach zum naechsten Schritt (kein Task-Requeue). */
+  function moduleOptionButtons(body, item, distractors, optionKind, afterAnswer) {
+    var options = shuffle([item].concat(distractors.slice(0, 3)));
+    var list = el("div", "opt-list");
+    var done = false;
+    options.forEach(function (opt) {
+      var isHe = optionKind === "he";
+      var b = el("button", "opt" + (isHe ? " he-opt" : ""), isHe ? heOptionText(opt) : opt.de);
+      if (isHe) { b.dir = "rtl"; b.lang = "he"; }
+      b.dataset.itemId = opt.id;
+      b.addEventListener("click", function () {
+        if (done) return;
+        done = true;
+        var correct = opt.id === item.id;
+        list.querySelectorAll(".opt").forEach(function (ob) { ob.disabled = true; ob.classList.add("dim"); });
+        b.classList.remove("dim");
+        if (correct) b.classList.add("correct");
+        else {
+          b.classList.add("wrong");
+          list.querySelectorAll(".opt").forEach(function (ob) {
+            if (ob.dataset.itemId === item.id) { ob.classList.add("correct"); ob.classList.remove("dim"); }
+          });
+        }
+        recordAnswer(item.id, "mc", correct ? "good" : "again");
+        if (afterAnswer) afterAnswer(correct);
+        if (correct) later(moduleStepNext, 1000);
+        else {
+          var cont = btn("Weiter", "btn primary big", moduleStepNext);
+          cont.dataset.k = "cont";
+          body.appendChild(cont);
+          cont.focus();
+        }
+      });
+      list.appendChild(b);
+    });
+    body.appendChild(list);
+    setOptKeys(function (e) {
+      if (!session) return;
+      if (e.key >= "1" && e.key <= "4") {
+        var btns = list.querySelectorAll(".opt");
+        var target = btns[+e.key - 1];
+        if (target && !target.disabled) { e.preventDefault(); target.click(); }
+      } else if (e.key === "Enter" || e.key === " ") {
+        var cont2 = body.querySelector('[data-k="cont"]');
+        if (cont2) { e.preventDefault(); cont2.click(); }
+      }
+    });
+  }
+
+  /** Baut bis zu 3 Distraktoren: erst feste IDs, dann mit Score aufgefuellt. */
+  function moduleFillDistractors(item, fixedIds) {
+    var seenDe = {}, seenHe = {}, out = [];
+    seenDe[item.de] = true; seenHe[item.he] = true;
+    (fixedIds || []).forEach(function (did) {
+      if (out.length >= 3) return;
+      var d = itemById(did);
+      if (d && d.id !== item.id && !seenDe[d.de] && !seenHe[d.he]) {
+        seenDe[d.de] = true; seenHe[d.he] = true; out.push(d);
+      }
+    });
+    if (out.length < 3) {
+      var fill = pickDistractors(item, 3);
+      for (var i = 0; i < fill.length && out.length < 3; i++) {
+        var f = fill[i];
+        if (!seenDe[f.de] && !seenHe[f.he]) { seenDe[f.de] = true; seenHe[f.he] = true; out.push(f); }
+      }
+    }
+    return out;
+  }
+
+  function renderModuleQuiz(step, title) {
+    var item = itemById(step.itemId);
+    if (!item) return moduleStepNext();
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    body.appendChild(el("div", "task-question", "Was bedeutet das?"));
+    var card = el("div", "card learn-card");
+    card.appendChild(heEl(item, { big: true, showHint: true, quiz: true }));
+    card.appendChild(speakRow(item));
+    body.appendChild(card);
+    var feedback = el("div", "feedback-note");
+    moduleOptionButtons(body, item, moduleFillDistractors(item, step.distractorIds), "de", function (correct) {
+      if (!correct) feedback.textContent = "Richtig wäre: " + item.de;
+      else if (item.note) feedback.textContent = "Hinweis: " + item.note;
+    });
+    body.appendChild(feedback);
+  }
+
+  function renderModulePairQuiz(step, title) {
+    var item = itemById(step.itemId);
+    if (!item) return moduleStepNext();
+    var pair = itemById(step.pairId);
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    body.appendChild(el("div", "task-question", "Was heißt „" + item.de + "“?"));
+    // Optionen auf Hebraeisch: richtig + Gegenteil (garantiert) + Auffuellung.
+    var fixed = (pair && pair.id !== item.id) ? [pair.id] : [];
+    var distractors = moduleFillDistractors(item, fixed);
+    var feedback = el("div", "feedback-note");
+    moduleOptionButtons(body, item, distractors, "he", function (correct) {
+      if (!correct) feedback.textContent = "Richtig ist: " + item.he + " (" + item.de + ")";
+      else if (state.profile.autoplay) TTS.speak(spoken(item));
+    });
+    body.appendChild(feedback);
+  }
+
+  /* ==========================================================
+   * 17. Sync: Merge-Import, Sync-Code (Base64), Import-Overlay
+   * ========================================================== */
+
+  /**
+   * Zwei Zustaende zu EINEM verschmelzen (verlustarm):
+   *  - srs: pro Item spaeteres lastReviewTs gewinnt (bei Gleichstand mehr reps).
+   *  - log: pro Tag feldweises Max, goalMet per ODER.
+   *  - gamification: xp/answers max, achievements/frozenDays/counters vereinigt.
+   *  - profile: lokale Einstellungen bleiben; onboarded/placementDone per ODER,
+   *    unlockedBand das weitere von beiden, levelCap lokal.
+   */
+  function mergeStates(local, imported) {
+    var a = normalizeState(local);
+    var b = normalizeState(imported);
+    var m = defaultState();
+
+    // srs
+    var ids = {}, srs = {};
+    Object.keys(a.srs).forEach(function (k) { ids[k] = 1; });
+    Object.keys(b.srs).forEach(function (k) { ids[k] = 1; });
+    Object.keys(ids).forEach(function (id) {
+      var ea = a.srs[id], eb = b.srs[id];
+      if (ea && !eb) { srs[id] = ea; return; }
+      if (eb && !ea) { srs[id] = eb; return; }
+      var la = ea.lastReviewTs || 0, lb = eb.lastReviewTs || 0;
+      if (la > lb) srs[id] = ea;
+      else if (lb > la) srs[id] = eb;
+      else srs[id] = (eb.reps || 0) > (ea.reps || 0) ? eb : ea;
+    });
+    m.srs = srs;
+
+    // log
+    var days = {}, log = {};
+    Object.keys(a.log).forEach(function (k) { days[k] = 1; });
+    Object.keys(b.log).forEach(function (k) { days[k] = 1; });
+    Object.keys(days).forEach(function (d) {
+      var da = a.log[d] || {}, db = b.log[d] || {};
+      var entry = {
+        answers: Math.max(da.answers || 0, db.answers || 0),
+        correct: Math.max(da.correct || 0, db.correct || 0),
+        xp: Math.max(da.xp || 0, db.xp || 0),
+        goalMet: !!(da.goalMet || db.goalMet)
+      };
+      var mastered = Math.max(da.mastered || 0, db.mastered || 0);
+      if (mastered) entry.mastered = mastered;
+      log[d] = entry;
+    });
+    m.log = log;
+
+    // gamification
+    var ga = a.gamification, gb = b.gamification;
+    m.gamification.xpTotal = Math.max(ga.xpTotal || 0, gb.xpTotal || 0);
+    m.gamification.answersTotal = Math.max(ga.answersTotal || 0, gb.answersTotal || 0);
+    var lad = [ga.lastActiveDay, gb.lastActiveDay].filter(Boolean).sort();
+    m.gamification.lastActiveDay = lad.length ? lad[lad.length - 1] : null;
+    var achSet = {};
+    (ga.achievements || []).concat(gb.achievements || []).forEach(function (x) { achSet[x] = 1; });
+    m.gamification.achievements = Object.keys(achSet);
+    // Vereinigung kann mehr verbrauchte Freezes ergeben, als EIN Geraet je
+    // verdient haette — bewusst akzeptiert: gerettete Tage bleiben gerettet,
+    // dafuer sinkt freezesAvailable() nach dem Merge eher auf 0.
+    var fz = {};
+    Object.keys(ga.frozenDays || {}).forEach(function (k) { fz[k] = true; });
+    Object.keys(gb.frozenDays || {}).forEach(function (k) { fz[k] = true; });
+    m.gamification.frozenDays = fz;
+    var ca = ga.counters, cb = gb.counters, mc = m.gamification.counters;
+    mc.bestBlitz = Math.max(ca.bestBlitz || 0, cb.bestBlitz || 0);
+    mc.bestExam = Math.max(ca.bestExam || 0, cb.bestExam || 0);
+    mc.sessionsDone = Math.max(ca.sessionsDone || 0, cb.sessionsDone || 0);
+    var unionObj = function (x, y) {
+      var o = {};
+      Object.keys(x || {}).forEach(function (k) { o[k] = true; });
+      Object.keys(y || {}).forEach(function (k) { o[k] = true; });
+      return o;
+    };
+    mc.dialogsDone = unionObj(ca.dialogsDone, cb.dialogsDone);
+    mc.modulesDone = unionObj(ca.modulesDone, cb.modulesDone);
+
+    // profile: lokale Geraete-Einstellungen behalten, Fortschritts-Flags verschmelzen
+    m.profile.dailyGoalMin = a.profile.dailyGoalMin;
+    m.profile.fadeMode = a.profile.fadeMode;
+    m.profile.autoplay = a.profile.autoplay;
+    m.profile.micHintDismissed = a.profile.micHintDismissed;
+    m.profile.levelCap = a.profile.levelCap;
+    m.profile.sttNoticeConfirmed = !!(a.profile.sttNoticeConfirmed || b.profile.sttNoticeConfirmed);
+    m.profile.onboarded = !!(a.profile.onboarded || b.profile.onboarded);
+    m.profile.placementDone = !!(a.profile.placementDone || b.profile.placementDone);
+    m.profile.unlockedBand = bandIndex(a.profile.unlockedBand) >= bandIndex(b.profile.unlockedBand)
+      ? a.profile.unlockedBand : b.profile.unlockedBand;
+
+    return normalizeState(m);
+  }
+
+  /** Import anwenden: zusammenfuehren oder ersetzen, dann neu berechnen. */
+  function applyImportedState(obj, mode) {
+    if (mode === "merge") state = mergeStates(state, obj);
+    else state = normalizeState(obj);
+    updateMasteredCount();
+    state.gamification.streakDays = recomputeStreak();
+    saveState();
+    showScreen(currentScreen);
+    toast(mode === "merge" ? "Fortschritt zusammengeführt 🔀" : "Fortschritt ersetzt 📥");
+  }
+
+  /**
+   * Modales Overlay mit Dialog-Semantik: role=dialog, aria-modal, aria-labelledby
+   * auf den Titel; Escape und Klick auf den Hintergrund schliessen. Gibt Container
+   * und eine close()-Funktion zurueck.
+   */
+  var overlayIdSeq = 0;
+  function buildOverlay(titleText) {
+    var id = "ov-title-" + (++overlayIdSeq);
+    var ov = el("div", "overlay");
+    ov.setAttribute("role", "dialog");
+    ov.setAttribute("aria-modal", "true");
+    ov.setAttribute("aria-labelledby", id);
+    var box = el("div", "overlay-box");
+    var title = el("div", "overlay-title", titleText);
+    title.id = id;
+    box.appendChild(title);
+    ov.appendChild(box);
+    function close() {
+      document.removeEventListener("keydown", onKey);
+      ov.remove();
+    }
+    function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
+    document.addEventListener("keydown", onKey);
+    // Klick auf den abgedunkelten Hintergrund (nicht die Box) schliesst.
+    ov.addEventListener("click", function (e) { if (e.target === ov) close(); });
+    return { ov: ov, box: box, title: title, close: close };
+  }
+
+  /** Overlay: Zusammenfuehren / Ersetzen / Abbrechen (statt bare confirm()). */
+  function showImportChoice(obj, onChoose) {
+    var o = buildOverlay("Fortschritt importieren");
+    o.box.appendChild(el("div", "overlay-text",
+      "Zusammenführen behält beides (empfohlen). Ersetzen überschreibt deinen aktuellen Fortschritt."));
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn("Zusammenführen (empfohlen)", "btn primary big", function () { o.close(); onChoose("merge"); }));
+    actions.appendChild(btn("Ersetzen", "btn ghost big", function () { o.close(); onChoose("replace"); }));
+    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
+  }
+
+  /** State als unicode-sicherer Base64-Code in die Zwischenablage. */
+  function copySyncCode() {
+    var code;
+    try { code = btoa(unescape(encodeURIComponent(JSON.stringify(state)))); }
+    catch (e) { toast("Sync-Code konnte nicht erzeugt werden."); return; }
+    var done = function () { toast("Sync-Code kopiert 🔗 – auf dem anderen Gerät einfügen."); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(done, function () { fallbackCopy(code, done); });
+    } else {
+      fallbackCopy(code, done);
+    }
+  }
+
+  /** Clipboard-Fallback fuer file:// (execCommand), sonst Code zum Abschreiben zeigen. */
+  function fallbackCopy(text, done) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { /* egal */ }
+    ta.remove();
+    if (ok) { if (done) done(); }
+    else showSyncCodeText(text);
+  }
+
+  function showSyncCodeText(code) {
+    var o = buildOverlay("Sync-Code");
+    o.box.appendChild(el("div", "overlay-text",
+      "Automatisches Kopieren ging nicht. Markiere den Code und kopiere ihn von Hand."));
+    var ta = el("textarea", "overlay-textarea");
+    ta.rows = 4; ta.value = code; ta.readOnly = true;
+    ta.setAttribute("aria-label", "Sync-Code");
+    ta.placeholder = "Code hier einfügen…";
+    o.box.appendChild(ta);
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn("Schließen", "btn primary big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
+    ta.focus(); ta.select();
+  }
+
+  /** Overlay mit Textfeld: Sync-Code einfuegen -> dekodieren -> Merge/Ersetzen-Overlay. */
+  function pasteSyncCode() {
+    var o = buildOverlay("Sync-Code einfügen");
+    o.box.appendChild(el("div", "overlay-text", "Füge den Sync-Code vom anderen Gerät ein."));
+    var ta = el("textarea", "overlay-textarea");
+    ta.rows = 4;
+    ta.setAttribute("aria-label", "Sync-Code");
+    ta.placeholder = "Code hier einfügen…";
+    o.box.appendChild(ta);
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn("Übernehmen", "btn primary big", function () {
+      var code = ta.value.trim();
+      if (!code) { toast("Kein Code eingegeben."); return; }
+      // Laengenlimit: ein echter Sync-Code bleibt klar darunter. Riesige
+      // Eingaben nicht dekodieren (kein Haenger bei Junk).
+      if (code.length > 1400000) { toast("Der Sync-Code ist ungültig."); return; }
+      var json, obj;
+      try { json = decodeURIComponent(escape(atob(code))); }
+      catch (e) { toast("Der Sync-Code ist ungültig."); return; }
+      try { obj = JSON.parse(json); }
+      catch (e2) { toast("Der Sync-Code ist ungültig."); return; }
+      if (!obj || typeof obj !== "object" || obj.version !== 1 || !obj.srs || typeof obj.srs !== "object") {
+        toast("Das ist kein gültiger Tacheles-Code.");
+        return;
+      }
+      if (Object.keys(obj.srs).length > 10000) { toast("Der Sync-Code ist ungültig."); return; }
+      o.close();
+      showImportChoice(obj, function (mode) { applyImportedState(obj, mode); });
+    }));
+    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
+    ta.focus();
+  }
+
   /* ---------- Init ---------- */
 
   function init() {
@@ -3030,6 +4029,9 @@
     if (state.profile.onboarded) showScreen("home");
     else renderOnboarding(1);
   }
+
+  // Kleine, lesbare Debug-Oberflaeche fuer den Regressionstest.
+  window.TACHELES_DEBUG = { mergeStates: mergeStates, BANDS: BANDS };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

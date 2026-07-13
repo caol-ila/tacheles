@@ -6,7 +6,7 @@
  */
 "use strict";
 
-var CACHE_NAME = "tacheles-v5";
+var CACHE_NAME = "tacheles-v7";
 var ASSETS = [
   "./",
   "./index.html",

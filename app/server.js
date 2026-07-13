@@ -37,12 +37,21 @@ var MIME = {
 };
 
 var server = http.createServer(function (req, res) {
-  var urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
+  // Fehlerhaft kodierte URLs (z. B. /%c0, /%ZZ, /%) werfen in
+  // decodeURIComponent — sauber mit 400 abfangen statt den Prozess zu killen.
+  var urlPath;
+  try {
+    urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
+  } catch (e) {
+    res.writeHead(400); res.end("Bad request"); return;
+  }
   if (urlPath === "/") urlPath = "/index.html";
 
   // Pfad sicher auf den App-Ordner begrenzen (kein ../ nach draussen).
+  // Entweder exakt der ROOT oder ein Kind davon (ROOT + Trennzeichen davor),
+  // damit ein Geschwister-Ordner mit gleichem Praefix nicht durchrutscht.
   var file = path.normalize(path.join(ROOT, urlPath));
-  if (file.indexOf(ROOT) !== 0) { res.writeHead(403); res.end("Forbidden"); return; }
+  if (file !== ROOT && file.indexOf(ROOT + path.sep) !== 0) { res.writeHead(403); res.end("Forbidden"); return; }
 
   fs.readFile(file, function (err, data) {
     if (err) { res.writeHead(404); res.end("Not found: " + urlPath); return; }
