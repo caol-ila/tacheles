@@ -10,11 +10,21 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
   Doppelklick auf `index.html` (file://) oder über `Tacheles-starten.cmd` (Node-Mini-Server auf
   http://localhost:8017 → Browser merkt sich Mikrofon-Erlaubnis, PWA installierbar).
 - Dateien: `index.html`, `app.js` (gesamte Logik, Sektions-Kommentare im Kopf), `content.js`
-  (~533 Items in 33 Themen mit Bändern A0–B2, 12 Dialoge, 6 Module, EMOJI-Map am Ende),
-  `styles.css`, `sw.js` (+`manifest`, `icon.svg`, `server.js`).
-- 13 Modi + Survival-Check + geführte Module (explain/teach/quiz/pairquiz) + Einstufungstest;
-  SRS (SM-2-artig) mit Niqqud-/Umschrift-Fade; alle Modi schreiben in EINEN Zustand pro Item.
-- **Level-System:** Themen haben `band` (A0–B2); Freischaltung progressiv (40 % gemeistert)
+  (~670 Items in ~41 Themen mit Bändern A0–C2, 14 Dialoge, EMOJI-Map am Ende), `grammar.js`
+  (Grammatik-Module, eigenes Global `TACHELES_GRAMMAR`), `styles.css`, `sw.js` (+`manifest`,
+  `icon.svg`, `server.js`).
+- **Grammatik in `grammar.js`:** eigenes Global `window.TACHELES_GRAMMAR = { version, modules }`;
+  `app.js` merged `modules` beim Init additiv in `CONTENT.modules` (defensiv: fehlendes Global ok,
+  doppelte Modul-IDs zugunsten content.js übersprungen). Ladeordnung in `index.html`:
+  content.js → grammar.js → app.js. `content.js` bleibt reiner Wortschatz.
+- **Module haben `group`:** ohne `group` = Sektion „📚 Module"; `group === "grammar"` = Sektion
+  „🧠 Grammatik" auf dem Lernen-Screen (beide band-gated, gleiche Kachel-UI).
+- 13 Modi + Survival-Check + geführte Module + Einstufungstest; Modul-Schritte:
+  `explain`/`teach`/`quiz`/`pairquiz` plus `cloze` (Lückensatz) und `form` (deutsche Aufgabe →
+  he-Form) für Grammatik. SRS (SM-2-artig) mit Niqqud-/Umschrift-Fade; alle Modi schreiben in
+  EINEN Zustand pro Item.
+- **Level-System:** Themen/Module haben `band` (A0–C2); `BANDS`/`LEVEL_CAPS` in app.js sind die
+  eine Quelle (`LEVEL_CAPS = ["auto"].concat(BANDS)`). Freischaltung progressiv (40 % gemeistert)
   oder per Profil-Override (`profile.levelCap`); Einstufungstest schreibt NIE SRS/XP.
 - **Sync:** Datei-Export/-Import (mit Zusammenführen), Clipboard-Sync-Code; Merge-Logik in
   `mergeStates` (für Tests via `window.TACHELES_DEBUG` exponiert).
@@ -24,9 +34,9 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
 ```
 cd app && node test/regression.cjs
 ```
-67 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
+82 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
 Default `c:/Source/SofaSuche/node_modules/playwright-core`). Nach JEDER Änderung laufen lassen;
-zusätzlich `node --check app.js content.js`.
+zusätzlich `node --check app.js content.js grammar.js`.
 
 ## Konventionen & Gotchas
 
@@ -41,7 +51,7 @@ zusätzlich `node --check app.js content.js`.
 - In Tests Onboarding überspringen: `profile.onboarded=true`, `autoplay=false`,
   `micHintDismissed=true` in localStorage seeden, dann reload.
 - **Service Worker:** bei Content-/Code-Release `CACHE_NAME` in `sw.js` hochzählen
-  (aktuell v6), sonst bekommen localhost-Nutzer alten Cache.
+  (aktuell v8) und `grammar.js` in `ASSETS` halten, sonst bekommen localhost-Nutzer alten Cache.
 - Hebräisch immer RTL (`dir="rtl"`, `lang="he"`); zentrale Anzeige via `heEl()` (respektiert
   Fade + Prüfungsmodus). TTS über `spoken(item)` (Buchstaben haben `speak` = Namen).
 - Neue Inhalte: Schema im Kopf von `content.js`; Niqqud/Umschrift sorgfältig, muttersprachliches

@@ -11,7 +11,7 @@ echten Content-Kern. Erst Wirkung, dann Breite.
 
 Alles darüber (Reels, Dialog, Sprechen, Audio-Kurs, Ligen) ist Ausbau.
 
-## Umsetzungsstand (2026-07-13)
+## Umsetzungsstand (2026-07-13, nach C2/Grammatik-Runde)
 
 Das Web-MVP+ in [`../app`](../app/README.md) ist gebaut, getestet und übertrifft den
 MVP-Leitsatz sowie Teile der Phasen 2–3:
@@ -19,18 +19,20 @@ MVP-Leitsatz sowie Teile der Phasen 2–3:
 - **13 Modi:** Karten, Auswahl, Paare, Wisch (Pfeiltasten), Reels (Start-Chooser), Schilder,
   Hören (🐢), Sprechen (STT + 🐢), Dialog (12 Gespräche), Satzbau, Bilder (Emoji), Blitz (60 s),
   Audio-Kurs (hands-free) — plus 🎓 Survival-Check als Prüfungsmodus ohne Stützräder.
-- **Geführte Module:** 6 Lern-Module (Buchstaben-Walkthroughs, ähnliche Buchstaben, Endformen,
-  Punkte-Buchstaben, Aussprache, Gegensatz-Paare) mit Erklär-, Lehr- und Quiz-Schritten.
-- **Level-System:** Bänder A0–B2, progressive Freischaltung (40 % gemeistert), Override im
+- **Geführte Module:** 6 Grundlagen-Module (Buchstaben-Walkthroughs, ähnliche Buchstaben,
+  Endformen, Punkte-Buchstaben, Aussprache, Gegensatz-Paare) plus 21 Grammatik-Module
+  (`app/grammar.js`, eigene 🧠-Sektion) von Genus/Artikel bis Register/Literatursprache,
+  mit den Übungstypen Cloze (Lückensatz) und Formen-Wahl (122 Übungsschritte).
+- **Level-System:** Bänder A0–C2, progressive Freischaltung (40 % gemeistert), Override im
   Profil, Einstufungstest im Onboarding und Profil (rein diagnostisch).
 - **Didaktik:** SRS + Niqqud-Fade + Aleph-Bet-Spur (Lese-Reihenfolge) + Alef-Bet-Tafel +
   Verwechsler-Distraktoren + Ähnlichkeits-Distraktoren (ab mastery 2, inkl. Gegenteil-Falle) +
   geführter Pfad + Onboarding + Knacknüsse + Session-Rückblick.
 - **Motivation:** 15 Abzeichen (nur Lern-Meilensteine), Streak mit ❄️ Freezes, Heute-Zeile,
-  ehrliche XP. ~533 Content-Einträge in 33 Themen (A0–B2), 15 Gegensatz-Paare.
+  ehrliche XP. ~673 Content-Einträge in 41 Themen (A0–C2), 18 Gegensatz-Paare, 14 Dialoge.
 - **Technik:** file:// oder localhost-Starter (Mikrofon-Merken), PWA + Service Worker,
   Export/Import mit Zusammenführen + Clipboard-Sync-Code statt Cloud-Sync (bewusst, siehe 07),
-  Regressionssuite `app/test/regression.cjs` (58 Checks).
+  Regressionssuite `app/test/regression.cjs` (79 Checks).
 - **Bewusst offen:** Cloud-Sync (Supabase), echte Muttersprachler-Aufnahmen, muttersprachliches
   Review von Niqqud/Dialogen (jetzt inkl. A2–B2-Inhalten), Expo/Android-Native, Ligen.
 

@@ -64,23 +64,45 @@ function check(name, ok, detail) {
     // Module: eindeutige IDs, alle referenzierten IDs existieren.
     const mods = C.modules || [];
     const modIds = {}, modDupIds = [], badModRef = [];
+    // Grammatik-Merge + cloze/form-Integritaet.
+    let grammarMods = 0, clozeFormSteps = 0;
+    const badChoice = []; // cloze/form-Schritte mit falscher Options-/Correct-Anzahl
     mods.forEach(m => {
       if (modIds[m.id]) modDupIds.push(m.id); modIds[m.id] = 1;
-      (m.steps || []).forEach(s => {
+      if (m.group === "grammar") grammarMods++;
+      (m.steps || []).forEach((s, si) => {
         if (s.itemId && !ids[s.itemId]) badModRef.push(m.id + ":" + s.itemId);
         if (s.pairId && !ids[s.pairId]) badModRef.push(m.id + ":" + s.pairId);
         (s.distractorIds || []).forEach(d => { if (!ids[d]) badModRef.push(m.id + ":" + d); });
+        if (s.type === "cloze" || s.type === "form") {
+          clozeFormSteps++;
+          const opts = s.options || [];
+          const nCorrect = opts.filter(o => o && o.correct === true).length;
+          if (opts.length < 2 || opts.length > 4 || nCorrect !== 1) {
+            badChoice.push(m.id + "#" + si + "(" + opts.length + "opt/" + nCorrect + "correct)");
+          }
+        }
       });
+    });
+    // Baender: C1/C2-Themen und ihr Sperr-Status beim aktuellen (frischen) Zustand.
+    const highThemes = C.themes.filter(t => t.band === "C1" || t.band === "C2").map(t => t.id);
+    const unlockedHigh = highThemes.filter(id => {
+      const th = C.themes.filter(t => t.id === id)[0];
+      return window.TACHELES_DEBUG.bandUnlocked(th.band);
     });
     return {
       items: C.items.length, themes: C.themes.length, dialogues: (C.dialogues || []).length,
       dups, badThemes, badDlg, badTokens, badBands, badOpp, oppPairs,
-      modules: mods.length, modDupIds, badModRef
+      modules: mods.length, modDupIds, badModRef,
+      grammarPresent: !!(window.TACHELES_GRAMMAR && Array.isArray(window.TACHELES_GRAMMAR.modules)),
+      grammarGlobalCount: window.TACHELES_GRAMMAR && window.TACHELES_GRAMMAR.modules ? window.TACHELES_GRAMMAR.modules.length : 0,
+      grammarMods, clozeFormSteps, badChoice,
+      bandsLen: BANDS.length, highThemes: highThemes.length, unlockedHigh: unlockedHigh.length
     };
   });
-  check("Items geladen (>= 510)", c.items >= 510, c.items);
-  check("Themen (>= 30)", c.themes >= 30, c.themes);
-  check("Dialoge (>= 11)", c.dialogues >= 11, c.dialogues);
+  check("Items geladen (>= 620)", c.items >= 620, c.items);
+  check("Themen (>= 36)", c.themes >= 36, c.themes);
+  check("Dialoge (>= 14)", c.dialogues >= 14, c.dialogues);
   check("keine doppelten Item-IDs", c.dups.length === 0, c.dups.join(","));
   check("alle Themen-Referenzen gueltig", c.badThemes.length === 0, c.badThemes.join(","));
   check("alle Dialog-itemIds gueltig", c.badDlg.length === 0, c.badDlg.join(","));
@@ -91,6 +113,16 @@ function check(name, ok, detail) {
   check("Module (>= 6)", c.modules >= 6, c.modules);
   check("keine doppelten Modul-IDs", c.modDupIds.length === 0, c.modDupIds.join(","));
   check("alle Modul-Referenzen gueltig", c.badModRef.length === 0, c.badModRef.slice(0, 5).join(","));
+
+  // --- 1b. Grammatik (grammar.js -> gemergt in CONTENT.modules) ---
+  check("Grammatik-Global TACHELES_GRAMMAR vorhanden", c.grammarPresent, c.grammarGlobalCount);
+  check("Grammatik-Module gemergt (>= 18)", c.grammarMods >= 18, c.grammarMods);
+  check("cloze/form-Schritte gesamt (>= 90)", c.clozeFormSteps >= 90, c.clozeFormSteps);
+  check("cloze/form: 2-4 Optionen, genau eine correct", c.badChoice.length === 0, c.badChoice.slice(0, 5).join(","));
+
+  // --- 1c. Baender (A0..C2) ---
+  check("BANDS-Liste laenge 7 (A0..C2)", c.bandsLen === 7, c.bandsLen);
+  check("C1/C2-Themen beim Default-Level gesperrt", c.unlockedHigh === 0, c.unlockedHigh + "/" + c.highThemes + " offen");
 
   // --- 2. Onboarding E2E (frischer State) ---
   check("Onboarding erscheint beim Erststart", await page.evaluate(() => !!document.querySelector(".onb")));
@@ -360,6 +392,110 @@ function check(name, ok, detail) {
     check("Modul-Quiz zaehlt eine Antwort", true, "n/a");
   }
 
+  // --- 10a. Level-Auswahl im Profil bietet C2 an ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const levelOpts = await page.evaluate(() =>
+    [...document.querySelectorAll("#level-sel option")].map(o => o.value));
+  check("Level-Auswahl bietet C2 an", levelOpts.indexOf("C2") >= 0, levelOpts.join(","));
+
+  // --- 10b. E2E Grammatik-Walk (Grammatik-Sektion -> cloze/form) ---
+  const gInfo = await page.evaluate(() => {
+    const mods = (window.TACHELES_CONTENT.modules || []).filter(m => m.group === "grammar");
+    if (!mods.length) return null;
+    const withStep = mods.find(m => (m.steps || []).some(s => s.type === "cloze" || s.type === "form")) || mods[0];
+    return { id: withStep.id, band: withStep.band || "A0" };
+  });
+  if (gInfo) {
+    // Alles freischalten, damit das Grammatik-Modul offen ist, egal welches Band.
+    await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+      s.profile.levelCap = "C2";
+      localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    });
+    await page.goto(APP); await page.waitForTimeout(400);
+    await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
+    await page.waitForTimeout(300);
+    // Grammatik-Sektion existiert (Ueberschrift "Grammatik").
+    const hasGrammarSection = await page.evaluate(() => /Grammatik/.test(document.body.innerText));
+    check("Lernen-Screen zeigt Grammatik-Sektion", hasGrammarSection);
+    // Modul aus der Grammatik-Sektion oeffnen.
+    await page.evaluate((id) => { const b = document.querySelector('[data-module="' + id + '"]'); if (b) b.click(); }, gInfo.id);
+    await page.waitForTimeout(400);
+    // Bis zu einem cloze/form-Schritt vorklicken.
+    let reached = false;
+    for (let i = 0; i < 40; i++) {
+      const t = await page.evaluate(() => window.TACHELES_DEBUG.moduleStepType());
+      if (t === "cloze" || t === "form") { reached = true; break; }
+      const advanced = await page.evaluate(() => {
+        const w = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
+        if (w) { w.click(); return true; }
+        const o = document.querySelector(".opt:not(:disabled)");
+        if (o) { o.click(); return true; }
+        return false;
+      });
+      if (!advanced) break;
+      await page.waitForTimeout(380);
+    }
+    check("E2E Grammatik: cloze/form-Schritt erreicht", reached);
+    if (reached) {
+      const answersBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("tacheles_state_v1")).gamification.answersTotal || 0);
+      // Falsch antworten: eine Option klicken, die NICHT correct ist.
+      await page.evaluate(() => {
+        const correctHe = window.TACHELES_DEBUG.moduleCurrentCorrect();
+        const btns = [...document.querySelectorAll(".opt:not(:disabled)")];
+        const wrong = btns.find(b => { const he = (b.querySelector(".b-he") || {}).textContent; return he !== correctHe; });
+        (wrong || btns[0]).click();
+      });
+      await page.waitForTimeout(400);
+      const noteText = await page.evaluate(() => (document.querySelector(".feedback-note") || {}).textContent || "");
+      check("E2E Grammatik: falsche Antwort zeigt Ausflösung (note)", noteText.length > 0, noteText.slice(0, 40));
+      // "Weiter" nach falscher Antwort.
+      await page.evaluate(() => { const w = [...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim())); if (w) w.click(); });
+      await page.waitForTimeout(400);
+      // Zum naechsten cloze/form-Schritt und richtig antworten.
+      for (let i = 0; i < 40; i++) {
+        const t = await page.evaluate(() => window.TACHELES_DEBUG.moduleStepType());
+        if (t === "cloze" || t === "form") {
+          await page.evaluate(() => {
+            const correctHe = window.TACHELES_DEBUG.moduleCurrentCorrect();
+            const btns = [...document.querySelectorAll(".opt:not(:disabled)")];
+            const right = btns.find(b => { const he = (b.querySelector(".b-he") || {}).textContent; return he === correctHe; });
+            (right || btns[0]).click();
+          });
+          await page.waitForTimeout(400);
+          break;
+        }
+        const advanced = await page.evaluate(() => {
+          const w = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
+          if (w) { w.click(); return true; }
+          const o = document.querySelector(".opt:not(:disabled)");
+          if (o) { o.click(); return true; }
+          return false;
+        });
+        if (!advanced) break;
+        await page.waitForTimeout(380);
+      }
+      const answersAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("tacheles_state_v1")).gamification.answersTotal || 0);
+      check("E2E Grammatik: Antworten verbucht (answersTotal++)", answersAfter > answersBefore, answersBefore + "->" + answersAfter);
+    } else {
+      check("E2E Grammatik: falsche Antwort zeigt Ausflösung (note)", true, "n/a (kein cloze/form erreicht)");
+      check("E2E Grammatik: Antworten verbucht (answersTotal++)", true, "n/a");
+    }
+    // Session sauber verlassen und levelCap zuruecksetzen.
+    await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+    await page.waitForTimeout(250);
+    await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("tacheles_state_v1")); s.profile.levelCap = "auto"; localStorage.setItem("tacheles_state_v1", JSON.stringify(s)); });
+    await page.goto(APP); await page.waitForTimeout(400);
+  } else {
+    check("Lernen-Screen zeigt Grammatik-Sektion", true, "keine Grammatik-Module (Content?)");
+    check("E2E Grammatik: cloze/form-Schritt erreicht", true, "n/a");
+    check("E2E Grammatik: falsche Antwort zeigt Ausflösung (note)", true, "n/a");
+    check("E2E Grammatik: Antworten verbucht (answersTotal++)", true, "n/a");
+  }
+
   // --- 11. Einstufungstest (Placement) aus Onboarding heraus ---
   await page.evaluate(() => { localStorage.removeItem("tacheles_state_v1"); });
   await page.goto(APP); await page.waitForTimeout(500);
@@ -372,9 +508,10 @@ function check(name, ok, detail) {
   check("Einstufung startet aus Onboarding",
     await page.evaluate(() => !!document.querySelector(".placement") || /einstufung/i.test(document.body.innerText)));
   let placementResult = false;
-  // Bei komplettem Content laeuft die Einstufung durch alle 5 Baender (~20 Fragen),
+  const seenBandHeaders = new Set();
+  // Bei komplettem Content laeuft die Einstufung durch bis zu 7 Baender (A0..C2),
   // darum genug Schleifendurchlaeufe vorsehen.
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < 220; i++) {
     const st = await page.evaluate(() => {
       if (/einstufung fertig/i.test(document.body.innerText)) return "done";
       if (document.querySelector(".placement .opt:not(:disabled)")) return "q";
@@ -382,6 +519,9 @@ function check(name, ok, detail) {
     });
     if (st === "done") { placementResult = true; break; }
     if (st === "q") {
+      // Aktuellen Band-Header (".onb-step") mitzaehlen, dann richtig antworten.
+      const header = await page.evaluate(() => (document.querySelector(".placement .onb-step") || {}).textContent || "");
+      if (header) seenBandHeaders.add(header);
       // Immer die richtige Option klicken (per data-item-id aus dem Content ermittelt).
       await page.evaluate(() => {
         const C = window.TACHELES_CONTENT;
@@ -395,6 +535,9 @@ function check(name, ok, detail) {
     await page.waitForTimeout(320);
   }
   check("Einstufung erreicht Ergebnis-Screen", placementResult);
+  const bandsLen = await page.evaluate(() => window.TACHELES_DEBUG.BANDS.length);
+  check("Einstufung rendert nie mehr als BANDS.length Band-Header",
+    seenBandHeaders.size <= bandsLen, seenBandHeaders.size + " von max " + bandsLen);
   const placeDone = await page.evaluate(() => (JSON.parse(localStorage.getItem("tacheles_state_v1")).profile || {}).placementDone);
   check("placementDone in localStorage gesetzt", placeDone === true, placeDone);
 
@@ -485,7 +628,53 @@ function check(name, ok, detail) {
   check("Placement-Distraktoren untereinander eindeutig (T9)",
     dedupe.dupCount === 0, dedupe.dupCount + " Duplikate über " + dedupe.checked + " Items");
 
-  // --- 13. Konsolenfehler ---
+  // --- 13. Abwaertskompatibilitaet: Alt-State (Initial-Release-Schema) verliert nichts ---
+  // Exakt das Schema von Commit 66c5c3a: keine Level-/Modul-/Sync-Felder.
+  await page.evaluate(() => {
+    localStorage.setItem("tacheles_state_v1", JSON.stringify({
+      version: 1,
+      profile: { dailyGoalMin: 10, fadeMode: "auto", autoplay: false, micHintDismissed: true, onboarded: true },
+      gamification: {
+        xpTotal: 1234, streakDays: 0, lastActiveDay: "2026-07-01", masteredCount: 0,
+        achievements: ["first_word", "mastered_10"], frozenDays: { "2026-06-20": true },
+        answersTotal: 456,
+        counters: { bestBlitz: 12, bestExam: 9, sessionsDone: 33, dialogsDone: { cafe: true } }
+      },
+      srs: {
+        shalom: { ease: 2.7, intervalDays: 21, dueTs: 1790000000000, reps: 9, lapses: 1, mastery: 5, lastReviewTs: 1750000000000 },
+        toda:   { ease: 2.5, intervalDays: 3,  dueTs: 1750000000000, reps: 3, lapses: 0, mastery: 2, lastReviewTs: 1749000000000 }
+      },
+      log: { "2026-07-01": { answers: 40, correct: 36, xp: 200, goalMet: true } }
+    }));
+  });
+  await page.reload(); await page.waitForTimeout(600);
+  const legacy = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return {
+      shalom: s.srs.shalom, todaReps: s.srs.toda.reps,
+      xp: s.gamification.xpTotal, ach: s.gamification.achievements.join(","),
+      frozen: s.gamification.frozenDays["2026-06-20"], blitz: s.gamification.counters.bestBlitz,
+      logOk: s.log["2026-07-01"] && s.log["2026-07-01"].answers === 40 && s.log["2026-07-01"].goalMet === true,
+      goal: s.profile.dailyGoalMin,
+      defaults: s.profile.levelCap === "auto" && s.profile.unlockedBand === "A1" &&
+        s.profile.placementDone === false && s.profile.sttNoticeConfirmed === false,
+      noOnb: !document.querySelector(".onb"), home: !!document.querySelector("#cta-start"),
+      themeRows: document.querySelectorAll(".theme-list .theme-row[data-theme]").length
+    };
+  });
+  check("Alt-State: SRS-Fortschritt bleibt exakt erhalten",
+    legacy.shalom && legacy.shalom.reps === 9 && legacy.shalom.mastery === 5 &&
+    legacy.shalom.ease === 2.7 && legacy.shalom.intervalDays === 21 && legacy.todaReps === 3,
+    JSON.stringify(legacy.shalom));
+  check("Alt-State: XP/Abzeichen/Freezes/Counters/Log/Ziel erhalten",
+    legacy.xp === 1234 && legacy.ach === "first_word,mastered_10" && legacy.frozen === true &&
+    legacy.blitz === 12 && legacy.logOk && legacy.goal === 10,
+    legacy.xp + "/" + legacy.ach + "/" + legacy.blitz);
+  check("Alt-State: neue Felder mit Defaults, kein Re-Onboarding, A0+A1 offen (20 Themen)",
+    legacy.defaults && legacy.noOnb && legacy.home && legacy.themeRows === 20,
+    "defaults=" + legacy.defaults + " themen=" + legacy.themeRows);
+
+  // --- 14. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
   await browser.close();
