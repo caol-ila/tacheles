@@ -12,7 +12,7 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
 - Dateien: `index.html`, `app.js` (gesamte Logik, Sektions-Kommentare im Kopf), `content.js`
   (~670 Items in ~41 Themen mit Bändern A0–C2, 14 Dialoge, EMOJI-Map am Ende), `grammar.js`
   (Grammatik-Module, eigenes Global `TACHELES_GRAMMAR`), `styles.css`, `sw.js` (+`manifest`,
-  `icon.svg`, `server.js`).
+  `icon.svg`, `server.js`), `audio/` (vorproduzierte Samples + `manifest.js` + eigene LICENSE).
 - **Grammatik in `grammar.js`:** eigenes Global `window.TACHELES_GRAMMAR = { version, modules }`;
   `app.js` merged `modules` beim Init additiv in `CONTENT.modules` (defensiv: fehlendes Global ok,
   doppelte Modul-IDs zugunsten content.js übersprungen). Ladeordnung in `index.html`:
@@ -28,13 +28,20 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
   oder per Profil-Override (`profile.levelCap`); Einstufungstest schreibt NIE SRS/XP.
 - **Sync:** Datei-Export/-Import (mit Zusammenführen), Clipboard-Sync-Code; Merge-Logik in
   `mergeStates` (für Tests via `window.TACHELES_DEBUG` exponiert).
+- **Audio:** vorproduzierte Sprach-Samples (ElevenLabs, niqqud-vertont) statt der oft falschen
+  Browser-Stimme. `say(item)` ist audio-first mit TTS-Fallback; Manifest lädt als klassisches
+  Script (`audio/manifest.js` → `window.TACHELES_AUDIO`, KEIN fetch wegen file://), gekeyt nach
+  `item.id`. Erzeugung einmalig lokal via `tools/generate-audio.cjs` (ElevenLabs-Key nötig).
+  SW hat eigenen `AUDIO_CACHE` (cache-first, überlebt Code-Releases), Prefetch aktuelles +
+  nächstes Band. `app/audio/`-Dateien liegen unter eigener Lizenz (CC-BY-NC + kein KI-Training),
+  Code bleibt offen. v1: nur Content-Items vertont, Dialog/Grammatik noch TTS. Konzept: docs/13.
 
 ## Tests
 
 ```
 cd app && node test/regression.cjs
 ```
-82 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
+84 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
 Default `c:/Source/SofaSuche/node_modules/playwright-core`). Nach JEDER Änderung laufen lassen;
 zusätzlich `node --check app.js content.js grammar.js`.
 

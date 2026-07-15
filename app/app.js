@@ -820,6 +820,71 @@
     return item.speak || item.he;
   }
 
+  /* ==========================================================
+   * 8b. Audio-Samples (vorproduziert, offline-cachebar)
+   * Vorproduzierte Sprach-Samples (ElevenLabs, niqqud-vertont) statt der oft
+   * fehlerhaften Browser-Stimme. "Audio-first": ist ein Sample da, wird es
+   * gespielt, sonst faellt alles auf TTS.speak(spoken(item)) zurueck. Ohne
+   * Manifest (z. B. vor der Generierung) verhaelt sich die App wie bisher.
+   * Manifest: app/audio/manifest.json { version, format, clips:{ <id>:{band,bytes} } }.
+   * ========================================================== */
+
+  var AUDIO = null;        // Manifest oder null (dann reiner TTS-Betrieb)
+  var audioPlayer = null;  // laufendes Audio-Element (fuer sauberes Abbrechen)
+
+  function loadAudioManifest() {
+    // Manifest kommt als klassisches Script (audio/manifest.js -> window.TACHELES_AUDIO),
+    // KEIN fetch/XHR (das wuerde auf file:// einen Konsolenfehler ausloesen).
+    try {
+      var m = window.TACHELES_AUDIO;
+      if (m && m.clips && typeof m.clips === "object" && m.format) {
+        AUDIO = m;
+        maybePrefetchAudio();
+      }
+    } catch (e) { /* kein/kaputtes Manifest -> TTS-Betrieb */ }
+  }
+
+  function audioUrl(item) {
+    if (!AUDIO || !item || !AUDIO.clips[item.id]) return null;
+    return "audio/" + item.id + "." + AUDIO.format;
+  }
+
+  /**
+   * Spielt das Sample eines Items ab; ohne Sample (oder bei Ladefehler, z. B.
+   * offline und noch nicht gecacht) faellt es auf die Browser-Sprachausgabe
+   * zurueck. Ersetzt die direkten TTS.speak(spoken(item))-Aufrufe.
+   */
+  function say(item, onDone) {
+    var url = audioUrl(item);
+    if (!url) { TTS.speak(spoken(item)); if (onDone) onDone(); return; }
+    try {
+      try { if (STT && STT.abort) STT.abort(); } catch (e) { /* egal */ }
+      if (audioPlayer) { try { audioPlayer.pause(); } catch (e) { /* egal */ } }
+      var a = new Audio(url);
+      audioPlayer = a;
+      var fell = false;
+      var fallback = function () { if (fell) return; fell = true; TTS.speak(spoken(item)); if (onDone) onDone(); };
+      a.onended = function () { if (onDone) onDone(); };
+      a.onerror = fallback;
+      var p = a.play();
+      if (p && p.catch) p.catch(fallback);
+    } catch (e) { TTS.speak(spoken(item)); if (onDone) onDone(); }
+  }
+
+  /** Samples des aktuellen + naechsten Bandes vom Service Worker vorladen lassen. */
+  function maybePrefetchAudio() {
+    if (!AUDIO || !navigator.serviceWorker || !navigator.serviceWorker.controller) return;
+    var i = BANDS.indexOf(effectiveBand());
+    var want = [BANDS[i], BANDS[i + 1]].filter(Boolean);
+    var urls = [];
+    Object.keys(AUDIO.clips).forEach(function (id) {
+      if (want.indexOf(AUDIO.clips[id].band) >= 0) urls.push("audio/" + id + "." + AUDIO.format);
+    });
+    if (urls.length) {
+      try { navigator.serviceWorker.controller.postMessage({ type: "prefetch-audio", urls: urls }); } catch (e) { /* egal */ }
+    }
+  }
+
   function normalizeHe(s) {
     s = String(s || "");
     s = s.replace(/[֑-ׇ]/g, "");        // Niqqud & Kantillation
@@ -917,7 +982,7 @@
     var row = el("div", "speak-row");
     var b = btn("🔊", "icon-btn", function (ev) {
       ev.stopPropagation();
-      TTS.speak(spoken(item));
+      say(item);
     });
     b.title = "Anhören";
     row.appendChild(b);
@@ -1502,7 +1567,7 @@
     app.querySelectorAll("[data-say]").forEach(function (b) {
       b.addEventListener("click", function () {
         var it = itemById(b.dataset.say);
-        if (it) TTS.speak(spoken(it));
+        if (it) say(it);
       });
     });
     wireThemeRows(app);
@@ -2097,7 +2162,7 @@
       answer.classList.add(correct ? "ok" : "no");
       if (correct) {
         feedback.textContent = "Richtig! " + item.translit + " · " + item.de;
-        TTS.speak(spoken(item));
+        say(item);
       } else {
         feedback.textContent = "Richtige Reihenfolge: " + item.translit + " · " + item.de;
         // Loesung anzeigen
@@ -2157,7 +2222,7 @@
     if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
     card.appendChild(speakRow(item, true));
     body.appendChild(card);
-    if (state.profile.autoplay) TTS.speak(spoken(item));
+    if (state.profile.autoplay) say(item);
 
     body.appendChild(el("div", "intro-hint", "Präg es dir kurz ein – gleich fragen wir nach."));
     var go = btn("Weiter →", "btn primary big", function () {
@@ -2198,7 +2263,7 @@
     if (task.dir === "he2de") {
       card.appendChild(heEl(item, { big: true, showHint: true, quiz: true }));
       card.appendChild(speakRow(item));
-      if (state.profile.autoplay) TTS.speak(spoken(item));
+      if (state.profile.autoplay) say(item);
     } else {
       card.appendChild(el("div", "de-prompt", item.de));
       if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
@@ -2249,7 +2314,7 @@
       answer.classList.remove("hidden");
       gradeQ.classList.remove("hidden");
       grades.classList.remove("hidden");
-      if (task.dir === "de2he" && state.profile.autoplay) TTS.speak(spoken(item));
+      if (task.dir === "de2he" && state.profile.autoplay) say(item);
     });
     body.appendChild(reveal);
     body.appendChild(gradeQ);
@@ -2477,10 +2542,10 @@
       if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
     } else { // audio2de
       body.appendChild(el("div", "task-question", "Was hörst du?"));
-      var play = btn("🔊", "icon-btn large", function () { TTS.speak(spoken(item)); });
+      var play = btn("🔊", "icon-btn large", function () { say(item); });
       play.title = "Nochmal anhören";
       card.appendChild(play);
-      TTS.speak(spoken(item));
+      say(item);
     }
     body.appendChild(card);
 
@@ -2494,7 +2559,7 @@
           card.appendChild(reveal);
         }
       } else if (state.profile.autoplay) {
-        TTS.speak(spoken(item));
+        say(item);
       }
       if (!correct) feedback.textContent = "Richtig wäre: " + item.de + (item.note ? " (" + item.note + ")" : "");
       else if (item.note) feedback.textContent = "Hinweis: " + item.note;
@@ -2512,7 +2577,7 @@
     body.appendChild(el("div", "task-question", "Hör zu – was bedeutet das?"));
     var card = el("div", "card learn-card");
     var playRow = el("div", "speak-row");
-    var play = btn("🔊", "icon-btn large", function () { TTS.speak(spoken(item)); });
+    var play = btn("🔊", "icon-btn large", function () { say(item); });
     play.title = "Nochmal anhören";
     playRow.appendChild(play);
     var slow = btn("🐢", "icon-btn large", function () { TTS.speakSlow(spoken(item)); });
@@ -2530,7 +2595,7 @@
       card.appendChild(earSub);
     }
     body.appendChild(card);
-    if (hasVoice) TTS.speak(spoken(item));
+    if (hasVoice) say(item);
 
     var feedback = el("div", "feedback-note");
     buildOptionButtons(body, item, "listen", "de", function (correct) {
@@ -2585,7 +2650,7 @@
     card.appendChild(heEl(item, { big: true, showHint: true }));
     card.appendChild(speakRow(item, true)); // mit 🐢 (langsam vorsprechen)
     body.appendChild(card);
-    if (fresh && state.profile.autoplay) TTS.speak(spoken(item));
+    if (fresh && state.profile.autoplay) say(item);
 
     var status = el("div", "stt-status");
     body.appendChild(status);
@@ -2734,7 +2799,7 @@
       b.dataset.id = item.id;
       b.addEventListener("click", function () {
         if (b.classList.contains("done")) return;
-        if (isHe) TTS.speak(spoken(item));
+        if (isHe) say(item);
         var col = isHe ? colR : colL;
         col.querySelectorAll(".match-btn").forEach(function (x) { x.classList.remove("sel"); });
         b.classList.add("sel");
@@ -2855,7 +2920,7 @@
     var actions = el("div", "swipe-actions");
     var no = btn("✗", "swipe-no", function () { decide(false); });
     no.title = "stimmt nicht (Taste ←)";
-    var play = btn("🔊", "icon-btn", function () { TTS.speak(spoken(item)); });
+    var play = btn("🔊", "icon-btn", function () { say(item); });
     var yes = btn("✓", "swipe-yes", function () { decide(true); });
     yes.title = "stimmt (Taste →)";
     actions.appendChild(no);
@@ -2874,7 +2939,7 @@
       };
       document.addEventListener("keydown", session.keyHandler);
     }
-    if (state.profile.autoplay) TTS.speak(spoken(item));
+    if (state.profile.autoplay) say(item);
   }
 
   /* ---------- 12c. Reels (vertikaler Lern-Feed) ---------- */
@@ -2974,7 +3039,7 @@
       mid.appendChild(heEl(item, { big: true, showHint: true }));
       mid.appendChild(el("div", "reel-de", item.de));
       if (item.note) mid.appendChild(el("div", "note-line", "(" + item.note + ")"));
-      var play = btn("🔊", "icon-btn", function () { TTS.speak(spoken(item)); });
+      var play = btn("🔊", "icon-btn", function () { say(item); });
       play.title = "Nochmal anhören";
       mid.appendChild(play);
       if (!TTS.available || !TTS.hasHebrew()) {
@@ -2982,7 +3047,7 @@
       }
       body.appendChild(mid);
       body.appendChild(btn("↑ Weiter", "reel-next", reelAdvance));
-      if (state.profile.autoplay) TTS.speak(spoken(item));
+      if (state.profile.autoplay) say(item);
     } else {
       // Quiz-Reel: schnelle MC-Frage zu einem gerade gezeigten Item
       body.appendChild(el("div", "quiz-tag", "⚡ Quiz"));
@@ -3225,7 +3290,7 @@
         he.dir = "rtl"; he.lang = "he";
         row.appendChild(he);
         row.appendChild(el("span", "done-review-de", item.de));
-        var p = btn("🔊", "icon-btn small-btn", function () { TTS.speak(spoken(item)); });
+        var p = btn("🔊", "icon-btn small-btn", function () { say(item); });
         row.appendChild(p);
         review.appendChild(row);
       });
@@ -3320,7 +3385,7 @@
       var sound = (it.de.split("–")[1] || "").trim();
       if (sound) cell.appendChild(el("div", "ab-sound", sound));
       if (/sofit/.test(it.translit)) cell.appendChild(el("span", "ab-final-tag", "Ende"));
-      cell.addEventListener("click", function () { TTS.speak(spoken(it)); });
+      cell.addEventListener("click", function () { say(it); });
       cell.title = it.de + (it.note ? " · " + it.note : "");
       grid.appendChild(cell);
     });
@@ -3715,7 +3780,7 @@
     if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
     card.appendChild(speakRow(item, true));
     body.appendChild(card);
-    if (state.profile.autoplay) TTS.speak(spoken(item));
+    if (state.profile.autoplay) say(item);
     moduleContinueBtn(body);
   }
 
@@ -3819,7 +3884,7 @@
     var feedback = el("div", "feedback-note");
     moduleOptionButtons(body, item, distractors, "he", function (correct) {
       if (!correct) feedback.textContent = "Richtig ist: " + item.he + " (" + item.de + ")";
-      else if (state.profile.autoplay) TTS.speak(spoken(item));
+      else if (state.profile.autoplay) say(item);
     });
     body.appendChild(feedback);
   }
@@ -4167,6 +4232,11 @@
     loadState();
     saveState();
     TTS.init();
+    loadAudioManifest(); // vorproduzierte Samples (falls vorhanden); sonst TTS
+    // Prefetch nachziehen, sobald der Service Worker die Seite kontrolliert.
+    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+      try { navigator.serviceWorker.ready.then(function () { maybePrefetchAudio(); }); } catch (e) { /* egal */ }
+    }
     document.querySelectorAll(".nav-btn").forEach(function (b) {
       b.addEventListener("click", function () { showScreen(b.dataset.screen); });
     });
@@ -4194,7 +4264,11 @@
       if (!st || !Array.isArray(st.options)) return null;
       var c = st.options.filter(function (o) { return o && o.correct === true; })[0];
       return c ? c.he : null;
-    }
+    },
+    // Audio-Schicht (fuer die Regression, ohne echte Dateien anzufassen).
+    audioActive: function () { return !!AUDIO; },
+    audioUrlFor: function (id) { return audioUrl(itemById(id)); },
+    reloadAudioManifest: function () { AUDIO = null; loadAudioManifest(); }
   };
 
   if (document.readyState === "loading") {

@@ -674,7 +674,33 @@ function check(name, ok, detail) {
     legacy.defaults && legacy.noOnb && legacy.home && legacy.themeRows === 20,
     "defaults=" + legacy.defaults + " themen=" + legacy.themeRows);
 
-  // --- 14. Konsolenfehler ---
+  // --- 14. Audio-Schicht (ohne echte Dateien): Platzhalter + Fallback + URL-Mapping ---
+  // Frisch laden (der Alt-State oben hat autoplay=false, gut fuer diesen Check).
+  await page.reload(); await page.waitForTimeout(500);
+  const audioPlaceholder = await page.evaluate(() => ({
+    manifestNull: window.TACHELES_AUDIO === null,          // Platzhalter geladen, kein fetch-Fehler
+    inactive: window.TACHELES_DEBUG.audioActive() === false // ohne Samples: reiner TTS-Betrieb
+  }));
+  check("Audio: Platzhalter-Manifest geladen, TTS-only",
+    audioPlaceholder.manifestNull && audioPlaceholder.inactive,
+    JSON.stringify(audioPlaceholder));
+  // Manifest injizieren (ohne echte Dateien) und das ID->URL-Mapping pruefen; danach
+  // wieder auf null zuruecksetzen, damit KEINE 404-Audioladungen ausgeloest werden.
+  const audioMap = await page.evaluate(() => {
+    window.TACHELES_AUDIO = { version: 1, format: "opus", clips: { shalom: { band: "A0", bytes: 1 } } };
+    window.TACHELES_DEBUG.reloadAudioManifest();
+    const hit = window.TACHELES_DEBUG.audioUrlFor("shalom");
+    const miss = window.TACHELES_DEBUG.audioUrlFor("toda"); // nicht im Manifest -> null -> TTS
+    const active = window.TACHELES_DEBUG.audioActive();
+    window.TACHELES_AUDIO = null; window.TACHELES_DEBUG.reloadAudioManifest(); // aufraeumen
+    return { hit, miss, active, backInactive: window.TACHELES_DEBUG.audioActive() };
+  });
+  check("Audio: audioUrl mappt Item-ID auf Datei, Fehltreffer -> null (TTS)",
+    audioMap.active === true && audioMap.hit === "audio/shalom.opus" &&
+    audioMap.miss === null && audioMap.backInactive === false,
+    JSON.stringify(audioMap));
+
+  // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
   await browser.close();
