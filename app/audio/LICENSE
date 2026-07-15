@@ -1,0 +1,29 @@
+Tacheles - Audio samples license
+=================================
+
+This directory (app/audio/) contains synthesized Hebrew speech samples generated
+with ElevenLabs (https://elevenlabs.io). The application CODE is covered by the
+repository's main license; THESE AUDIO FILES are NOT, and are licensed separately
+as follows.
+
+License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+         https://creativecommons.org/licenses/by-nc/4.0/
+         PLUS the additional restriction below.
+
+Attribution: "Voice generated with ElevenLabs (elevenlabs.io)."
+
+Additional restriction (No AI/ML training):
+  The audio files may NOT be used, in whole or in part, as input to, or as part of
+  a dataset for, training, fine-tuning, developing, testing, or improving any
+  machine-learning or artificial-intelligence model or system.
+
+Why these terms: the samples are output of the ElevenLabs service. Under the
+ElevenLabs Prohibited Use Policy, output may not be made available to others on
+terms less restrictive or more permissive than those under which it was obtained
+(section 9(n)), and may not be used to train AI/ML models (sections 9(k)/(l)).
+Non-commercial + attribution + no-AI-training mirrors those obligations so that
+redistributing the files here stays within ElevenLabs' terms.
+
+This is a good-faith lay reading of the ElevenLabs terms, not legal advice. Before
+any public release, re-check the current ElevenLabs terms and, if in doubt, confirm
+with ElevenLabs support.

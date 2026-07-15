@@ -398,6 +398,9 @@ function check(name, ok, detail) {
   const levelOpts = await page.evaluate(() =>
     [...document.querySelectorAll("#level-sel option")].map(o => o.value));
   check("Level-Auswahl bietet C2 an", levelOpts.indexOf("C2") >= 0, levelOpts.join(","));
+  // Attribution: ElevenLabs-Credit im Profil sichtbar.
+  check("Profil nennt ElevenLabs-Attribution",
+    await page.evaluate(() => /elevenlabs/i.test(document.body.innerText)));
 
   // --- 10b. E2E Grammatik-Walk (Grammatik-Sektion -> cloze/form) ---
   const gInfo = await page.evaluate(() => {
@@ -674,7 +677,38 @@ function check(name, ok, detail) {
     legacy.defaults && legacy.noOnb && legacy.home && legacy.themeRows === 20,
     "defaults=" + legacy.defaults + " themen=" + legacy.themeRows);
 
-  // --- 14. Konsolenfehler ---
+  // --- 14. Audio-Schicht: Manifest konsistent + URL-Mapping ---
+  // Frisch laden (der Alt-State oben hat autoplay=false, gut fuer diesen Check).
+  await page.reload(); await page.waitForTimeout(500);
+  const audioState = await page.evaluate(() => ({
+    present: !!window.TACHELES_AUDIO,
+    active: window.TACHELES_DEBUG.audioActive(),
+    clips: window.TACHELES_AUDIO ? Object.keys(window.TACHELES_AUDIO.clips || {}).length : 0,
+    format: window.TACHELES_AUDIO ? window.TACHELES_AUDIO.format : null
+  }));
+  // Zwei gueltige Zustaende: mit Samples (Manifest aktiv, >= 600 Clips) ODER ohne
+  // (Platzhalter = null -> reiner TTS-Fallback). Beides darf NICHT crashen (0-Fehler-Check).
+  check("Audio: Manifest konsistent (aktiv mit Clips ODER TTS-Fallback)",
+    (audioState.present && audioState.active && audioState.clips >= 600 && !!audioState.format) ||
+    (!audioState.present && !audioState.active),
+    JSON.stringify(audioState));
+  // Manifest injizieren (ohne echte Dateien) und das ID->URL-Mapping pruefen; danach
+  // wieder auf null zuruecksetzen, damit KEINE 404-Audioladungen ausgeloest werden.
+  const audioMap = await page.evaluate(() => {
+    window.TACHELES_AUDIO = { version: 1, format: "opus", clips: { shalom: { band: "A0", bytes: 1 } } };
+    window.TACHELES_DEBUG.reloadAudioManifest();
+    const hit = window.TACHELES_DEBUG.audioUrlFor("shalom");
+    const miss = window.TACHELES_DEBUG.audioUrlFor("toda"); // nicht im Manifest -> null -> TTS
+    const active = window.TACHELES_DEBUG.audioActive();
+    window.TACHELES_AUDIO = null; window.TACHELES_DEBUG.reloadAudioManifest(); // aufraeumen
+    return { hit, miss, active, backInactive: window.TACHELES_DEBUG.audioActive() };
+  });
+  check("Audio: audioUrl mappt Item-ID auf Datei, Fehltreffer -> null (TTS)",
+    audioMap.active === true && audioMap.hit === "audio/shalom.opus" &&
+    audioMap.miss === null && audioMap.backInactive === false,
+    JSON.stringify(audioMap));
+
+  // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
   await browser.close();

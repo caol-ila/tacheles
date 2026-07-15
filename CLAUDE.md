@@ -12,7 +12,7 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
 - Dateien: `index.html`, `app.js` (gesamte Logik, Sektions-Kommentare im Kopf), `content.js`
   (~670 Items in ~41 Themen mit Bändern A0–C2, 14 Dialoge, EMOJI-Map am Ende), `grammar.js`
   (Grammatik-Module, eigenes Global `TACHELES_GRAMMAR`), `styles.css`, `sw.js` (+`manifest`,
-  `icon.svg`, `server.js`).
+  `icon.svg`, `server.js`), `audio/` (vorproduzierte Samples + `manifest.js` + eigene LICENSE).
 - **Grammatik in `grammar.js`:** eigenes Global `window.TACHELES_GRAMMAR = { version, modules }`;
   `app.js` merged `modules` beim Init additiv in `CONTENT.modules` (defensiv: fehlendes Global ok,
   doppelte Modul-IDs zugunsten content.js übersprungen). Ladeordnung in `index.html`:
@@ -28,13 +28,23 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
   oder per Profil-Override (`profile.levelCap`); Einstufungstest schreibt NIE SRS/XP.
 - **Sync:** Datei-Export/-Import (mit Zusammenführen), Clipboard-Sync-Code; Merge-Logik in
   `mergeStates` (für Tests via `window.TACHELES_DEBUG` exponiert).
+- **Audio:** vorproduzierte Sprach-Samples (ElevenLabs, niqqud-vertont) statt der oft falschen
+  Browser-Stimme. `say(item)` (Key = `item.id`) und `sayText(he)` (Key = `"h_"+hash`, für Dialog/
+  Grammatik) sind audio-first mit TTS-Fallback; Manifest lädt als klassisches Script
+  (`audio/manifest.js` → `window.TACHELES_AUDIO`, KEIN fetch wegen file://). Keying-Logik in
+  `tools/audio-lib.cjs` (`audioHash` identisch zu app.js). Vertont: Items + Dialogzeilen +
+  Grammatik-Beispiele (~881 Clips); MC-Optionen/Cloze-Sätze bleiben TTS. Erzeugung einmalig lokal
+  via `tools/generate-audio.cjs` (Key aus gitignoriertem `tools/audio.env`); Vollständigkeit prüfen/
+  nachgenerieren mit `tools/check-audio.cjs [--fill]`. SW hat eigenen `AUDIO_CACHE` (cache-first,
+  überlebt Code-Releases), Prefetch aktuelles + nächstes Band. `app/audio/`-Dateien unter eigener
+  Lizenz (CC-BY-NC + kein KI-Training), Code bleibt offen. Konzept: docs/13.
 
 ## Tests
 
 ```
 cd app && node test/regression.cjs
 ```
-82 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
+85 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
 Default `c:/Source/SofaSuche/node_modules/playwright-core`). Nach JEDER Änderung laufen lassen;
 zusätzlich `node --check app.js content.js grammar.js`.
 
@@ -51,7 +61,8 @@ zusätzlich `node --check app.js content.js grammar.js`.
 - In Tests Onboarding überspringen: `profile.onboarded=true`, `autoplay=false`,
   `micHintDismissed=true` in localStorage seeden, dann reload.
 - **Service Worker:** bei Content-/Code-Release `CACHE_NAME` in `sw.js` hochzählen
-  (aktuell v8) und `grammar.js` in `ASSETS` halten, sonst bekommen localhost-Nutzer alten Cache.
+  (aktuell v12) und `grammar.js`/`audio/manifest.js` in `ASSETS` halten, sonst bekommen
+  localhost-Nutzer alten Cache. Audio-Clips liegen im separaten `AUDIO_CACHE` (cache-first).
 - Hebräisch immer RTL (`dir="rtl"`, `lang="he"`); zentrale Anzeige via `heEl()` (respektiert
   Fade + Prüfungsmodus). TTS über `spoken(item)` (Buchstaben haben `speak` = Namen).
 - Neue Inhalte: Schema im Kopf von `content.js`; Niqqud/Umschrift sorgfältig, muttersprachliches
