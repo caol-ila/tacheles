@@ -36,8 +36,9 @@ function voicedItemText(item) {
 /** content.js (+grammar.js) laden - gleiches Muster wie Test-/Zaehl-Skripte. */
 function loadContent(appDir) {
   global.window = global.window || {};
-  require(path.join(appDir, "content.js"));
-  try { require(path.join(appDir, "grammar.js")); } catch (e) { /* Grammatik optional */ }
+  var dir = path.resolve(appDir); // absolut aufloesen: require(relativ) waere sonst modulrelativ
+  require(path.join(dir, "content.js"));
+  try { require(path.join(dir, "grammar.js")); } catch (e) { /* Grammatik optional */ }
   return { CONTENT: global.window.TACHELES_CONTENT, GRAMMAR: global.window.TACHELES_GRAMMAR || null };
 }
 

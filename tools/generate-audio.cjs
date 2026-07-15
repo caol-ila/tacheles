@@ -46,6 +46,7 @@ const cfg = {
 };
 const LIMIT = process.env.LIMIT ? parseInt(process.env.LIMIT, 10) : 0;
 const ONLY_BANDS = process.env.BANDS ? process.env.BANDS.split(",").map(s => s.trim()) : null;
+const ONLY_KEYS = process.env.KEYS ? process.env.KEYS.split(",").map(s => s.trim()) : null; // gezielte Clips testen
 
 if (!cfg.apiKey || (!cfg.voiceId && !cfg.voiceName)) {
   console.error("Fehlt: ELEVENLABS_API_KEY und ELEVENLABS_VOICE_ID oder ELEVENLABS_VOICE_NAME.");
@@ -59,6 +60,7 @@ const loaded = lib.loadContent(APP);
 if (!loaded.CONTENT || !loaded.CONTENT.items) { console.error("content.js nicht ladbar."); process.exit(1); }
 
 let targets = lib.enumerateTargets(loaded.CONTENT, loaded.GRAMMAR);
+if (ONLY_KEYS) targets = targets.filter(t => ONLY_KEYS.indexOf(t.key) >= 0);
 if (ONLY_BANDS) targets = targets.filter(t => ONLY_BANDS.indexOf(t.band) >= 0);
 if (LIMIT > 0) targets = targets.slice(0, LIMIT);
 
@@ -74,8 +76,10 @@ if (LIMIT > 0) targets = targets.slice(0, LIMIT);
     if (made % 25 === 0) console.log("  … " + made + " erzeugt");
   });
 
-  const meta = { source: "elevenlabs", voiceId: cfg.voiceId, model: cfg.model };
-  const inManifest = lib.writeManifest(OUT, cfg.format, lib.enumerateTargets(loaded.CONTENT, loaded.GRAMMAR), meta);
+  const meta = { source: "elevenlabs", voiceId: cfg.voiceId, voiceName: cfg.voiceName || null, model: cfg.model };
+  // Effektives Format (ffmpeg-Fallback kann mp3 statt opus/aac erzwungen haben).
+  const effFormat = r.ext === "m4a" ? "aac" : r.ext;
+  const inManifest = lib.writeManifest(OUT, effFormat, lib.enumerateTargets(loaded.CONTENT, loaded.GRAMMAR), meta);
 
   console.log("\nFertig. Neu: " + r.made + ", uebersprungen: " + r.skipped + ", Fehler: " + r.failed);
   console.log("Clips im Manifest: " + inManifest);

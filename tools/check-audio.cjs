@@ -96,8 +96,9 @@ if (!cfg.apiKey || (!cfg.voiceId && !cfg.voiceName)) {
   cfg.voiceId = await lib.resolveVoiceId(cfg);
   console.log("\nGeneriere " + missing.length + " fehlende Clips (Stimme " + (cfg.voiceName || cfg.voiceId) + ") …");
   const r = await lib.generateClips(missing, cfg, function (made) { if (made % 25 === 0) console.log("  … " + made); });
-  const meta = { source: "elevenlabs", voiceId: cfg.voiceId, model: cfg.model };
-  lib.writeManifest(OUT, cfg.format, lib.enumerateTargets(loaded.CONTENT, loaded.GRAMMAR), meta);
+  const meta = { source: "elevenlabs", voiceId: cfg.voiceId, voiceName: cfg.voiceName || null, model: cfg.model };
+  const effFormat = r.ext === "m4a" ? "aac" : r.ext;
+  lib.writeManifest(OUT, effFormat, lib.enumerateTargets(loaded.CONTENT, loaded.GRAMMAR), meta);
   console.log("Fertig. Neu: " + r.made + ", Fehler: " + r.failed);
   process.exit(r.failed > 0 ? 1 : 0);
 })();
