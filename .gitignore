@@ -10,3 +10,9 @@ Thumbs.db
 # Editors
 .vscode/
 .idea/
+
+# Local secrets - ElevenLabs API key/voice for tools/generate-audio.cjs. NEVER commit.
+tools/audio.env
+*.env
+.env
+.env.local

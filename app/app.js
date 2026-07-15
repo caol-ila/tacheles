@@ -844,31 +844,49 @@
     } catch (e) { /* kein/kaputtes Manifest -> TTS-Betrieb */ }
   }
 
-  function audioUrl(item) {
-    if (!AUDIO || !item || !AUDIO.clips[item.id]) return null;
-    return "audio/" + item.id + "." + AUDIO.format;
+  /** FNV-1a (32-bit) -> 8 Hex-Zeichen. IDENTISCH zu audioHash() in tools/audio-lib.cjs,
+   *  damit die App genau die dort erzeugten Dateinamen findet (Dialog/Grammatik). */
+  function audioHash(s) {
+    var h = 0x811c9dc5 >>> 0;
+    s = String(s == null ? "" : s);
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return ("0000000" + h.toString(16)).slice(-8);
   }
 
+  function clipUrl(key) {
+    if (!AUDIO || !key || !AUDIO.clips[key]) return null;
+    return "audio/" + key + "." + AUDIO.format;
+  }
+  function audioUrl(item) { return item ? clipUrl(item.id) : null; } // fuer Debug/Regression
+
   /**
-   * Spielt das Sample eines Items ab; ohne Sample (oder bei Ladefehler, z. B.
-   * offline und noch nicht gecacht) faellt es auf die Browser-Sprachausgabe
-   * zurueck. Ersetzt die direkten TTS.speak(spoken(item))-Aufrufe.
+   * Spielt den Clip zu KEY ab; ohne Clip (oder bei Ladefehler, z. B. offline und
+   * noch nicht gecacht) ruft es fallback() (Browser-TTS) und geht weiter.
    */
-  function say(item, onDone) {
-    var url = audioUrl(item);
-    if (!url) { TTS.speak(spoken(item)); if (onDone) onDone(); return; }
+  function playByKey(key, fallback, onDone) {
+    var url = clipUrl(key);
+    if (!url) { fallback(); if (onDone) onDone(); return; }
     try {
       try { if (STT && STT.abort) STT.abort(); } catch (e) { /* egal */ }
       if (audioPlayer) { try { audioPlayer.pause(); } catch (e) { /* egal */ } }
       var a = new Audio(url);
       audioPlayer = a;
       var fell = false;
-      var fallback = function () { if (fell) return; fell = true; TTS.speak(spoken(item)); if (onDone) onDone(); };
+      var fb = function () { if (fell) return; fell = true; fallback(); if (onDone) onDone(); };
       a.onended = function () { if (onDone) onDone(); };
-      a.onerror = fallback;
+      a.onerror = fb;
       var p = a.play();
-      if (p && p.catch) p.catch(fallback);
-    } catch (e) { TTS.speak(spoken(item)); if (onDone) onDone(); }
+      if (p && p.catch) p.catch(fb);
+    } catch (e) { fallback(); if (onDone) onDone(); }
+  }
+
+  /** Item vorlesen (Key = item.id). Ersetzt direkte TTS.speak(spoken(item))-Aufrufe. */
+  function say(item, onDone) {
+    playByKey(item.id, function () { TTS.speak(spoken(item)); }, onDone);
+  }
+  /** Freien he-Text vorlesen (Dialog/Grammatik, Key = "h_"+hash). Fallback: TTS. */
+  function sayText(text, onDone) {
+    playByKey("h_" + audioHash(text), function () { TTS.speak(text); }, onDone);
   }
 
   /** Samples des aktuellen + naechsten Bandes vom Service Worker vorladen lassen. */
@@ -3102,7 +3120,7 @@
     b.appendChild(he);
     b.appendChild(el("div", "b-translit", line.translit));
     b.appendChild(el("div", "b-de", line.de));
-    b.addEventListener("click", function () { TTS.speak(line.he); });
+    b.addEventListener("click", function () { sayText(line.he); });
     return b;
   }
 
@@ -3154,7 +3172,7 @@
     if (line.who === "partner") {
       // Partnerzeile erscheint, wird gesprochen; weiter per Knopf.
       chat.appendChild(dialogueBubble(line));
-      if (state.profile.autoplay) TTS.speak(line.he);
+      if (state.profile.autoplay) sayText(line.he);
       body2.appendChild(btn("Weiter →", "btn primary big", function () {
         session.lineIdx++;
         renderSession();
@@ -3188,7 +3206,7 @@
           } else {
             recordFreeAnswer("dialog", correct);
           }
-          TTS.speak(line.he);
+          sayText(line.he);
           later(function () { session.lineIdx++; renderSession(); }, correct ? 1000 : 2200);
         });
         b.dataset.he = opt.he;
@@ -3753,11 +3771,11 @@
           (e.translit || "") + (e.de ? " · " + e.de : "")));
         var say = btn("🔊", "icon-btn small-btn", function (ev) {
           ev.stopPropagation();
-          if (e.he) TTS.speak(e.he);
+          if (e.he) sayText(e.he);
         });
         say.title = "Anhören";
         row.appendChild(say);
-        if (e.he) row.addEventListener("click", function () { TTS.speak(e.he); });
+        if (e.he) row.addEventListener("click", function () { sayText(e.he); });
         ex.appendChild(row);
       });
       body.appendChild(ex);

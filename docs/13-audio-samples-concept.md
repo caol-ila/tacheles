@@ -19,37 +19,41 @@ vorproduzierte, hochwertige Sprach-Samples, auf dem Handy offline gecacht, mit T
 
 ## 1. Prinzip
 
-- **Audio-first, TTS-Fallback.** `spoken(item)` bleibt; neu ist `playAudio(item)`: existiert
-  ein Sample, wird es abgespielt, sonst greift wie heute `TTS.speak(spoken(item))`. Kein
-  Regressionsrisiko für Items ohne Sample.
+- **Audio-first, TTS-Fallback.** `spoken(item)` bleibt; neu sind `say(item)` (Items) und
+  `sayText(he)` (Dialog/Grammatik): existiert ein Sample, wird es abgespielt, sonst greift wie
+  heute die Browser-Sprachausgabe. Kein Regressionsrisiko ohne Sample.
 - **Build-frei bleibt build-frei.** Samples sind statische Dateien im Repo. Erzeugt werden sie
   einmalig von einem Dev-Skript (Node, nicht Teil der Laufzeit). Die App lädt zur Laufzeit nur
-  fertige Dateien plus ein kleines Manifest.
-- **IDs sind heilig → Dateiname = Item-ID.** `app/audio/<id>.<ext>`. Damit hängt Audio an
-  derselben stabilen Kennung wie der Lernfortschritt; kein separates Mapping nötig.
+  fertige Dateien plus ein kleines Manifest (als klassisches Script).
+- **Keying (eine Wahrheit in `tools/audio-lib.cjs`, gespiegelt in app.js):** Items → `item.id`
+  (lesbarer Dateiname, an derselben heiligen Kennung wie der Fortschritt); Dialogzeilen &
+  Grammatik-Beispiele → `"h_" + hash(he)` (Text-Hash, da keine stabile ID; dedupliziert gleiche
+  Texte automatisch). `app/audio/<key>.<ext>`.
 
 ## 2. Dateien im Repo
 
 ```
 app/audio/
   LICENSE                # CC-BY-NC 4.0 + kein KI-Training (nur fuer diesen Ordner)
-  manifest.js            # window.TACHELES_AUDIO = { version, format, clips:{<id>:{band,bytes}} }
+  manifest.js            # window.TACHELES_AUDIO = { version, format, clips:{<key>:{band,bytes,kind}} }
                          # (Platzhalter = null committet; Generierung ueberschreibt)
   manifest.json          # gleiche Daten als JSON (fuer Tools/Debugging)
-  shalom.opus
-  toda.opus
-  ...                    # ~673 Item-Clips (v1: nur Items, nicht Dialog/Grammatik)
+  shalom.opus            # Item-Clips: Dateiname = item.id
+  h_a1b2c3d4.opus        # Dialog-/Grammatik-Clips: Dateiname = h_<hash>
+  ...                    # ~881 Clips gesamt (673 Items, 83 Dialogzeilen, 125 Grammatik-Beispiele)
 tools/
-  generate-audio.cjs     # Dev-Skript: liest content.js, ruft ElevenLabs, transkodiert,
-                         # schreibt Clips + manifest.js. Laeuft NUR beim Content-Update.
+  audio-lib.cjs          # gemeinsame Wahrheit: enumerateTargets(), audioHash(), Generierung, Manifest
+  generate-audio.cjs     # Voll-Batch: ElevenLabs -> transkodiert -> Clips + manifest.js (Resume)
+  check-audio.cjs        # Vollstaendigkeits-Check; --fill generiert fehlende nach
+  audio.env              # gitignored: ELEVENLABS_API_KEY / _VOICE_ID (nie committen)
 ```
 
-- Vertont wird die **`niqqud`-Variante** (mit Vokalen), bei Buchstaben `speak`. Das ist der
-  größte Authentizitäts-Hebel.
-- Das Manifest ist die einzige Wahrheit darüber, welches Item ein Sample hat und zu welchem
-  Band es gehört. Die App fragt nie „gibt es die Datei?", sondern schaut ins Manifest.
-- **v1-Umfang:** nur Content-Items (stabile `item.id`). Dialog- und Grammatik-Zeilen haben keine
-  stabile ID und bleiben auf TTS (dokumentierter Folgeschritt).
+- Vertont wird bei Items die **`niqqud`-Variante** (mit Vokalen), bei Buchstaben `speak`, bei
+  Dialog/Grammatik der `he`-Text. Niqqud ist der größte Authentizitäts-Hebel.
+- Das Manifest ist die einzige Wahrheit darüber, welcher Text ein Sample hat und zu welchem Band
+  es gehört. Die App fragt nie „gibt es die Datei?", sondern schaut ins Manifest.
+- **Abdeckung:** Content-Items + Dialogzeilen + Grammatik-Beispiele. NICHT vertont: die einzelnen
+  MC-Options-/Cloze-Formen der Grammatik-Übungen (keine Abspielstelle, oft Minimalpaar-Flexionen).
 
 ## 3. Wiedergabe (app.js)
 
@@ -169,18 +173,18 @@ bleibt gecacht.
 
 ## 7. Speicher & Format (aus Repo-Daten gerechnet)
 
-1.037 Clips, ~28 Min Audio gesamt.
+~881 Clips (673 Items + 83 Dialogzeilen + 125 Grammatik-Beispiele), grob ~24 Min Audio.
+Richtwerte (mono, skalieren linear mit der Clipzahl):
 
-| Format (mono) | gesamt | größte Stufe A0 | pro Clip | Handy-Kompatibilität |
-|---|---|---|---|---|
-| **Opus 24 kbps** | **~5,1 MB** | 1,3 MB | ~5 KB | Android/Chrome überall; iOS erst 17+ zuverlässig |
-| Opus 32 kbps | ~6,8 MB | 1,7 MB | ~7 KB | wie oben |
-| **AAC 48 kbps (.m4a)** | **~10,1 MB** | 2,6 MB | ~10 KB | universell (auch ältere iPhones) |
-| MP3 64 kbps | ~13,5 MB | | ~13 KB | universell, aber größer/schlechter als AAC |
-| WAV (unkomprimiert) | ~81 MB | | ~78 KB | nur als Zwischenformat |
+| Format (mono) | gesamt (~881) | pro Clip | Handy-Kompatibilität |
+|---|---|---|---|
+| **Opus 24 kbps** | **~4,3 MB** | ~5 KB | Android/Chrome überall; iOS erst 17+ zuverlässig |
+| Opus 32 kbps | ~5,8 MB | ~7 KB | wie oben |
+| **AAC 48 kbps (.m4a)** | **~8,6 MB** | ~10 KB | universell (auch ältere iPhones) |
+| MP3 64 kbps | ~11,5 MB | ~13 KB | universell, aber größer/schlechter als AAC |
+| WAV (unkomprimiert) | ~69 MB | ~78 KB | nur als Zwischenformat |
 
-Pro Stufe (Opus 24 / AAC 48): A0 1,31/2,62 · A1 0,96/1,92 · A2 0,82/1,64 · B1 0,57/1,13 ·
-B2 0,45/0,90 · C1 0,45/0,90 · C2 0,51/1,02 MB.
+Selbst „alles in AAC" bleibt unter 9 MB; das aktuelle + nächste Band (Prefetch) sind je 1-2 MB.
 
 **Empfehlung Format:** Für Sprache ist **Opus 24 kbps mono** praktisch transparent und am
 kleinsten. Ist das Handy Android oder iOS ≥ 17: Opus. Für maximale Sicherheit (altes iPhone):
@@ -197,11 +201,12 @@ Dateigröße ins Manifest. Ohne `ffmpeg` fällt es auf das rohe MP3 zurück (gr�
 ## 9. Rollout
 
 1. **[erledigt] Quelle/Lizenz:** ElevenLabs Starter, Audio unter CC-BY-NC 4.0 + kein-KI-Zusatz.
-2. **[Infrastruktur, dieser PR]** `tools/generate-audio.cjs`, `app.js`-Wiedergabe/Prefetch,
-   `sw.js`-Audio-Cache, `app/audio/LICENSE` + `manifest.js`-Platzhalter, Regression fürs Fallback.
-   Enthält NOCH KEINE Audios.
-3. **[einmalig, lokal durch Betreiber]** `ELEVENLABS_API_KEY=... ELEVENLABS_VOICE_ID=... node
-   tools/generate-audio.cjs` erzeugt Clips + `manifest.js`; Ergebnis wird committet.
+2. **[Infrastruktur]** `tools/audio-lib.cjs` + `generate-audio.cjs` + `check-audio.cjs`,
+   `app.js`-Wiedergabe (`say`/`sayText`)/Prefetch, `sw.js`-Audio-Cache, `app/audio/LICENSE` +
+   `manifest.js`-Platzhalter, Regression fürs Fallback.
+3. **[einmalig, lokal durch Betreiber]** `tools/audio.env` mit Key/Voice füllen, dann
+   `node tools/generate-audio.cjs`; erzeugt Clips + `manifest.js`. Danach `node tools/check-audio.cjs`
+   zur Kontrolle (fehlende via `--fill` nachziehen). Ergebnis (Audios + Manifest) wird committet.
 4. `sw.js`: `AUDIO_CACHE` + `/audio/`-Zweig + `prefetch-audio`-Handler; `activate`-Aufräumen
    um `AUDIO_CACHE` ergänzt. Code-`CACHE_NAME` v8→v9 wegen sw-Änderung.
 5. `app.js`: Manifest laden, `playAudio()` an den Lern-/Vorlese-Stellen statt direktem

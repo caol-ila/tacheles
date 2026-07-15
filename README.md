@@ -113,5 +113,12 @@ Tacheles steht unter der [GNU Affero General Public License v3.0](LICENSE) (`AGP
 Nutzung, Veränderung und Weiterverbreitung sind erlaubt, auch als gehosteter Webdienst, sofern
 der vollständige Quellcode unter derselben Lizenz offengelegt wird.
 
-App-Code, Inhalte (Vokabeln, Dialoge, Transliteration) und Icon sind Eigenleistung. Die
-Sprachausgabe nutzt die browsereigene Web-Speech-API; es werden keine Fremd-Assets gebündelt.
+App-Code, Inhalte (Vokabeln, Dialoge, Transliteration) und Icon sind Eigenleistung.
+
+**Ausnahme – Sprach-Samples unter `app/audio/`:** Die vorproduzierten Audiodateien werden mit
+ElevenLabs erzeugt und stehen NICHT unter der AGPL, sondern separat unter
+[CC BY-NC 4.0 + „kein KI-Training"](app/audio/LICENSE) (Attribution: ElevenLabs). Sie sind ein
+eigenständig lizenziertes Daten-Asset (Aggregat im Sinne der AGPL §7), kein Teil des
+AGPL-Programmcodes; die App funktioniert ohne sie vollständig über die browsereigene
+Web-Speech-API. Grund: ElevenLabs' Nutzungsbedingungen erlauben keine Weitergabe des Outputs
+auf permissiveren Bedingungen als erhalten und kein KI-Training damit.

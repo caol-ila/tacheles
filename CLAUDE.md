@@ -29,12 +29,15 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
 - **Sync:** Datei-Export/-Import (mit Zusammenführen), Clipboard-Sync-Code; Merge-Logik in
   `mergeStates` (für Tests via `window.TACHELES_DEBUG` exponiert).
 - **Audio:** vorproduzierte Sprach-Samples (ElevenLabs, niqqud-vertont) statt der oft falschen
-  Browser-Stimme. `say(item)` ist audio-first mit TTS-Fallback; Manifest lädt als klassisches
-  Script (`audio/manifest.js` → `window.TACHELES_AUDIO`, KEIN fetch wegen file://), gekeyt nach
-  `item.id`. Erzeugung einmalig lokal via `tools/generate-audio.cjs` (ElevenLabs-Key nötig).
-  SW hat eigenen `AUDIO_CACHE` (cache-first, überlebt Code-Releases), Prefetch aktuelles +
-  nächstes Band. `app/audio/`-Dateien liegen unter eigener Lizenz (CC-BY-NC + kein KI-Training),
-  Code bleibt offen. v1: nur Content-Items vertont, Dialog/Grammatik noch TTS. Konzept: docs/13.
+  Browser-Stimme. `say(item)` (Key = `item.id`) und `sayText(he)` (Key = `"h_"+hash`, für Dialog/
+  Grammatik) sind audio-first mit TTS-Fallback; Manifest lädt als klassisches Script
+  (`audio/manifest.js` → `window.TACHELES_AUDIO`, KEIN fetch wegen file://). Keying-Logik in
+  `tools/audio-lib.cjs` (`audioHash` identisch zu app.js). Vertont: Items + Dialogzeilen +
+  Grammatik-Beispiele (~881 Clips); MC-Optionen/Cloze-Sätze bleiben TTS. Erzeugung einmalig lokal
+  via `tools/generate-audio.cjs` (Key aus gitignoriertem `tools/audio.env`); Vollständigkeit prüfen/
+  nachgenerieren mit `tools/check-audio.cjs [--fill]`. SW hat eigenen `AUDIO_CACHE` (cache-first,
+  überlebt Code-Releases), Prefetch aktuelles + nächstes Band. `app/audio/`-Dateien unter eigener
+  Lizenz (CC-BY-NC + kein KI-Training), Code bleibt offen. Konzept: docs/13.
 
 ## Tests
 
