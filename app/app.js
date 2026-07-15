@@ -889,15 +889,22 @@
     playByKey("h_" + audioHash(text), function () { TTS.speak(text); }, onDone);
   }
 
-  /** Samples des aktuellen + naechsten Bandes vom Service Worker vorladen lassen. */
+  /**
+   * Alle Samples vom Service Worker im Hintergrund vorladen lassen (gesamt ~2.4 MB):
+   * aktuelles + naechstes Band ZUERST (Prioritaet), danach der Rest. Der SW cacht
+   * cache-first in einen eigenen, releasesicheren AUDIO_CACHE und ueberspringt bereits
+   * Gecachtes - nach dem ersten Online-Start also 0 weitere Requests, offline verfuegbar.
+   */
   function maybePrefetchAudio() {
     if (!AUDIO || !navigator.serviceWorker || !navigator.serviceWorker.controller) return;
     var i = BANDS.indexOf(effectiveBand());
-    var want = [BANDS[i], BANDS[i + 1]].filter(Boolean);
-    var urls = [];
+    var pri = [BANDS[i], BANDS[i + 1]].filter(Boolean);
+    var first = [], rest = [];
     Object.keys(AUDIO.clips).forEach(function (id) {
-      if (want.indexOf(AUDIO.clips[id].band) >= 0) urls.push("audio/" + id + "." + AUDIO.format);
+      var u = "audio/" + id + "." + AUDIO.format;
+      if (pri.indexOf(AUDIO.clips[id].band) >= 0) first.push(u); else rest.push(u);
     });
+    var urls = first.concat(rest);
     if (urls.length) {
       try { navigator.serviceWorker.controller.postMessage({ type: "prefetch-audio", urls: urls }); } catch (e) { /* egal */ }
     }
