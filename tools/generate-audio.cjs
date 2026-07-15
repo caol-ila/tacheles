@@ -24,7 +24,8 @@ const lib = require("./audio-lib.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 const APP = path.join(ROOT, "app");
-const OUT = path.join(APP, "audio");
+// Zielordner: normal app/audio, per AUDIO_OUTDIR ueberschreibbar (z. B. fuer A/B-Tests).
+const OUT = process.env.AUDIO_OUTDIR ? path.resolve(process.env.AUDIO_OUTDIR) : path.join(APP, "audio");
 
 // Secrets aus tools/audio.env laden (Env-Variablen haben Vorrang).
 (function loadLocalEnv() {
@@ -42,6 +43,7 @@ const cfg = {
   voiceName: process.env.ELEVENLABS_VOICE_NAME,
   model: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2",
   format: (process.env.AUDIO_FORMAT || "opus").toLowerCase(),
+  stability: lib.stabilityValue(process.env.ELEVENLABS_STABILITY), // null = Stimmen-Default
   outDir: OUT
 };
 const LIMIT = process.env.LIMIT ? parseInt(process.env.LIMIT, 10) : 0;
@@ -70,13 +72,14 @@ if (LIMIT > 0) targets = targets.slice(0, LIMIT);
   targets.forEach(t => { byKind[t.kind] = (byKind[t.kind] || 0) + 1; });
   console.log("Stimme: " + (cfg.voiceName || cfg.voiceId) + " (" + cfg.voiceId + ")");
   console.log("Ziel: " + targets.length + " Clips (" + JSON.stringify(byKind) + "), Format " +
-    lib.extFor(cfg.format) + ", Modell " + cfg.model);
+    lib.extFor(cfg.format) + ", Modell " + cfg.model +
+    ", Stability " + (cfg.stability == null ? "Default" : cfg.stability));
 
   const r = await lib.generateClips(targets, cfg, function (made, total) {
     if (made % 25 === 0) console.log("  … " + made + " erzeugt");
   });
 
-  const meta = { source: "elevenlabs", voiceId: cfg.voiceId, voiceName: cfg.voiceName || null, model: cfg.model };
+  const meta = { source: "elevenlabs", voiceId: cfg.voiceId, voiceName: cfg.voiceName || null, model: cfg.model, stability: cfg.stability };
   // Effektives Format (ffmpeg-Fallback kann mp3 statt opus/aac erzwungen haben).
   const effFormat = r.ext === "m4a" ? "aac" : r.ext;
   const inManifest = lib.writeManifest(OUT, effFormat, lib.enumerateTargets(loaded.CONTENT, loaded.GRAMMAR), meta);

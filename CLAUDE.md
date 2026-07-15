@@ -61,7 +61,8 @@ zusätzlich `node --check app.js content.js grammar.js`.
 - In Tests Onboarding überspringen: `profile.onboarded=true`, `autoplay=false`,
   `micHintDismissed=true` in localStorage seeden, dann reload.
 - **Service Worker:** bei Content-/Code-Release `CACHE_NAME` in `sw.js` hochzählen
-  (aktuell v8) und `grammar.js` in `ASSETS` halten, sonst bekommen localhost-Nutzer alten Cache.
+  (aktuell v10) und `grammar.js`/`audio/manifest.js` in `ASSETS` halten, sonst bekommen
+  localhost-Nutzer alten Cache. Audio-Clips liegen im separaten `AUDIO_CACHE` (cache-first).
 - Hebräisch immer RTL (`dir="rtl"`, `lang="he"`); zentrale Anzeige via `heEl()` (respektiert
   Fade + Prüfungsmodus). TTS über `spoken(item)` (Buchstaben haben `speak` = Namen).
 - Neue Inhalte: Schema im Kopf von `content.js`; Niqqud/Umschrift sorgfältig, muttersprachliches

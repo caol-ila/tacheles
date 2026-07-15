@@ -674,16 +674,21 @@ function check(name, ok, detail) {
     legacy.defaults && legacy.noOnb && legacy.home && legacy.themeRows === 20,
     "defaults=" + legacy.defaults + " themen=" + legacy.themeRows);
 
-  // --- 14. Audio-Schicht (ohne echte Dateien): Platzhalter + Fallback + URL-Mapping ---
+  // --- 14. Audio-Schicht: Manifest konsistent + URL-Mapping ---
   // Frisch laden (der Alt-State oben hat autoplay=false, gut fuer diesen Check).
   await page.reload(); await page.waitForTimeout(500);
-  const audioPlaceholder = await page.evaluate(() => ({
-    manifestNull: window.TACHELES_AUDIO === null,          // Platzhalter geladen, kein fetch-Fehler
-    inactive: window.TACHELES_DEBUG.audioActive() === false // ohne Samples: reiner TTS-Betrieb
+  const audioState = await page.evaluate(() => ({
+    present: !!window.TACHELES_AUDIO,
+    active: window.TACHELES_DEBUG.audioActive(),
+    clips: window.TACHELES_AUDIO ? Object.keys(window.TACHELES_AUDIO.clips || {}).length : 0,
+    format: window.TACHELES_AUDIO ? window.TACHELES_AUDIO.format : null
   }));
-  check("Audio: Platzhalter-Manifest geladen, TTS-only",
-    audioPlaceholder.manifestNull && audioPlaceholder.inactive,
-    JSON.stringify(audioPlaceholder));
+  // Zwei gueltige Zustaende: mit Samples (Manifest aktiv, >= 600 Clips) ODER ohne
+  // (Platzhalter = null -> reiner TTS-Fallback). Beides darf NICHT crashen (0-Fehler-Check).
+  check("Audio: Manifest konsistent (aktiv mit Clips ODER TTS-Fallback)",
+    (audioState.present && audioState.active && audioState.clips >= 600 && !!audioState.format) ||
+    (!audioState.present && !audioState.active),
+    JSON.stringify(audioState));
   // Manifest injizieren (ohne echte Dateien) und das ID->URL-Mapping pruefen; danach
   // wieder auf null zuruecksetzen, damit KEINE 404-Audioladungen ausgeloest werden.
   const audioMap = await page.evaluate(() => {

@@ -118,10 +118,23 @@ async function resolveVoiceId(cfg) {
   return v.voice_id;
 }
 
+/** Stability-Wort/-Zahl -> numerischer Wert (v3: creative 0.0 / natural 0.5 / robust 1.0). */
+function stabilityValue(s) {
+  if (s == null || s === "") return null;
+  const m = { creative: 0.0, natural: 0.5, robust: 1.0 };
+  if (typeof s === "string" && m[s.trim().toLowerCase()] != null) return m[s.trim().toLowerCase()];
+  const n = Number(s);
+  return isFinite(n) ? n : null;
+}
+
 /** ElevenLabs TTS -> MP3-Buffer, mit Retry bei 429/5xx. */
 async function ttsElevenLabs(text, cfg) {
   const url = "https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(cfg.voiceId);
-  const body = JSON.stringify({ text: text, model_id: cfg.model, output_format: "mp3_44100_128" });
+  const payload = { text: text, model_id: cfg.model, output_format: "mp3_44100_128" };
+  if (typeof cfg.stability === "number" && isFinite(cfg.stability)) {
+    payload.voice_settings = { stability: cfg.stability };
+  }
+  const body = JSON.stringify(payload);
   for (let attempt = 1; attempt <= 5; attempt++) {
     const res = await fetch(url, {
       method: "POST",
@@ -141,7 +154,8 @@ async function ttsElevenLabs(text, cfg) {
 /** MP3-Buffer -> Zielformat auf Platte (mono, sprachtaugliche Bitrate). */
 function writeClip(mp3, destPath, format, ffmpeg) {
   if (!ffmpeg || format === "mp3") { fs.writeFileSync(destPath, mp3); return; }
-  const args = ["-hide_banner", "-loglevel", "error", "-y", "-i", "pipe:0", "-ac", "1"];
+  // apad = 0.2s Endstille, damit kein Clip hart abgeschnitten klingt.
+  const args = ["-hide_banner", "-loglevel", "error", "-y", "-i", "pipe:0", "-ac", "1", "-af", "apad=pad_dur=0.2"];
   if (format === "opus") args.push("-c:a", "libopus", "-b:a", "24k", "-ar", "24000");
   else if (format === "aac") args.push("-c:a", "aac", "-b:a", "48k", "-ar", "24000");
   args.push(destPath);
@@ -196,5 +210,5 @@ function writeManifest(outDir, format, targets, meta) {
 
 module.exports = {
   BANDS, bandIdx, audioHash, voicedItemText, loadContent, enumerateTargets,
-  extFor, hasFfmpeg, existingKeys, resolveVoiceId, ttsElevenLabs, writeClip, generateClips, writeManifest
+  extFor, hasFfmpeg, existingKeys, resolveVoiceId, stabilityValue, ttsElevenLabs, writeClip, generateClips, writeManifest
 };

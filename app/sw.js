@@ -11,7 +11,7 @@
  */
 "use strict";
 
-var CACHE_NAME = "tacheles-v9";
+var CACHE_NAME = "tacheles-v10";
 var AUDIO_CACHE = "tacheles-audio-v1";
 var ASSETS = [
   "./",

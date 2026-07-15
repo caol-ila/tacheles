@@ -84,6 +84,7 @@ const cfg = {
   voiceName: process.env.ELEVENLABS_VOICE_NAME,
   model: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2",
   format: formatBase,
+  stability: lib.stabilityValue(process.env.ELEVENLABS_STABILITY),
   outDir: OUT
 };
 if (missing.length === 0) { console.log("\nNichts nachzugenerieren."); process.exit(0); }
