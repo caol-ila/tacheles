@@ -1677,6 +1677,7 @@
       '<div class="data-actions" style="margin-top:14px">' +
       '<button class="btn danger" id="btn-reset">🗑 Zurücksetzen</button>' +
       '</div></section>' +
+      '<div class="footer-tag">🔊 Sprach-Samples erzeugt mit ElevenLabs (elevenlabs.io)</div>' +
       '<div class="footer-tag">Tacheles · Version ' + esc(CONTENT.version) + ' · Reden wir Tacheles. 🕊️</div>';
     $("#goal-sel").addEventListener("change", function (e) {
       state.profile.dailyGoalMin = parseInt(e.target.value, 10) || 5;

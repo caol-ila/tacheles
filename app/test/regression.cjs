@@ -398,6 +398,9 @@ function check(name, ok, detail) {
   const levelOpts = await page.evaluate(() =>
     [...document.querySelectorAll("#level-sel option")].map(o => o.value));
   check("Level-Auswahl bietet C2 an", levelOpts.indexOf("C2") >= 0, levelOpts.join(","));
+  // Attribution: ElevenLabs-Credit im Profil sichtbar.
+  check("Profil nennt ElevenLabs-Attribution",
+    await page.evaluate(() => /elevenlabs/i.test(document.body.innerText)));
 
   // --- 10b. E2E Grammatik-Walk (Grammatik-Sektion -> cloze/form) ---
   const gInfo = await page.evaluate(() => {

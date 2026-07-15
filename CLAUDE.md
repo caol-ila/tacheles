@@ -44,7 +44,7 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
 ```
 cd app && node test/regression.cjs
 ```
-84 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
+85 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
 Default `c:/Source/SofaSuche/node_modules/playwright-core`). Nach JEDER Änderung laufen lassen;
 zusätzlich `node --check app.js content.js grammar.js`.
 
@@ -61,7 +61,7 @@ zusätzlich `node --check app.js content.js grammar.js`.
 - In Tests Onboarding überspringen: `profile.onboarded=true`, `autoplay=false`,
   `micHintDismissed=true` in localStorage seeden, dann reload.
 - **Service Worker:** bei Content-/Code-Release `CACHE_NAME` in `sw.js` hochzählen
-  (aktuell v10) und `grammar.js`/`audio/manifest.js` in `ASSETS` halten, sonst bekommen
+  (aktuell v12) und `grammar.js`/`audio/manifest.js` in `ASSETS` halten, sonst bekommen
   localhost-Nutzer alten Cache. Audio-Clips liegen im separaten `AUDIO_CACHE` (cache-first).
 - Hebräisch immer RTL (`dir="rtl"`, `lang="he"`); zentrale Anzeige via `heEl()` (respektiert
   Fade + Prüfungsmodus). TTS über `spoken(item)` (Buchstaben haben `speak` = Namen).
