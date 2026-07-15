@@ -6,8 +6,9 @@
  * und schreibt app/audio/<key>.<ext> plus app/audio/manifest.js. Laeuft NICHT zur
  * Laufzeit der App. Bereits vorhandene Dateien werden uebersprungen (Resume).
  *
- * Zugangsdaten: bevorzugt aus der gitignore-ten Datei tools/audio.env
- * (ELEVENLABS_API_KEY=..., ELEVENLABS_VOICE_ID=...), sonst aus Env-Variablen.
+ * Zugangsdaten: bevorzugt aus der gitignore-ten Datei tools/audio.env, sonst
+ * aus Env-Variablen. ELEVENLABS_API_KEY plus entweder ELEVENLABS_VOICE_ID oder
+ * ELEVENLABS_VOICE_NAME (Name wird ueber die Voices-API zur ID aufgeloest).
  *
  * Aufruf (aus dem Repo-Wurzelverzeichnis):
  *   node tools/generate-audio.cjs
@@ -38,6 +39,7 @@ const OUT = path.join(APP, "audio");
 const cfg = {
   apiKey: process.env.ELEVENLABS_API_KEY,
   voiceId: process.env.ELEVENLABS_VOICE_ID,
+  voiceName: process.env.ELEVENLABS_VOICE_NAME,
   model: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2",
   format: (process.env.AUDIO_FORMAT || "opus").toLowerCase(),
   outDir: OUT
@@ -45,8 +47,8 @@ const cfg = {
 const LIMIT = process.env.LIMIT ? parseInt(process.env.LIMIT, 10) : 0;
 const ONLY_BANDS = process.env.BANDS ? process.env.BANDS.split(",").map(s => s.trim()) : null;
 
-if (!cfg.apiKey || !cfg.voiceId) {
-  console.error("Fehlt: ELEVENLABS_API_KEY und/oder ELEVENLABS_VOICE_ID.");
+if (!cfg.apiKey || (!cfg.voiceId && !cfg.voiceName)) {
+  console.error("Fehlt: ELEVENLABS_API_KEY und ELEVENLABS_VOICE_ID oder ELEVENLABS_VOICE_NAME.");
   console.error("Trag sie in tools/audio.env ein (gitignored) oder setze sie als Env-Variablen.");
   process.exit(1);
 }
@@ -61,8 +63,10 @@ if (ONLY_BANDS) targets = targets.filter(t => ONLY_BANDS.indexOf(t.band) >= 0);
 if (LIMIT > 0) targets = targets.slice(0, LIMIT);
 
 (async () => {
+  cfg.voiceId = await lib.resolveVoiceId(cfg); // Name -> ID (falls noetig)
   const byKind = {};
   targets.forEach(t => { byKind[t.kind] = (byKind[t.kind] || 0) + 1; });
+  console.log("Stimme: " + (cfg.voiceName || cfg.voiceId) + " (" + cfg.voiceId + ")");
   console.log("Ziel: " + targets.length + " Clips (" + JSON.stringify(byKind) + "), Format " +
     lib.extFor(cfg.format) + ", Modell " + cfg.model);
 

@@ -81,18 +81,20 @@ if (!FILL) {
 const cfg = {
   apiKey: process.env.ELEVENLABS_API_KEY,
   voiceId: process.env.ELEVENLABS_VOICE_ID,
+  voiceName: process.env.ELEVENLABS_VOICE_NAME,
   model: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2",
   format: formatBase,
   outDir: OUT
 };
 if (missing.length === 0) { console.log("\nNichts nachzugenerieren."); process.exit(0); }
-if (!cfg.apiKey || !cfg.voiceId) {
-  console.error("\n--fill braucht ELEVENLABS_API_KEY und ELEVENLABS_VOICE_ID (tools/audio.env oder Env).");
+if (!cfg.apiKey || (!cfg.voiceId && !cfg.voiceName)) {
+  console.error("\n--fill braucht ELEVENLABS_API_KEY und ELEVENLABS_VOICE_ID oder ELEVENLABS_VOICE_NAME (tools/audio.env).");
   process.exit(2);
 }
 
 (async () => {
-  console.log("\nGeneriere " + missing.length + " fehlende Clips …");
+  cfg.voiceId = await lib.resolveVoiceId(cfg);
+  console.log("\nGeneriere " + missing.length + " fehlende Clips (Stimme " + (cfg.voiceName || cfg.voiceId) + ") …");
   const r = await lib.generateClips(missing, cfg, function (made) { if (made % 25 === 0) console.log("  … " + made); });
   const meta = { source: "elevenlabs", voiceId: cfg.voiceId, model: cfg.model };
   lib.writeManifest(OUT, cfg.format, lib.enumerateTargets(loaded.CONTENT, loaded.GRAMMAR), meta);

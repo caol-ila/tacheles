@@ -92,6 +92,31 @@ function existingKeys(outDir, ext) {
   return out;
 }
 
+/**
+ * Voice-ID bestimmen: explizite cfg.voiceId hat Vorrang; sonst cfg.voiceName
+ * ueber die ElevenLabs-Voices-API aufloesen (die Stimme muss im Account/in der
+ * Sammlung sein). Toleranter Namensvergleich (case-insensitiv, Teilstring in
+ * beide Richtungen), damit "Ellen" auch "Ellen - Serious, Direct ..." trifft.
+ */
+async function resolveVoiceId(cfg) {
+  if (cfg.voiceId) return cfg.voiceId;
+  if (!cfg.voiceName) throw new Error("Weder ELEVENLABS_VOICE_ID noch ELEVENLABS_VOICE_NAME gesetzt.");
+  const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": cfg.apiKey } });
+  if (!res.ok) throw new Error("Voices-Abruf fehlgeschlagen: " + res.status + " " + (await res.text()).slice(0, 160));
+  const voices = ((await res.json()) || {}).voices || [];
+  const want = String(cfg.voiceName).trim().toLowerCase();
+  const norm = v => String(v.name || "").trim().toLowerCase();
+  let v = voices.find(x => norm(x) === want)
+       || voices.find(x => norm(x).indexOf(want) >= 0)
+       || voices.find(x => want.indexOf(norm(x)) >= 0 && norm(x).length >= 3);
+  if (!v) {
+    throw new Error('Voice "' + cfg.voiceName + '" nicht im Account gefunden. Vorhanden: ' +
+      (voices.map(x => x.name).join(", ") || "(keine)") +
+      '. Fuege die Stimme in ElevenLabs zu "My Voices" hinzu oder setze ELEVENLABS_VOICE_ID.');
+  }
+  return v.voice_id;
+}
+
 /** ElevenLabs TTS -> MP3-Buffer, mit Retry bei 429/5xx. */
 async function ttsElevenLabs(text, cfg) {
   const url = "https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(cfg.voiceId);
@@ -170,5 +195,5 @@ function writeManifest(outDir, format, targets, meta) {
 
 module.exports = {
   BANDS, bandIdx, audioHash, voicedItemText, loadContent, enumerateTargets,
-  extFor, hasFfmpeg, existingKeys, ttsElevenLabs, writeClip, generateClips, writeManifest
+  extFor, hasFfmpeg, existingKeys, resolveVoiceId, ttsElevenLabs, writeClip, generateClips, writeManifest
 };
