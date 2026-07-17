@@ -1495,7 +1495,11 @@
           tile("letter", picks.letter, "Buchstabe des Tages") +
           tile("word", picks.word, "Wort des Tages") +
           '</div>' +
+          '<div class="today-actions">' +
           '<button class="btn primary" id="btn-snack">🥨 Häppchen · 5 Aufgaben</button>' +
+          (countMastered(function (it) { return it.theme === "alefbet"; }) < 8 ?
+            '<button class="btn" id="btn-reading">👓 Lesen lernen</button>' : '') +
+          '</div>' +
           '</section>';
       })() +
       '<section class="card goal-card">' +
@@ -1528,6 +1532,10 @@
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
     var snack = $("#btn-snack");
     if (snack) snack.addEventListener("click", function () { startSession("smart", { size: 5 }); });
+    var reading = $("#btn-reading");
+    if (reading) reading.addEventListener("click", function () {
+      startSession("module", { moduleObj: buildReadingModule() });
+    });
     app.querySelectorAll("[data-today]").forEach(function (row) {
       var go = function () {
         startSession("smart", { itemIds: [row.dataset.today], size: 3, label: "🌅 Heute" });
@@ -1948,7 +1956,8 @@
       }
     } else if (modeId === "module") {
       // Modul: gefuehrte Mini-Lektion, linearer Schritt-Ablauf (kein Task-Mix).
-      var mod = moduleById(opts.moduleId);
+      // opts.moduleObj erlaubt ein zur Laufzeit gebautes Modul (z. B. "Lesen lernen").
+      var mod = opts.moduleObj || moduleById(opts.moduleId);
       if (!mod || !mod.steps || !mod.steps.length) { session = null; toast("Modul nicht gefunden."); return; }
       session.module = mod;
       session.steps = mod.steps.slice();
@@ -3577,6 +3586,38 @@
     "let_tsadi", "let_tsadi_s", "let_qof", "let_resh", "let_shin", "let_tav"
   ];
 
+  /** "Lesen lernen" (1.4): baut zur Laufzeit ein gefuehrtes Modul aus
+   *  vorhandenen Items. Bis zu 3 noch nicht gemeisterte Buchstaben in
+   *  Alef-Bet-Reihenfolge; je Buchstabe: Buchstabe vorstellen -> ein kurzes
+   *  freigeschaltetes Wort, das ihn ENTHAELT ("so liest man das") ->
+   *  Erkennungsfrage zum Buchstaben. Kein neuer Engine, kein neuer Content. */
+  function buildReadingModule() {
+    var letters = ALEFBET_ORDER.map(itemById).filter(function (it) {
+      return it && getMastery(it.id) < 3;
+    }).slice(0, 3);
+    if (!letters.length) {
+      // Alles gemeistert: von vorn wiederholen statt leer auszusteigen.
+      letters = ALEFBET_ORDER.map(itemById).filter(Boolean).slice(0, 3);
+    }
+    var steps = [];
+    letters.forEach(function (L) {
+      steps.push({ type: "teach", itemId: L.id });
+      var word = CONTENT.items.filter(function (it) {
+        return (it.type === "word" || it.type === "phrase") &&
+          bandUnlocked(itemBand(it)) && String(it.he).indexOf(L.he) >= 0;
+      }).sort(function (a, b) {
+        // kurz vor lang, dann haeufig vor selten: das lesbarste Aha-Wort zuerst
+        return (a.he.length - b.he.length) || ((a.freq || 999) - (b.freq || 999));
+      })[0];
+      if (word) steps.push({ type: "teach", itemId: word.id });
+      steps.push({ type: "quiz", itemId: L.id });
+    });
+    return {
+      id: "lesen_lernen", title: "Lesen lernen", emoji: "👓",
+      sub: "Buchstabe für Buchstabe zum ersten Wort", steps: steps
+    };
+  }
+
   function renderAlefbetChart() {
     cleanupSession();
     document.body.classList.add("in-session"); // voller Fokus, Nav aus
@@ -4511,6 +4552,9 @@
     dailyPicks: function () {
       var p = dailyPicks();
       return { letter: p.letter && p.letter.id, word: p.word && p.word.id };
+    },
+    readingModuleSteps: function () {
+      return buildReadingModule().steps.map(function (s) { return s.type + ":" + s.itemId; });
     },
     // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
     currentTaskItem: function () {

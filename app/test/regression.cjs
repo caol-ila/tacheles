@@ -1009,6 +1009,48 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
   await page.waitForTimeout(250);
 
+  // --- 14g. Lesen lernen: Buchstabe+enthaltendes Wort gepaart, Home-Einstieg ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; // Anfaenger: 0 gemeisterte Buchstaben -> Einstieg sichtbar
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const reading = await page.evaluate(() => {
+    const steps = window.TACHELES_DEBUG.readingModuleSteps();
+    const byId = {}; window.TACHELES_CONTENT.items.forEach(i => byId[i.id] = i);
+    // Muster: teach:let_X, [teach:wort das X enthaelt,] quiz:let_X
+    let pairsOk = true, quizzes = 0, teachesLetters = 0;
+    for (let i = 0; i < steps.length; i++) {
+      const [type, id] = steps[i].split(":");
+      if (type === "teach" && /^let_/.test(id)) {
+        teachesLetters++;
+        const next = (steps[i + 1] || "").split(":");
+        if (next[0] === "teach" && !/^let_/.test(next[1])) {
+          const letter = byId[id], word = byId[next[1]];
+          if (!word || String(word.he).indexOf(letter.he) < 0) pairsOk = false;
+        }
+      }
+      if (type === "quiz") quizzes++;
+    }
+    return { steps: steps.length, pairsOk, quizzes, teachesLetters,
+      btn: !!document.querySelector("#btn-reading") };
+  });
+  check("Lesen lernen: Home-Einstieg fuer Anfaenger sichtbar", reading.btn);
+  check("Lesen lernen: Sequenz paart Buchstabe + enthaltendes Wort + Quiz",
+    reading.teachesLetters >= 1 && reading.quizzes >= 1 && reading.pairsOk, JSON.stringify(reading));
+  await page.evaluate(() => { const b = document.querySelector("#btn-reading"); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  const readingSession = await page.evaluate(() => ({
+    title: (document.querySelector(".session-title") || {}).textContent || "",
+    stepType: window.TACHELES_DEBUG.moduleStepType()
+  }));
+  check("Lesen lernen: startet als gefuehrtes Modul (teach-Schritt)",
+    /lesen lernen/i.test(readingSession.title) && readingSession.stepType === "teach",
+    JSON.stringify(readingSession));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
