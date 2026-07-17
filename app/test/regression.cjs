@@ -768,6 +768,98 @@ function check(name, ok, detail) {
   });
   await page.reload(); await page.waitForTimeout(400);
 
+  // --- 14c. Ehrliche Mastery: Erkennen deckelt bei 2, Produktion hebt auf 3 ---
+  const mastery = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    return {
+      cls: D.isProduction("mc", "he2de") === false && D.isProduction("mc", "de2he") === true &&
+           D.isProduction("build") === true && D.isProduction("speak") === true &&
+           D.isProduction("swipe") === false && D.isProduction("listen") === false
+    };
+  });
+  check("Mastery: Klassifikation Erkennen/Produzieren (isProduction)", mastery.cls);
+  await page.reload(); await page.waitForTimeout(500);
+  const capRes = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const id = window.TACHELES_CONTENT.items[0].id;
+    // 5x Erkennen richtig: darf nie ueber 2 kommen.
+    for (let i = 0; i < 5; i++) D.recordAnswer(id, "mc", "good", "he2de");
+    const afterRecog = D.getMastery(id);
+    // 1x Produktion richtig: hebt auf 3 (gemeistert).
+    D.recordAnswer(id, "mc", "good", "de2he");
+    const afterProd = D.getMastery(id);
+    // Erkennen demotet ein 3+-Item NICHT.
+    D.recordAnswer(id, "mc", "good", "he2de");
+    const stillMastered = D.getMastery(id);
+    return { afterRecog, afterProd, stillMastered };
+  });
+  check("Mastery: reines Erkennen deckelt bei 2", capRes.afterRecog === 2, capRes.afterRecog);
+  check("Mastery: Produktionsantwort hebt auf 3", capRes.afterProd === 3, capRes.afterProd);
+  check("Mastery: Erkennen senkt Gemeistertes nicht", capRes.stillMastered === 3, capRes.stillMastered);
+
+  // Erstkontakt zaehlt nicht: frisches Wort in einer Smart-Session vorstellen,
+  // sofort korrekt beantworten -> Mastery bleibt 0.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = document.querySelector("#cta-start"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const introId = await page.evaluate(() => window.TACHELES_DEBUG.currentTaskItem());
+  check("Erstkontakt: Intro-Karte zu einem neuen Wort", !!introId &&
+    await page.evaluate(() => !!document.querySelector(".intro-tag")), introId);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test(x.textContent.trim())); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  // Die unmittelbar folgende Abfrage desselben Worts KORREKT beantworten.
+  await page.evaluate((id) => {
+    // MC he->de: richtige Option per data-item-id; Flash: Aufdecken + "Gut".
+    const opt = document.querySelector('.opt[data-item-id="' + id + '"]');
+    if (opt) { opt.click(); return; }
+    const reveal = [...document.querySelectorAll("button")].find(x => /aufdecken/i.test(x.textContent));
+    if (reveal) { reveal.click(); }
+  }, introId);
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const g = [...document.querySelectorAll(".grade-btn")].find(x => /gut/i.test(x.textContent));
+    if (g) g.click();
+  });
+  await page.waitForTimeout(400);
+  const firstContactMastery = await page.evaluate((id) => window.TACHELES_DEBUG.getMastery(id), introId);
+  check("Erstkontakt: erste Abfrage nach der Vorstellung hebt Mastery NICHT",
+    firstContactMastery === 0, introId + " -> " + firstContactMastery);
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+
+  // MC hat immer 4 Optionen; Buchstaben-Frage verraet die Umschrift nicht.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    // ein paar Woerter "gelernt", damit MC ohne Intro startet
+    window.TACHELES_CONTENT.items.slice(0, 10).forEach(i => {
+      s.srs[i.id] = { ease: 2.5, intervalDays: 2, dueTs: Date.now() - 1000, reps: 2, lapses: 0, mastery: 1, lastReviewTs: Date.now() - 86400000 };
+    });
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("[data-mode]")].find(x => x.dataset.mode === "mc"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  let sawFourOpts = false;
+  for (let i = 0; i < 6; i++) {
+    const optCount = await page.evaluate(() => document.querySelectorAll(".opt:not(:disabled)").length);
+    if (optCount > 0) { sawFourOpts = optCount === 4; break; }
+    await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter|aufdecken/i.test(x.textContent.trim())); if (b) b.click(); });
+    await page.waitForTimeout(400);
+  }
+  check("MC zeigt immer 4 Optionen", sawFourOpts);
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 

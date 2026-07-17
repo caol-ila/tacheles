@@ -467,8 +467,12 @@
     return e ? (e.mastery || 0) : 0;
   }
 
-  /** Wendet eine Bewertung auf den SRS-Zustand eines Items an. */
-  function rateItem(id, grade) {
+  /** Wendet eine Bewertung auf den SRS-Zustand eines Items an.
+   *  masteryCap (Default 5) begrenzt nur den ANSTIEG der Mastery dieser einen
+   *  Bewertung (Erkennen deckelt bei 2, Erstkontakt bei "keinem Anstieg");
+   *  Absenkungen ("again") und die SRS-Planung sind nie betroffen. */
+  function rateItem(id, grade, masteryCap) {
+    var cap = masteryCap === undefined ? 5 : masteryCap;
     var now = Date.now();
     var e = getSrs(id);
     switch (grade) {
@@ -486,13 +490,13 @@
         break;
       case "good":
         e.intervalDays = e.intervalDays < 1 ? 1 : e.intervalDays * e.ease;
-        e.mastery = Math.min(5, e.mastery + 1);
+        if (e.mastery < cap) e.mastery = Math.min(cap, e.mastery + 1);
         e.dueTs = now + e.intervalDays * DAY_MS;
         break;
       case "easy":
         e.ease = Math.min(3.2, e.ease + 0.1);
         e.intervalDays = e.intervalDays < 1 ? 2.5 : e.intervalDays * e.ease * 1.3;
-        e.mastery = Math.min(5, e.mastery + 1);
+        if (e.mastery < cap) e.mastery = Math.min(cap, e.mastery + 1);
         e.dueTs = now + e.intervalDays * DAY_MS;
         break;
     }
@@ -632,11 +636,22 @@
     });
   }
 
+  /* Aufgaben-Klassifikation (ehrliche Mastery, R-Spec 1.1):
+   * "production" = die hebraeische Form muss aktiv produziert werden
+   * (Satzbau, Sprechen, jede de->he-Abfrage inkl. Grammatik cloze/form).
+   * Alles andere ist "recognition" (Erkennen) und deckelt mastery bei 2. */
+  var RECALL_KIND = { build: "production", speak: "production" };
+
+  function isProduction(mode, dir) {
+    if (RECALL_KIND[mode] === "production") return true;
+    return dir === "de2he";
+  }
+
   /**
    * Zentrale Verbuchung jedes Abruf-Ereignisses:
    * SRS-Update, XP, Tageslog, Tagesziel/Streak, Session-Statistik, Auto-Save.
    */
-  function recordAnswer(itemId, mode, grade) {
+  function recordAnswer(itemId, mode, grade, dir) {
     // "Richtig" = gewusst. Auch "Schwer" ist gewusst (nur muehsam) — als falsch
     // zaehlt NUR "Nochmal" (= wusste ich nicht). Sonst drueckt ehrliches
     // Selbstbewerten die Trefferquote strukturell Richtung 50 %.
@@ -644,7 +659,15 @@
     var wasDue = isDue(itemId, Date.now());
     var masteryBefore = getMastery(itemId);
 
-    rateItem(itemId, grade);
+    // Ehrliche Mastery (1.1): Erkennen hebt hoechstens auf 2; erst Produktion
+    // (good/easy) erreicht 3+. Der ERSTE Abruf eines in DIESER Session frisch
+    // vorgestellten Worts erhoeht die Mastery gar nicht (nur SRS-Planung/XP).
+    var cap = isProduction(mode, dir) ? 5 : 2;
+    if (session && session.introducedThisSession && session.introducedThisSession[itemId]) {
+      delete session.introducedThisSession[itemId];
+      cap = masteryBefore;
+    }
+    rateItem(itemId, grade, cap);
 
     var xp = Math.max(1, Math.round((XP_BASE[mode] || 5) * (correct ? 1 : 0.3) * (wasDue ? 1.2 : 1)));
     state.gamification.xpTotal += xp;
@@ -2264,6 +2287,13 @@
     var body = sessionShell(title, session.i / session.tasks.length);
     var item = task.item;
 
+    // Erstkontakt-Merker (1.1): die erste Abfrage dieses Worts in DIESER
+    // Session zaehlt nicht fuer die Mastery.
+    if (session) {
+      if (!session.introducedThisSession) session.introducedThisSession = {};
+      session.introducedThisSession[item.id] = true;
+    }
+
     body.appendChild(el("div", "intro-tag", INTRO_TAGS[item.type] || INTRO_TAGS.word));
     var card = el("div", "card learn-card intro-card");
     if (item.emoji) card.appendChild(el("div", "intro-emoji", item.emoji));
@@ -2342,7 +2372,7 @@
       g.appendChild(el("span", null, def[1]));
       g.appendChild(el("span", "grade-sub", def[2]));
       g.addEventListener("click", function () {
-        recordAnswer(item.id, "flash", def[0]);
+        recordAnswer(item.id, "flash", def[0], task.dir);
         // "Nochmal" haengt das Item einmal hinten an die Session an.
         if (def[0] === "again" && !task.requeued) {
           session.tasks.push({ item: item, kind: task.kind, dir: null, requeued: true });
@@ -2475,19 +2505,11 @@
       return x.id !== item.id && typeGroup(x.type) === grp && !seenDe[x.de] && !seenHe[x.he];
     });
 
-    if (getMastery(item.id) >= 2) {
-      // 3a. Schwerer: nach Aehnlichkeit sortiert (+ kleiner Jitter) die Top-n.
-      var scored = pool.map(function (c) { return { c: c, s: distractorScore(item, c) + Math.random() }; });
-      scored.sort(function (a, b) { return b.s - a.s; });
-      for (var i = 0; i < scored.length && out.length < n; i++) tryAdd(scored[i].c);
-    } else {
-      // 3b. Freundlich: gleiches Thema zuerst, dann Rest, jeweils zufaellig.
-      var same = shuffle(pool.filter(function (x) { return x.theme === item.theme; }).slice());
-      var other = shuffle(pool.filter(function (x) { return x.theme !== item.theme; }).slice());
-      [same, other].forEach(function (src) {
-        for (var j = 0; j < src.length && out.length < n; j++) tryAdd(src[j]);
-      });
-    }
+    // 3. Immer nach Aehnlichkeit sortiert (+ kleiner Jitter) die Top-n:
+    // plausible Distraktoren statt Raten "an der Wortlaenge" (1.1).
+    var scored = pool.map(function (c) { return { c: c, s: distractorScore(item, c) + Math.random() }; });
+    scored.sort(function (a, b) { return b.s - a.s; });
+    for (var i = 0; i < scored.length && out.length < n; i++) tryAdd(scored[i].c);
     // 5. Notfall-Auffuellung, falls die Gruppe zu klein ist (sollte nicht passieren).
     if (out.length < n) {
       var rest = shuffle(CONTENT.items.filter(function (x) {
@@ -2536,7 +2558,7 @@
             if (btns[i].dataset.itemId === item.id) { btns[i].classList.add("correct"); btns[i].classList.remove("dim"); }
           }
         }
-        recordAnswer(item.id, mode, correct ? "good" : "again");
+        recordAnswer(item.id, mode, correct ? "good" : "again", task && task.dir);
         if (!correct) requeueOnWrong(task);
         if (afterAnswer) afterAnswer(correct);
         if (correct) {
@@ -3820,6 +3842,11 @@
   function renderModuleTeach(step, title) {
     var item = itemById(step.itemId);
     if (!item) return moduleStepNext();
+    // Erstkontakt-Merker (1.1), siehe renderIntro.
+    if (session) {
+      if (!session.introducedThisSession) session.introducedThisSession = {};
+      session.introducedThisSession[item.id] = true;
+    }
     var body = sessionShell(title, session.stepIdx / session.steps.length);
     // Vorstellungs-Schritt vergibt keine XP: "⭐"-Zaehler leer lassen (erst ab Quiz).
     var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
@@ -3860,7 +3887,7 @@
             if (ob.dataset.itemId === item.id) { ob.classList.add("correct"); ob.classList.remove("dim"); }
           });
         }
-        recordAnswer(item.id, "mc", correct ? "good" : "again");
+        recordAnswer(item.id, "mc", correct ? "good" : "again", optionKind === "he" ? "de2he" : "he2de");
         if (afterAnswer) afterAnswer(correct);
         if (correct) later(moduleStepNext, 1000);
         else {
@@ -3982,7 +4009,7 @@
           });
         }
         if (step.itemId && itemById(step.itemId)) {
-          recordAnswer(step.itemId, "mc", correct ? "good" : "again");
+          recordAnswer(step.itemId, "mc", correct ? "good" : "again", "de2he");
         } else {
           recordFreeAnswer("mc", correct);
         }
@@ -4315,6 +4342,16 @@
     BANDS: BANDS,
     // Ist ein Band beim AKTUELLEN Zustand freigeschaltet? (Gating-Check im Test)
     bandUnlocked: function (band) { return bandUnlocked(band); },
+    // Mastery-Reform (Tests): Klassifikation, direkte Verbuchung, Mastery-Read.
+    isProduction: function (mode, dir) { return isProduction(mode, dir); },
+    getMastery: function (id) { return getMastery(id); },
+    recordAnswer: function (id, mode, grade, dir) { return recordAnswer(id, mode, grade, dir); },
+    // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
+    currentTaskItem: function () {
+      if (!session || !session.tasks) return null;
+      var t = session.tasks[session.i];
+      return t ? t.item.id : null;
+    },
     // Aktueller Modul-Schritt-Typ (fuer den Grammatik-E2E-Walk).
     moduleStepType: function () {
       if (!session || !session.steps) return null;
