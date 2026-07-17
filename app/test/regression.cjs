@@ -1128,6 +1128,80 @@ function check(name, ok, detail) {
   await page.waitForTimeout(300);
   check("Vokabelliste: Zurueck fuehrt ins Profil", await page.evaluate(() => !!document.querySelector("#btn-vocab")));
 
+  // --- 14i. Feedback: Notiz speichern/loeschen, URL-Prefill + Laengenlimit, Footer ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.feedback = { notes: [], pronIssues: { shalom: true } };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  check("Feedback: Footer-Link auf Home", await page.evaluate(() =>
+    !![...document.querySelectorAll('.footer-links [data-goto="feedback"]')].length));
+  await page.evaluate(() => { const a = document.querySelector('[data-goto="feedback"]'); if (a) a.click(); });
+  await page.waitForTimeout(400);
+  check("Feedback: Hub oeffnet", await page.evaluate(() =>
+    /feedback/i.test((document.querySelector(".session-title") || {}).textContent || "")));
+  await page.evaluate(() => {
+    document.querySelector(".fb-textarea").value = "Testnotiz aus der Regression";
+    const b = [...document.querySelectorAll("button")].find(x => /notiz speichern/i.test(x.textContent));
+    if (b) b.click();
+  });
+  await page.waitForTimeout(400);
+  const fbSaved = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return {
+      n: s.feedback.notes.length,
+      text: s.feedback.notes[0] && s.feedback.notes[0].text,
+      shown: /Testnotiz aus der Regression/.test(document.body.innerText),
+      pronShown: /Aussprache gemeldet \(1\)/.test(document.body.innerText)
+    };
+  });
+  check("Feedback: Notiz speichern + anzeigen (inkl. Aussprache-Liste)",
+    fbSaved.n === 1 && fbSaved.text === "Testnotiz aus der Regression" && fbSaved.shown && fbSaved.pronShown,
+    JSON.stringify(fbSaved));
+  const fbUrls = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const issue = D.feedbackIssueUrl();
+    const mail = D.feedbackMailtoUrl();
+    return {
+      issueOk: issue.url.indexOf("https://github.com/caol-ila/tacheles/issues/new?title=") === 0 &&
+        issue.url.indexOf(encodeURIComponent("Testnotiz aus der Regression")) > 0 && !issue.truncated,
+      mailOk: mail.url.indexOf("mailto:tacheles@mahlberg.rocks?subject=") === 0
+    };
+  });
+  check("Feedback: GitHub- und mailto-URL korrekt vorbefuellt", fbUrls.issueOk && fbUrls.mailOk, JSON.stringify(fbUrls));
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.feedback.notes = [];
+    for (let i = 0; i < 20; i++) s.feedback.notes.push({ ts: i, text: new Array(500).join("x") });
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const fbCap2 = await page.evaluate(() => {
+    const issue = window.TACHELES_DEBUG.feedbackIssueUrl();
+    return { len: issue.url.length, truncated: issue.truncated };
+  });
+  check("Feedback: Prefill-URL bei Ueberlaenge auf <= 6000 gekappt",
+    fbCap2.len <= 6000 && fbCap2.truncated === true, JSON.stringify(fbCap2));
+  // Notiz loeschen (im Hub)
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.feedback = { notes: [{ ts: 5, text: "wegdamit" }], pronIssues: {} };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#btn-feedback"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const b = document.querySelector(".fb-note .icon-btn"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const fbDeleted = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("tacheles_state_v1")).feedback.notes.length);
+  check("Feedback: Notiz einzeln loeschen", fbDeleted === 0, fbDeleted);
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 

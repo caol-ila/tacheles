@@ -965,3 +965,12 @@ body.in-session .bottom-nav { display: none; }
 .vocab-badge.done { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
 .vocab-badge.started { background: #fff8e1; color: #8d6e00; border-color: #ffe082; }
 .pron-btn.active { background: #ffebee; color: #c62828; border-color: #ef9a9a; }
+
+/* Footer-Links + Feedback-Hub */
+.footer-links { text-align: center; margin: 4px 0 14px; font-size: .85rem; }
+.footer-links a { color: var(--muted); text-decoration: underline; margin: 0 4px; }
+.fb-textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; margin: 8px 0 10px; resize: vertical; }
+.fb-note { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.fb-note:last-of-type { border-bottom: none; }
+.fb-note-date { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.fb-note-text { flex: 1; overflow-wrap: anywhere; }

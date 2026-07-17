@@ -1386,6 +1386,24 @@
     });
   }
 
+  /** Dezente Footer-Links der Hauptscreens (Feedback; Task 9 ergaenzt
+   *  Kontakt + Datenschutz). */
+  function footerLinksHtml() {
+    return '<div class="footer-links">' +
+      '<a href="#" data-goto="feedback">Feedback</a>' +
+      '</div>';
+  }
+
+  function wireFooterLinks(root) {
+    root.querySelectorAll("[data-goto]").forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        var t = a.dataset.goto;
+        if (t === "feedback") renderFeedback();
+      });
+    });
+  }
+
   function modeTilesHtml(wide) {
     return '<div class="tile-grid' + (wide ? " wide" : "") + '">' +
       MODES.map(function (m) {
@@ -1528,7 +1546,7 @@
       '<h2 class="h2">Modi</h2>' + modeTilesHtml(false) +
       '<h2 class="h2">Themen <span class="h2-sub">· antippen zum gezielten Üben</span></h2>' +
       '<div class="theme-list">' + themeListHtml() + '</div>' +
-      '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>';
+      '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>' + footerLinksHtml();
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
     var snack = $("#btn-snack");
     if (snack) snack.addEventListener("click", function () { startSession("smart", { size: 5 }); });
@@ -1555,6 +1573,7 @@
     wireModeTiles(app);
     wireThemeRows(app);
     wireLockedSummary(app);
+    wireFooterLinks(app);
   }
 
   /** Eine Station des gefuehrten Pfads (Lernen-Screen). */
@@ -1593,11 +1612,12 @@
       '<div class="theme-list path-list">' +
       CONTENT.themes.map(function (t) { return pathRowHtml(t, next && t.id === next.id); }).join("") +
       '</div>' +
-      '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true);
+      '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true) + footerLinksHtml();
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
     wireModeTiles(app);
     wireModuleTiles(app);
     wireThemeRows(app);
+    wireFooterLinks(app);
   }
 
   function renderProgress() {
@@ -1729,7 +1749,7 @@
       '<section class="card"><div class="data-actions">' +
       '<button class="btn" id="btn-export">📤 Export</button>' +
       '<button class="btn" id="btn-import">📥 Import</button>' +
-      '</div></section>';
+      '</div></section>' + footerLinksHtml();
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
     $("#btn-exam").addEventListener("click", function () { startSession("exam"); });
@@ -1750,6 +1770,7 @@
     });
     wireThemeRows(app);
     wireLockedSummary(app);
+    wireFooterLinks(app);
   }
 
   function renderProfile() {
@@ -1813,6 +1834,9 @@
       '<div class="setting-row"><div><div class="setting-label">📖 Vokabelliste</div>' +
       '<div class="setting-sub">Alle Wörter nach Level durchsehen, anhören, Aussprache melden</div></div>' +
       '<button class="btn" id="btn-vocab">Öffnen</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">💬 Feedback</div>' +
+      '<div class="setting-sub">Notizen sammeln und als GitHub-Issue oder E-Mail übermitteln</div></div>' +
+      '<button class="btn" id="btn-feedback">Öffnen</button></div>' +
       '</section>' +
       '<h2 class="h2">Daten</h2>' +
       '<section class="card">' +
@@ -1837,7 +1861,8 @@
       '<button class="btn danger" id="btn-reset">🗑 Zurücksetzen</button>' +
       '</div></section>' +
       '<div class="footer-tag">🔊 Sprach-Samples erzeugt mit ElevenLabs (elevenlabs.io)</div>' +
-      '<div class="footer-tag">Tacheles · Version ' + esc(CONTENT.version) + ' · Reden wir Tacheles. 🕊️</div>';
+      '<div class="footer-tag">Tacheles · Version ' + esc(CONTENT.version) + ' · Reden wir Tacheles. 🕊️</div>' +
+      footerLinksHtml();
     $("#goal-sel").addEventListener("change", function (e) {
       state.profile.dailyGoalMin = parseInt(e.target.value, 10) || 5;
       saveState();
@@ -1857,11 +1882,13 @@
     });
     $("#btn-placement").addEventListener("click", function () { startPlacement(false); });
     $("#btn-vocab").addEventListener("click", function () { renderVocabBrowser(effectiveBand(), false); });
+    $("#btn-feedback").addEventListener("click", renderFeedback);
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
     $("#btn-reset").addEventListener("click", resetProgress);
     $("#btn-sync-copy").addEventListener("click", copySyncCode);
     $("#btn-sync-paste").addEventListener("click", pasteSyncCode);
+    wireFooterLinks(app);
   }
 
   /* ==========================================================
@@ -3788,6 +3815,188 @@
     window.scrollTo(0, 0);
   }
 
+  /* ---------- Feedback (WS3): lokale Notizen + Uebermittlung ---------- */
+
+  var FEEDBACK_ISSUE_BASE = "https://github.com/caol-ila/tacheles/issues/new";
+  var FEEDBACK_MAIL = "tacheles@mahlberg.rocks";
+  var FEEDBACK_URL_MAX = 6000; // Prefill-URLs laengenbegrenzen (Browser-/Server-Limits)
+
+  /** Notizen + gemeldete Aussprache-Woerter als Markdown-Body. */
+  function feedbackBody() {
+    var fb = state.feedback;
+    var lines = ["Feedback aus der Tacheles-App (Version " + CONTENT.version + ")", ""];
+    if (fb.notes.length) {
+      lines.push("## Notizen");
+      fb.notes.forEach(function (n) {
+        lines.push("- (" + dateStr(new Date(n.ts || 0)) + ") " + n.text);
+      });
+      lines.push("");
+    }
+    var ids = Object.keys(fb.pronIssues);
+    if (ids.length) {
+      lines.push("## Aussprache klingt falsch");
+      ids.forEach(function (id) {
+        var it = itemById(id);
+        lines.push(it ? "- " + it.he + " (" + it.translit + " = " + it.de + ") [" + id + "]" : "- " + id);
+      });
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+
+  /** base + encodeURIComponent(body), auf max Zeichen gekappt (mit Hinweis im Text). */
+  function capUrl(base, body, max) {
+    var url = base + encodeURIComponent(body);
+    var truncated = false;
+    while (url.length > max && body.length > 0) {
+      truncated = true;
+      body = body.slice(0, body.length - 200);
+      url = base + encodeURIComponent(body + "\n\n… [gekürzt – Rest bitte anhängen]");
+    }
+    return { url: url, truncated: truncated };
+  }
+
+  function feedbackIssueUrl() {
+    return capUrl(FEEDBACK_ISSUE_BASE + "?title=" + encodeURIComponent("App-Feedback") + "&body=",
+      feedbackBody(), FEEDBACK_URL_MAX);
+  }
+
+  function feedbackMailtoUrl() {
+    return capUrl("mailto:" + FEEDBACK_MAIL + "?subject=" + encodeURIComponent("Tacheles-Feedback") + "&body=",
+      feedbackBody(), FEEDBACK_URL_MAX);
+  }
+
+  /** Link nutzerinitiiert oeffnen (funktioniert auch auf file:// und fuer mailto:). */
+  function openExternal(url) {
+    var a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  /** Feedback-Hub (WS3): Notizen erfassen/ansehen/loeschen, gemeldete
+   *  Aussprache-Woerter, Uebermitteln via GitHub-Issue-Prefill oder mailto.
+   *  Uebermitteln leert die lokale Sammlung bewusst NICHT. */
+  function renderFeedback() {
+    cleanupSession();
+    document.body.classList.add("in-session");
+    var app = $("#app");
+    app.innerHTML = "";
+
+    var head = el("div", "session-head");
+    var back = btn("✕", "quit-btn", function () {
+      document.body.classList.remove("in-session");
+      showScreen("profile");
+    });
+    back.title = "Zurück zum Profil";
+    head.appendChild(back);
+    var mid = el("div", "session-info");
+    mid.appendChild(el("div", "session-title", "💬 Feedback"));
+    head.appendChild(mid);
+    head.appendChild(el("div", "session-xp", ""));
+    app.appendChild(head);
+
+    // Erfassen
+    var card = el("section", "card");
+    card.appendChild(el("div", "setting-label", "Was soll besser werden?"));
+    var ta = el("textarea", "fb-textarea");
+    ta.rows = 3;
+    ta.maxLength = 2000;
+    ta.placeholder = "Tippfehler, komische Übersetzung, Wunsch … alles hilft.";
+    ta.setAttribute("aria-label", "Feedback-Notiz");
+    card.appendChild(ta);
+    card.appendChild(btn("Notiz speichern", "btn primary", function () {
+      var text = ta.value.trim();
+      if (!text) { toast("Erst etwas schreiben. 🙂"); return; }
+      state.feedback.notes.push({ ts: Date.now(), text: text.slice(0, 2000) });
+      saveState();
+      toast("Gespeichert. 📝");
+      renderFeedback();
+    }));
+    app.appendChild(card);
+
+    // Gesammelte Notizen
+    var notes = state.feedback.notes;
+    var nCard = el("section", "card");
+    nCard.appendChild(el("div", "setting-label", "Deine Notizen (" + notes.length + ")"));
+    if (!notes.length) {
+      nCard.appendChild(el("div", "setting-sub", "Noch keine Notizen."));
+    } else {
+      notes.forEach(function (n, idx) {
+        var row = el("div", "fb-note");
+        row.appendChild(el("span", "fb-note-date", dateStr(new Date(n.ts || 0))));
+        row.appendChild(el("span", "fb-note-text", n.text));
+        var del = btn("🗑", "icon-btn small-btn", function () {
+          state.feedback.notes.splice(idx, 1);
+          saveState();
+          renderFeedback();
+        });
+        del.title = "Notiz löschen";
+        row.appendChild(del);
+        nCard.appendChild(row);
+      });
+      nCard.appendChild(btn("Alle Notizen löschen", "btn ghost small", function () {
+        if (!confirm("Wirklich alle Notizen löschen?")) return;
+        state.feedback.notes = [];
+        saveState();
+        renderFeedback();
+      }));
+    }
+    app.appendChild(nCard);
+
+    // Gemeldete Aussprache (aus der Vokabelliste)
+    var ids = Object.keys(state.feedback.pronIssues);
+    var pCard = el("section", "card");
+    pCard.appendChild(el("div", "setting-label", "Aussprache gemeldet (" + ids.length + ")"));
+    if (!ids.length) {
+      pCard.appendChild(el("div", "setting-sub",
+        "Nichts markiert. In der 📖 Vokabelliste kannst du Wörter mit „🎙 falsch?“ melden."));
+    } else {
+      ids.forEach(function (id) {
+        var it = itemById(id);
+        var row = el("div", "fb-note");
+        var he = el("span", "done-review-he", it ? it.he : id);
+        he.dir = "rtl"; he.lang = "he";
+        row.appendChild(he);
+        row.appendChild(el("span", "fb-note-text", it ? (it.translit + " = " + it.de) : ""));
+        var del = btn("🗑", "icon-btn small-btn", function () {
+          delete state.feedback.pronIssues[id];
+          saveState();
+          renderFeedback();
+        });
+        del.title = "Meldung entfernen";
+        row.appendChild(del);
+        pCard.appendChild(row);
+      });
+    }
+    app.appendChild(pCard);
+
+    // Uebermitteln (ehrlicher Hinweis: oeffentlich + Login, nichts automatisch)
+    var sCard = el("section", "card");
+    sCard.appendChild(el("div", "setting-label", "Übermitteln"));
+    sCard.appendChild(el("p", "setting-sub",
+      "Die App sendet nichts von selbst. „Auf GitHub übermitteln“ öffnet ein vorbefülltes, " +
+      "ÖFFENTLICHES GitHub-Issue (GitHub-Konto nötig). Ohne GitHub geht es per E-Mail. " +
+      "Deine Sammlung hier bleibt danach erhalten, löschen kannst du sie oben selbst."));
+    var actions = el("div", "data-actions");
+    actions.appendChild(btn("🐙 Auf GitHub übermitteln", "btn primary", function () {
+      var r = feedbackIssueUrl();
+      if (r.truncated) toast("Hinweis: Das Feedback war zu lang und wurde gekürzt.");
+      openExternal(r.url);
+    }));
+    actions.appendChild(btn("✉️ Per E-Mail senden", "btn", function () {
+      var r = feedbackMailtoUrl();
+      if (r.truncated) toast("Hinweis: Das Feedback war zu lang und wurde gekürzt.");
+      openExternal(r.url);
+    }));
+    sCard.appendChild(actions);
+    app.appendChild(sCard);
+    window.scrollTo(0, 0);
+  }
+
   /* ---------- Onboarding (nur beim allerersten Start) ---------- */
 
   function renderOnboarding(step) {
@@ -4670,6 +4879,8 @@
     readingModuleSteps: function () {
       return buildReadingModule().steps.map(function (s) { return s.type + ":" + s.itemId; });
     },
+    feedbackIssueUrl: function () { return feedbackIssueUrl(); },
+    feedbackMailtoUrl: function () { return feedbackMailtoUrl(); },
     // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
     currentTaskItem: function () {
       if (!session || !session.tasks) return null;
