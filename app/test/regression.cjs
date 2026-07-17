@@ -708,6 +708,66 @@ function check(name, ok, detail) {
     audioMap.miss === null && audioMap.backInactive === false,
     JSON.stringify(audioMap));
 
+  // --- 14b. State-Schema: feedback + tourSeen (Allowlist, Merge) ---
+  await page.evaluate(() => { localStorage.removeItem("tacheles_state_v1"); });
+  await page.reload(); await page.waitForTimeout(500);
+  const schema = await page.evaluate(() => {
+    // frischer Default-State liegt nach init() im Storage
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return {
+      tourSeen: s.profile.tourSeen,
+      fb: s.feedback,
+      notesIsArr: Array.isArray(s.feedback && s.feedback.notes),
+      pronIsObj: !!s.feedback && typeof s.feedback.pronIssues === "object" && !Array.isArray(s.feedback.pronIssues)
+    };
+  });
+  check("Schema: feedback + tourSeen im Default-State (Allowlist)",
+    schema.tourSeen === false && schema.notesIsArr && schema.pronIsObj, JSON.stringify(schema.fb));
+  const fbRound = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.feedback = { notes: [{ ts: 111, text: "Notiz A" }, { ts: 0, text: "" }, "junk"], pronIssues: { shalom: true } };
+    s.profile.tourSeen = true;
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    return true;
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const fbAfter = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { notes: s.feedback.notes, pron: s.feedback.pronIssues, tourSeen: s.profile.tourSeen };
+  });
+  check("Schema: feedback ueberlebt Laden/Normalisieren (kaputte Notizen verworfen)",
+    fbRound && fbAfter.notes.length === 1 && fbAfter.notes[0].text === "Notiz A" &&
+    fbAfter.pron.shalom === true && fbAfter.tourSeen === true, JSON.stringify(fbAfter));
+  const fbMerge = await page.evaluate(() => {
+    const base = () => ({
+      version: 1,
+      profile: { onboarded: true },
+      gamification: {}, srs: {}, log: {}
+    });
+    const A = base();
+    A.feedback = { notes: [{ ts: 1, text: "gleich" }, { ts: 2, text: "nur A" }], pronIssues: { w1: true } };
+    A.profile.tourSeen = false;
+    const B = base();
+    B.feedback = { notes: [{ ts: 1, text: "gleich" }, { ts: 3, text: "nur B" }], pronIssues: { w2: true } };
+    B.profile.tourSeen = true;
+    const m = window.TACHELES_DEBUG.mergeStates(A, B);
+    return {
+      texts: m.feedback.notes.map(n => n.text).join(","),
+      pron: Object.keys(m.feedback.pronIssues).sort().join(","),
+      tourSeen: m.profile.tourSeen
+    };
+  });
+  check("merge: feedback.notes dedupliziert vereinigt, pronIssues vereinigt, tourSeen OR",
+    fbMerge.texts === "gleich,nur A,nur B" && fbMerge.pron === "w1,w2" && fbMerge.tourSeen === true,
+    JSON.stringify(fbMerge));
+  // Zustand fuer nachfolgende Sektionen neutral hinterlassen (onboarded, tour gesehen).
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.profile.onboarded = true; s.profile.tourSeen = true; s.profile.autoplay = false; s.profile.micHintDismissed = true;
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(400);
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 

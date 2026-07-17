@@ -167,7 +167,8 @@
         onboarded: false,       // Willkommens-Tour beim ersten Start gezeigt?
         levelCap: "auto",       // 'auto' | 'A0'..'C2' — manuelle Level-Grenze
         unlockedBand: "A1",     // hoechstes ERREICHTES Band (Default A1 = A0+A1 offen)
-        placementDone: false    // Einstufungstest schon einmal gemacht?
+        placementDone: false,   // Einstufungstest schon einmal gemacht?
+        tourSeen: false         // App-Tour (Erklaer-Slideshow) gesehen/uebersprungen?
       },
       gamification: {
         xpTotal: 0,
@@ -185,6 +186,12 @@
           modulesDone: {}       // { moduleId: true } abgeschlossene Module
         }
       },
+      // Lokales Feedback: freie Notizen + als "Aussprache falsch" markierte Items.
+      // Verlaesst das Geraet nur nutzerinitiiert (GitHub-Issue-Prefill / mailto).
+      feedback: {
+        notes: [],       // [{ ts, text }]
+        pronIssues: {}   // { itemId: true }
+      },
       // pro Item: { ease, intervalDays, dueTs, reps, lapses, mastery, lastReviewTs }
       srs: {},
       // pro Tag (YYYY-MM-DD): { answers, correct, xp, goalMet }
@@ -192,7 +199,8 @@
     };
   }
 
-  /** Fremde/alte Daten defensiv in die aktuelle Struktur ueberfuehren. */
+  /** Fremde/alte Daten defensiv in die aktuelle Struktur ueberfuehren
+   *  (Allowlist: nur bekannte Felder mit gueltigen Typen werden uebernommen). */
   function normalizeState(raw) {
     var s = defaultState();
     if (!raw || typeof raw !== "object") return s;
@@ -206,6 +214,7 @@
       if (LEVEL_CAPS.indexOf(raw.profile.levelCap) >= 0) s.profile.levelCap = raw.profile.levelCap;
       if (BANDS.indexOf(raw.profile.unlockedBand) >= 0) s.profile.unlockedBand = raw.profile.unlockedBand;
       if (typeof raw.profile.placementDone === "boolean") s.profile.placementDone = raw.profile.placementDone;
+      if (typeof raw.profile.tourSeen === "boolean") s.profile.tourSeen = raw.profile.tourSeen;
     }
     // Migration: wer schon Lernfortschritt hat (State von vor dem Onboarding-
     // Feature), soll die Willkommens-Tour nicht erneut durchlaufen.
@@ -270,6 +279,23 @@
         if (d.mastered !== undefined) entry.mastered = nn(d.mastered);
         s.log[day] = entry;
       });
+    }
+    // feedback (Allowlist): notes nur als Array sauberer {ts,text}-Objekte
+    // (Text gekappt, damit kein Import den State aufblaeht), pronIssues nur
+    // als Objekt-nicht-Array mit true-Werten.
+    if (raw.feedback && typeof raw.feedback === "object" && !Array.isArray(raw.feedback)) {
+      if (Array.isArray(raw.feedback.notes)) {
+        raw.feedback.notes.forEach(function (n) {
+          if (!n || typeof n !== "object" || Array.isArray(n)) return;
+          var text = typeof n.text === "string" ? n.text.slice(0, 2000) : "";
+          if (!text) return;
+          s.feedback.notes.push({ ts: Math.max(0, Number(n.ts) || 0), text: text });
+        });
+      }
+      var rp = raw.feedback.pronIssues;
+      if (rp && typeof rp === "object" && !Array.isArray(rp)) {
+        Object.keys(rp).forEach(function (id) { if (rp[id]) s.feedback.pronIssues[id] = true; });
+      }
     }
     return s;
   }
@@ -4031,6 +4057,7 @@
    *  - gamification: xp/answers max, achievements/frozenDays/counters vereinigt.
    *  - profile: lokale Einstellungen bleiben; onboarded/placementDone per ODER,
    *    unlockedBand das weitere von beiden, levelCap lokal.
+   *  - feedback: notes vereinigt (dedupliziert nach ts+text), pronIssues vereinigt.
    */
   function mergeStates(local, imported) {
     var a = normalizeState(local);
@@ -4099,6 +4126,16 @@
     mc.dialogsDone = unionObj(ca.dialogsDone, cb.dialogsDone);
     mc.modulesDone = unionObj(ca.modulesDone, cb.modulesDone);
 
+    // feedback: Notizen nach (ts, text) dedupliziert vereinigen, pronIssues vereinigen.
+    var seenNotes = {};
+    m.feedback.notes = a.feedback.notes.concat(b.feedback.notes).filter(function (n) {
+      var k = n.ts + "|" + n.text;
+      if (seenNotes[k]) return false;
+      seenNotes[k] = true;
+      return true;
+    }).sort(function (x, y) { return x.ts - y.ts; });
+    m.feedback.pronIssues = unionObj(a.feedback.pronIssues, b.feedback.pronIssues);
+
     // profile: lokale Geraete-Einstellungen behalten, Fortschritts-Flags verschmelzen
     m.profile.dailyGoalMin = a.profile.dailyGoalMin;
     m.profile.fadeMode = a.profile.fadeMode;
@@ -4108,6 +4145,7 @@
     m.profile.sttNoticeConfirmed = !!(a.profile.sttNoticeConfirmed || b.profile.sttNoticeConfirmed);
     m.profile.onboarded = !!(a.profile.onboarded || b.profile.onboarded);
     m.profile.placementDone = !!(a.profile.placementDone || b.profile.placementDone);
+    m.profile.tourSeen = !!(a.profile.tourSeen || b.profile.tourSeen);
     m.profile.unlockedBand = bandIndex(a.profile.unlockedBand) >= bandIndex(b.profile.unlockedBand)
       ? a.profile.unlockedBand : b.profile.unlockedBand;
 

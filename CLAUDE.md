@@ -52,7 +52,7 @@ zusätzlich `node --check app.js content.js grammar.js`.
 
 - **Item-IDs sind heilig:** Lern-Fortschritt (localStorage `tacheles_state_v1`) hängt an
   `item.id`. IDs nie umbenennen; Content nur additiv erweitern.
-- **normalizeState whitelistet Felder:** neue Felder in `profile`/`gamification` MÜSSEN dort
+- **normalizeState führt eine Allowlist:** neue Felder in `profile`/`gamification`/Top-Level MÜSSEN dort
   UND in `defaultState` nachgezogen werden, sonst verschwinden sie beim Laden/Import.
 - **Datum ist LOKAL:** `state.log` wird über `dateStr()` (lokale Zeit) geschrieben. In Tests nie
   `toISOString()` fürs Tagesdatum verwenden.
