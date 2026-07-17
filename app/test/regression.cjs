@@ -895,6 +895,88 @@ function check(name, ok, detail) {
   check("Veto: Gold-Toast ist antippbar und demotet", toastVeto.found && toastVeto.mastery === 2,
     JSON.stringify(toastVeto));
 
+  // --- 14e. Mastery-Check: nur Gemeisterte, least-recently-checked, Review-Demote ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {};
+    // 8 gemeisterte Items mit gestaffeltem lastReviewTs; das aelteste zuerst erwartet.
+    window.TACHELES_CONTENT.items.slice(0, 8).forEach((it, i) => {
+      s.srs[it.id] = { ease: 2.5, intervalDays: 10, dueTs: Date.now() + 86400000, reps: 5, lapses: 0, mastery: 3, lastReviewTs: 1000 + i };
+    });
+    // plus 1 NICHT gemeistertes Item, das nie auftauchen darf
+    const extra = window.TACHELES_CONTENT.items[9];
+    s.srs[extra.id] = { ease: 2.5, intervalDays: 2, dueTs: 0, reps: 2, lapses: 0, mastery: 1, lastReviewTs: 1 };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "progress"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  check("Mastery-Check: Start-Karte auf Fortschritt", await page.evaluate(() => !!document.querySelector("#btn-mastercheck")));
+  await page.evaluate(() => { const b = document.querySelector("#btn-mastercheck"); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  const mchk = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const info = D.sessionInfo();
+    const masteredIds = window.TACHELES_CONTENT.items.slice(0, 8).map(i => i.id);
+    return {
+      mode: info && info.mode,
+      n: info ? info.taskIds.length : 0,
+      onlyMastered: info ? info.taskIds.every(id => masteredIds.includes(id)) : false,
+      taskIds: info ? info.taskIds : []
+    };
+  });
+  check("Mastery-Check: Session nur ueber gemeisterte Items, Haeppchen-Groesse",
+    mchk.mode === "mastercheck" && mchk.n === 6 && mchk.onlyMastered, JSON.stringify(mchk));
+  // Runde durchspielen: erste Aufgabe FALSCH, Rest richtig (Weiter-Button nach Fehler!).
+  let mcheckWrongId = null;
+  for (let i = 0; i < 20; i++) {
+    const st = await page.evaluate(() => ({
+      review: !!document.querySelector(".mcheck-list"),
+      curId: window.TACHELES_DEBUG.currentTaskItem(),
+      hasOpt: !!document.querySelector(".opt:not(:disabled)"),
+      hasWeiter: !![...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim()))
+    }));
+    if (st.review) break;
+    if (st.hasWeiter) {
+      await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+    } else if (st.hasOpt) {
+      if (mcheckWrongId === null) {
+        mcheckWrongId = st.curId;
+        await page.evaluate((id) => {
+          const btns = [...document.querySelectorAll(".opt:not(:disabled)")];
+          const wrong = btns.find(b => b.dataset.itemId && b.dataset.itemId !== id);
+          (wrong || btns[0]).click();
+        }, st.curId);
+      } else {
+        await page.evaluate((id) => {
+          const right = document.querySelector('.opt[data-item-id="' + id + '"]');
+          const btns = [...document.querySelectorAll(".opt:not(:disabled)")];
+          (right || btns[0]).click();
+        }, st.curId);
+      }
+    }
+    await page.waitForTimeout(1200);
+  }
+  const review = await page.evaluate((wrongId) => {
+    const rows = [...document.querySelectorAll(".mcheck-row")];
+    const checked = rows.filter(r => r.querySelector("input").checked).length;
+    return { rows: rows.length, checked, hasList: !!document.querySelector(".mcheck-list") };
+  }, mcheckWrongId);
+  check("Mastery-Check: Runden-Abschluss zeigt Auswahl, Falsche vorausgewaehlt",
+    review.hasList && review.rows >= 6 && review.checked >= 1, JSON.stringify(review));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /zurücknehmen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const afterDemote = await page.evaluate((wrongId) => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const masteredLeft = window.TACHELES_CONTENT.items.slice(0, 8)
+      .filter(i => s.srs[i.id] && s.srs[i.id].mastery >= 3).length;
+    return { wrongMastery: s.srs[wrongId] ? s.srs[wrongId].mastery : null, masteredLeft, done: !!document.querySelector(".done-screen") };
+  }, mcheckWrongId);
+  check("Mastery-Check: Zuruecknehmen stuft genau die Angehakten zurueck",
+    afterDemote.wrongMastery === 2 && afterDemote.masteredLeft >= 5 && afterDemote.done, JSON.stringify(afterDemote));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 

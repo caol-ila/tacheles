@@ -928,3 +928,11 @@ body.in-session .bottom-nav { display: none; }
 
 /* Antippbarer Toast (Mastery-Veto) */
 .toast.tappable { cursor: pointer; }
+
+/* Mastery-Check Auswahl-Ansicht */
+.mcheck-list { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 420px; margin: 10px auto; }
+.mcheck-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--card, #fff); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.mcheck-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--primary); }
+.mcheck-mark { margin-left: auto; font-weight: 700; }
+.mcheck-mark.ok { color: var(--ok, #2e7d32); }
+.mcheck-mark.re { color: var(--danger, #c62828); }

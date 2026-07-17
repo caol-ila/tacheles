@@ -1575,6 +1575,13 @@
       '<div class="setting-sub">Alle 27 Buchstaben im Überblick, mit deinem Lernstand.</div></div>' +
       '<button class="btn" id="btn-alefbet">Ansehen</button>' +
       '</section>' +
+      (state.gamification.masteredCount > 0 ?
+        '<section class="card exam-card">' +
+        '<div><div class="setting-label">🏅 Mastery-Check</div>' +
+        '<div class="setting-sub">Sitzt das wirklich noch? Kurze Prüf-Häppchen über deine gemeisterten Wörter, ' +
+        'mit der Möglichkeit, einzelne zurückzunehmen.</div></div>' +
+        '<button class="btn" id="btn-mastercheck">Start</button>' +
+        '</section>' : '') +
       (function () {
         // Knacknuesse: die 5 am haeufigsten vergessenen Woerter (lapses >= 2)
         var hard = CONTENT.items.filter(function (it) {
@@ -1654,6 +1661,8 @@
     $("#btn-import").addEventListener("click", importState);
     $("#btn-exam").addEventListener("click", function () { startSession("exam"); });
     $("#btn-alefbet").addEventListener("click", renderAlefbetChart);
+    var mcheckBtn = $("#btn-mastercheck");
+    if (mcheckBtn) mcheckBtn.addEventListener("click", function () { startSession("mastercheck"); });
     var hardBtn = $("#btn-hard");
     if (hardBtn) {
       hardBtn.addEventListener("click", function () {
@@ -1785,7 +1794,7 @@
     smart: "Smart-Session", flash: "Karten", mc: "Multiple Choice", match: "Paare",
     swipe: "Wisch", reels: "Reels", signs: "Schilder lesen", listen: "Hören", speak: "Sprechen",
     dialog: "Dialog", build: "Satzbau", image: "Bilder", blitz: "Blitz", audio: "Audio-Kurs",
-    module: "Modul"
+    module: "Modul", mastercheck: "Mastery-Check"
   };
 
   function startSession(modeId, opts) {
@@ -1880,6 +1889,22 @@
       session.steps = mod.steps.slice();
       session.stepIdx = 0;
       session.label = (mod.emoji || "📚") + " " + mod.title;
+    } else if (modeId === "mastercheck") {
+      // Mastery-Check (1.2): Haeppchen-Wiederholung NUR ueber gemeisterte
+      // Items. Rotation ohne neues Feld: am laengsten ungeprueft zuerst
+      // (lastReviewTs aufsteigend) + etwas Zufall, damit ueber die Runden
+      // alle drankommen.
+      var mastered = CONTENT.items.filter(function (it) { return getMastery(it.id) >= 3; });
+      if (!mastered.length) { session = null; toast("Noch nichts gemeistert – erst lernen, dann prüfen. 🙂"); return; }
+      mastered.sort(function (a, b) { return (getSrs(a.id).lastReviewTs || 0) - (getSrs(b.id).lastReviewTs || 0); });
+      var chunk = shuffle(mastered.slice(0, 10)).slice(0, 6);
+      session.tasks = chunk.map(function (it, idx) {
+        // Erkennen und Produzieren im Wechsel (wie im normalen Lernen).
+        return { item: it, kind: "mc", dir: idx % 2 === 0 ? "he2de" : "de2he", requeued: false };
+      });
+      session.i = 0;
+      session.masteryCheck = true;
+      session.label = "🏅 Mastery-Check";
     } else {
       // Schilder-Modus: nur Schilder. Sprechen: keine Einzelbuchstaben. Satzbau: nur Saetze.
       // Bilder: nur Items mit Emoji. Blitz: schnelle MC-Runde gegen die Uhr.
@@ -2178,7 +2203,11 @@
 
   function renderTask() {
     var task = session.tasks[session.i];
-    if (!task) return endSession();
+    if (!task) {
+      // Mastery-Check: vor dem Abschluss die Auswahl-Ansicht (Zuruecknehmen).
+      if (session.masteryCheck) return renderMasteryCheckReview();
+      return endSession();
+    }
     setOptKeys(null); // alter Aufgaben-Tastaturhandler weg; Renderer setzen ggf. neu
     var title = (session.label || MODE_TITLES[session.mode]) + " · " + (session.i + 1) + "/" + session.tasks.length;
     // Teach-First: nie eine Frage zu einem Wort stellen, das die App noch nie
@@ -3416,6 +3445,45 @@
     app.appendChild(wrap);
   }
 
+  /** Mastery-Check-Abschluss (1.2): Items der Runde mit Checkboxen; falsch
+   *  beantwortete sind vorausgewaehlt. "Zuruecknehmen" demotet die angehakten,
+   *  der Rest bleibt gemeistert. Danach normaler Abschluss-Screen. */
+  function renderMasteryCheckReview() {
+    var s = session;
+    if (!s) return;
+    setOptKeys(null);
+    var body = sessionShell("🏅 Mastery-Check · Runde fertig", 1);
+    body.appendChild(el("div", "task-question", "Sitzt das wirklich noch? Hake an, was zurück in die Übung soll."));
+    var list = el("div", "mcheck-list");
+    var boxes = {};
+    (s.seenList || []).forEach(function (id) {
+      var item = itemById(id);
+      if (!item) return;
+      var row = el("label", "mcheck-row");
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !s.seenIds[id]; // falsch beantwortete vorausgewaehlt
+      boxes[id] = cb;
+      row.appendChild(cb);
+      var he = el("span", "done-review-he", item.he);
+      he.dir = "rtl"; he.lang = "he";
+      row.appendChild(he);
+      row.appendChild(el("span", "done-review-de", item.de));
+      row.appendChild(el("span", "mcheck-mark " + (s.seenIds[id] ? "ok" : "re"), s.seenIds[id] ? "✓" : "✗"));
+      list.appendChild(row);
+    });
+    body.appendChild(list);
+    var actions = el("div", "done-actions");
+    actions.appendChild(btn("Ausgewählte zurücknehmen", "btn primary", function () {
+      var n = 0;
+      Object.keys(boxes).forEach(function (id) { if (boxes[id].checked && demoteMastery(id)) n++; });
+      if (n) toast("💪 " + n + (n === 1 ? " Wort" : " Wörter") + " zurück in die Übung.");
+      endSession();
+    }));
+    actions.appendChild(btn("Alles bleibt gemeistert", "btn ghost", function () { endSession(); }));
+    body.appendChild(actions);
+  }
+
   /** Dezentes Konfetti; respektiert prefers-reduced-motion. */
   function celebrate() {
     try {
@@ -4369,6 +4437,11 @@
     getMastery: function (id) { return getMastery(id); },
     recordAnswer: function (id, mode, grade, dir) { return recordAnswer(id, mode, grade, dir); },
     demoteMastery: function (id) { return demoteMastery(id); },
+    // Aktuelle Session (Modus + Task-Item-IDs) fuer Mastery-Check-/Heute-Tests.
+    sessionInfo: function () {
+      if (!session) return null;
+      return { mode: session.mode, taskIds: (session.tasks || []).map(function (t) { return t.item.id; }) };
+    },
     // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
     currentTaskItem: function () {
       if (!session || !session.tasks) return null;
