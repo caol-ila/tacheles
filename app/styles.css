@@ -925,3 +925,6 @@ body.in-session .bottom-nav { display: none; }
   }
   .confetti { display: none; }
 }
+
+/* Antippbarer Toast (Mastery-Veto) */
+.toast.tappable { cursor: pointer; }

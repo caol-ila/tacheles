@@ -81,16 +81,23 @@
   // ueberlappen: jeder neue Toast wird um die Zahl lebender Toasts nach oben
   // versetzt. Beim Entfernen aus der Liste austragen.
   var liveToasts = [];
-  function toast(msg, cls) {
+  /** Toast; optionales onTap macht ihn antippbar (z. B. Mastery-Veto). */
+  function toast(msg, cls, onTap) {
     var t = el("div", "toast" + (cls ? " " + cls : ""), msg);
     t.style.bottom = (90 + liveToasts.length * 54) + "px";
     liveToasts.push(t);
-    document.body.appendChild(t);
-    setTimeout(function () {
+    var dismiss = function () {
       var idx = liveToasts.indexOf(t);
       if (idx >= 0) liveToasts.splice(idx, 1);
       t.remove();
-    }, cls === "gold" ? 3600 : 2600);
+    };
+    if (onTap) {
+      t.classList.add("tappable");
+      t.setAttribute("role", "button");
+      t.addEventListener("click", function () { onTap(); dismiss(); });
+    }
+    document.body.appendChild(t);
+    setTimeout(dismiss, cls === "gold" ? 3600 : 2600);
   }
 
   /* ==========================================================
@@ -536,6 +543,17 @@
     state.gamification.masteredCount = n;
   }
 
+  /** Mastery-Veto (1.2): setzt ein gemeistertes Item zurueck auf 2 ("in
+   *  Arbeit"); SRS-Plan bleibt unangetastet. No-Op fuer nicht-gemeisterte. */
+  function demoteMastery(itemId) {
+    var e = state.srs[itemId];
+    if (!e || typeof e !== "object" || (e.mastery || 0) < 3) return false;
+    e.mastery = 2;
+    updateMasteredCount();
+    saveState();
+    return true;
+  }
+
   /** Fällige/neue Zaehler nur ueber freigeschaltete Baender (gesperrte zaehlen nicht). */
   function dueCount() {
     var now = Date.now(), n = 0;
@@ -681,7 +699,11 @@
       day.mastered = (day.mastered || 0) + 1;
       // Der kleine Duolingo-Moment: ein Wort sitzt jetzt wirklich.
       var mItem = itemById(itemId);
-      if (mItem) toast("🏅 " + mItem.he + " (" + mItem.de + ") sitzt!", "gold");
+      if (mItem) {
+        toast("🏅 " + mItem.he + " (" + mItem.de + ") sitzt! · tippen zum Ablehnen", "gold", function () {
+          if (demoteMastery(itemId)) toast("Okay, zählt noch nicht als gemeistert. 💪");
+        });
+      }
     }
     if (!day.goalMet && day.answers >= goalItems()) day.goalMet = true;
     state.gamification.streakDays = recomputeStreak();
@@ -4346,6 +4368,7 @@
     isProduction: function (mode, dir) { return isProduction(mode, dir); },
     getMastery: function (id) { return getMastery(id); },
     recordAnswer: function (id, mode, grade, dir) { return recordAnswer(id, mode, grade, dir); },
+    demoteMastery: function (id) { return demoteMastery(id); },
     // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
     currentTaskItem: function () {
       if (!session || !session.tasks) return null;

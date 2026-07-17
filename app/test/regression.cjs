@@ -860,6 +860,41 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
   await page.waitForTimeout(250);
 
+  // --- 14d. Mastery-Veto: demoteMastery + antippbarer Gold-Toast ---
+  const veto = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const it = window.TACHELES_CONTENT.items[1];
+    s.srs = {};
+    s.srs[it.id] = { ease: 2.5, intervalDays: 5, dueTs: Date.now() + 86400000, reps: 4, lapses: 0, mastery: 4, lastReviewTs: Date.now() };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    return it.id;
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const vetoRes = await page.evaluate((id) => {
+    const D = window.TACHELES_DEBUG;
+    const before = JSON.parse(localStorage.getItem("tacheles_state_v1")).gamification.masteredCount;
+    const ok = D.demoteMastery(id);
+    const after = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const noop = D.demoteMastery(id); // jetzt mastery 2 -> No-Op
+    return { ok, noop, mastery: after.srs[id].mastery, before, after: after.gamification.masteredCount };
+  }, veto);
+  check("Veto: demoteMastery setzt 3+ auf 2, masteredCount sinkt",
+    vetoRes.ok === true && vetoRes.mastery === 2 && vetoRes.after === vetoRes.before - 1,
+    JSON.stringify(vetoRes));
+  check("Veto: Demotion eines nicht-gemeisterten Items ist No-Op", vetoRes.noop === false);
+  // Gold-Toast mit Veto: Item auf mastery 2 + Produktionsantwort -> Toast, Tipp -> zurueck auf 2.
+  const toastVeto = await page.evaluate((id) => {
+    const D = window.TACHELES_DEBUG;
+    D.recordAnswer(id, "mc", "good", "de2he"); // 2 -> 3, Gold-Toast erscheint
+    const t = [...document.querySelectorAll(".toast.gold")].find(x => /ablehnen/i.test(x.textContent));
+    if (!t) return { found: false };
+    t.click();
+    return { found: true, mastery: D.getMastery(id) };
+  }, veto);
+  check("Veto: Gold-Toast ist antippbar und demotet", toastVeto.found && toastVeto.mastery === 2,
+    JSON.stringify(toastVeto));
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
