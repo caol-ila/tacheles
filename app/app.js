@@ -1808,6 +1808,12 @@
       '<div class="kv-row"><span>Beste Blitz-Runde</span><b>⚡ ' + (state.gamification.counters.bestBlitz || 0) + ' richtig</b></div>' +
       '<div class="kv-row"><span>Streak-Freezes übrig</span><b>❄️ ' + freezesAvailable() + '</b></div>' +
       '</section>' +
+      '<h2 class="h2">Mehr</h2>' +
+      '<section class="card" id="more-card">' +
+      '<div class="setting-row"><div><div class="setting-label">📖 Vokabelliste</div>' +
+      '<div class="setting-sub">Alle Wörter nach Level durchsehen, anhören, Aussprache melden</div></div>' +
+      '<button class="btn" id="btn-vocab">Öffnen</button></div>' +
+      '</section>' +
       '<h2 class="h2">Daten</h2>' +
       '<section class="card">' +
       '<div class="data-actions data-grid">' +
@@ -1850,6 +1856,7 @@
       renderProfile(); // Sub-Zeile "Erreichtes Level" bleibt, Gating wirkt sofort
     });
     $("#btn-placement").addEventListener("click", function () { startPlacement(false); });
+    $("#btn-vocab").addEventListener("click", function () { renderVocabBrowser(effectiveBand(), false); });
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
     $("#btn-reset").addEventListener("click", resetProgress);
@@ -3671,6 +3678,113 @@
     });
     practice.style.marginTop = "14px";
     app.appendChild(practice);
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------- Vokabel-Browser (Settings -> "Vokabelliste") ---------- */
+
+  /** Bandweise Vokabelliste (WS2): lesen, anhoeren, Mastery zuruecknehmen,
+   *  Aussprache als falsch melden. Immer genau EIN Band gerendert (Performance). */
+  function renderVocabBrowser(band, onlyMastered) {
+    cleanupSession();
+    document.body.classList.add("in-session");
+    if (BANDS.indexOf(band) < 0) band = "A0";
+    onlyMastered = !!onlyMastered;
+    var app = $("#app");
+    app.innerHTML = "";
+
+    var head = el("div", "session-head");
+    var back = btn("✕", "quit-btn", function () {
+      document.body.classList.remove("in-session");
+      showScreen("profile");
+    });
+    back.title = "Zurück zum Profil";
+    head.appendChild(back);
+    var mid = el("div", "session-info");
+    mid.appendChild(el("div", "session-title", "📖 Vokabelliste"));
+    head.appendChild(mid);
+    head.appendChild(el("div", "session-xp", ""));
+    app.appendChild(head);
+
+    // Steuerleiste: Band-Waehler (nur Baender mit Items) + Gemeistert-Filter.
+    var bar = el("div", "vocab-bar");
+    var sel = document.createElement("select");
+    sel.id = "vocab-band";
+    sel.setAttribute("aria-label", "Level-Band wählen");
+    BANDS.filter(function (b) {
+      return CONTENT.items.some(function (it) { return itemBand(it) === b; });
+    }).forEach(function (b) {
+      var o = document.createElement("option");
+      o.value = b; o.textContent = b;
+      if (b === band) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", function () { renderVocabBrowser(sel.value, chk.checked); });
+    bar.appendChild(sel);
+    var lbl = el("label", "vocab-filter");
+    var chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.id = "vocab-mastered";
+    chk.checked = onlyMastered;
+    chk.addEventListener("change", function () { renderVocabBrowser(sel.value, chk.checked); });
+    lbl.appendChild(chk);
+    lbl.appendChild(document.createTextNode(" nur gemeisterte"));
+    bar.appendChild(lbl);
+    if (state.gamification.masteredCount > 0) {
+      bar.appendChild(btn("🏅 Mastery-Check", "btn small", function () {
+        document.body.classList.remove("in-session");
+        startSession("mastercheck");
+      }));
+    }
+    app.appendChild(bar);
+
+    var items = CONTENT.items.filter(function (it) { return itemBand(it) === band; });
+    if (onlyMastered) items = items.filter(function (it) { return getMastery(it.id) >= 3; });
+    app.appendChild(el("div", "vocab-count",
+      items.length + (items.length === 1 ? " Wort" : " Wörter") + " · Band " + band));
+
+    var list = el("div", "vocab-list");
+    items.forEach(function (item) {
+      var m = getMastery(item.id);
+      var row = el("div", "vocab-row");
+      var play = btn("🔊", "icon-btn small-btn", function () { say(item); });
+      play.title = "Anhören";
+      row.appendChild(play);
+      var mainCol = el("div", "vocab-main");
+      mainCol.appendChild(el("div", "vocab-de", item.de));
+      mainCol.appendChild(el("div", "vocab-translit", item.translit || ""));
+      row.appendChild(mainCol);
+      var he = el("div", "vocab-he", item.niqqud || item.he);
+      he.dir = "rtl"; he.lang = "he";
+      row.appendChild(he);
+      var badge = el("span", "vocab-badge " + (m >= 3 ? "done" : (!isNew(item.id) ? "started" : "fresh")),
+        m >= 3 ? "gemeistert" : (!isNew(item.id) ? "in Arbeit" : "neu"));
+      row.appendChild(badge);
+      if (m >= 3) {
+        row.appendChild(btn("nicht gemeistert", "btn ghost small vocab-demote", function () {
+          if (demoteMastery(item.id)) {
+            toast("💪 " + item.he + " ist zurück in der Übung.");
+            renderVocabBrowser(band, onlyMastered);
+          }
+        }));
+      }
+      var pron = btn("🎙 falsch?", "btn ghost small pron-btn" +
+        (state.feedback.pronIssues[item.id] ? " active" : ""), function () {
+        // "Aussprache falsch"-Schalter (WS2): schreibt/entfernt feedback.pronIssues.
+        if (state.feedback.pronIssues[item.id]) {
+          delete state.feedback.pronIssues[item.id];
+          pron.classList.remove("active");
+        } else {
+          state.feedback.pronIssues[item.id] = true;
+          pron.classList.add("active");
+        }
+        saveState();
+      });
+      pron.title = "Aussprache als falsch melden (landet im Feedback)";
+      row.appendChild(pron);
+      list.appendChild(row);
+    });
+    app.appendChild(list);
     window.scrollTo(0, 0);
   }
 

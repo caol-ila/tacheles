@@ -1051,6 +1051,83 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(250);
 
+  // --- 14h. Vokabel-Browser: Band-Waehler, Zeile, Demote, Aussprache-Toggle ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; s.feedback = { notes: [], pronIssues: {} };
+    // Ein A0-Item als gemeistert seeden (erstes Item ist per Content A0).
+    const it = window.TACHELES_CONTENT.items[0];
+    s.srs[it.id] = { ease: 2.5, intervalDays: 9, dueTs: Date.now() + 86400000, reps: 5, lapses: 0, mastery: 4, lastReviewTs: Date.now() };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  check("Vokabelliste: Profil-Eintrag vorhanden", await page.evaluate(() => !!document.querySelector("#btn-vocab")));
+  await page.evaluate(() => { const b = document.querySelector("#btn-vocab"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const vocab = await page.evaluate(() => {
+    // Auf Band A0 schalten (deterministisch fuer die Checks).
+    const sel = document.querySelector("#vocab-band");
+    return {
+      selBands: sel ? [...sel.options].map(o => o.value) : [],
+      title: (document.querySelector(".session-title") || {}).textContent || ""
+    };
+  });
+  check("Vokabelliste: Screen mit Band-Waehler (A0 vorhanden)",
+    /vokabelliste/i.test(vocab.title) && vocab.selBands.includes("A0"), vocab.selBands.join(","));
+  await page.evaluate(() => {
+    const sel = document.querySelector("#vocab-band");
+    sel.value = "A0"; sel.dispatchEvent(new Event("change"));
+  });
+  await page.waitForTimeout(400);
+  const vocabRows = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".vocab-row")];
+    const first = rows[0];
+    return {
+      n: rows.length,
+      hasParts: !!first && !!first.querySelector(".vocab-de") && !!first.querySelector(".vocab-he") &&
+        !!first.querySelector(".vocab-badge") && !!first.querySelector(".pron-btn") &&
+        first.querySelector(".vocab-he").getAttribute("dir") === "rtl",
+      demoteBtns: document.querySelectorAll(".vocab-demote").length
+    };
+  });
+  check("Vokabelliste: Zeilen mit DE/he(RTL)/Badge/Aussprache-Knopf",
+    vocabRows.n >= 30 && vocabRows.hasParts, JSON.stringify(vocabRows));
+  check("Vokabelliste: gemeisterte Zeile hat 'nicht gemeistert'-Knopf", vocabRows.demoteBtns >= 1);
+  // Filter "nur gemeisterte"
+  await page.evaluate(() => {
+    const chk = document.querySelector("#vocab-mastered");
+    chk.checked = true; chk.dispatchEvent(new Event("change"));
+  });
+  await page.waitForTimeout(400);
+  const filtered = await page.evaluate(() => document.querySelectorAll(".vocab-row").length);
+  check("Vokabelliste: Filter 'nur gemeisterte'", filtered === 1, filtered);
+  // Aussprache-Toggle schreibt feedback.pronIssues
+  const pronToggle = await page.evaluate(() => {
+    const btn = document.querySelector(".pron-btn");
+    btn.click();
+    const on = JSON.parse(localStorage.getItem("tacheles_state_v1")).feedback.pronIssues;
+    btn.click();
+    const off = JSON.parse(localStorage.getItem("tacheles_state_v1")).feedback.pronIssues;
+    return { onCount: Object.keys(on).length, offCount: Object.keys(off).length };
+  });
+  check("Vokabelliste: 'Aussprache falsch' schreibt/entfernt feedback.pronIssues",
+    pronToggle.onCount === 1 && pronToggle.offCount === 0, JSON.stringify(pronToggle));
+  // Demote aus der Liste
+  await page.evaluate(() => { const b = document.querySelector(".vocab-demote"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const vocabDemote = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const it = window.TACHELES_CONTENT.items[0];
+    return { mastery: s.srs[it.id].mastery, rowsNow: document.querySelectorAll(".vocab-row").length };
+  });
+  check("Vokabelliste: 'nicht gemeistert' demotet auf 2 (Liste aktualisiert)",
+    vocabDemote.mastery === 2 && vocabDemote.rowsNow === 0, JSON.stringify(vocabDemote));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Vokabelliste: Zurueck fuehrt ins Profil", await page.evaluate(() => !!document.querySelector("#btn-vocab")));
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
