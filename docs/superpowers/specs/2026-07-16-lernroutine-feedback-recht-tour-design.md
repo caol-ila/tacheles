@@ -62,6 +62,18 @@ offensichtlicher Auswahl abgefragt wird.
   ruft `demoteMastery(itemId)`: setzt `mastery` zurück auf 2 (bleibt „in Arbeit"), SRS-Plan bleibt.
 - **Durchsehen/rückgängig im Vokabel-Browser (siehe 2):** Filter „nur gemeisterte" + pro Zeile
   „nicht gemeistert" (ruft dieselbe `demoteMastery`).
+- **Mastery-Check (Häppchen-Wiederholung des Gemeisterten).** Eigener Einstieg (aus der
+  Gemeistert-Übersicht/Vokabel-Browser und ggf. Fortschritt): ein Prüf-Modus **nur über gemeisterte
+  Items**, in kurzen Häppchen von einigen Wörtern. Auswahl je Runde so, dass **über die Runden alle
+  drankommen**: bevorzugt die am längsten nicht geprüften gemeisterten Items (nach `lastReviewTs`,
+  aufsteigend) plus etwas Zufall, damit Rotation nicht statisch ist. Aufgaben wie im normalen Lernen
+  (Erkennen/Produzieren). 
+  - **Nach jeder Runde** eine Auswahl-Ansicht: die Items der Runde als Liste mit **Checkboxen**;
+    falsch beantwortete sind **vorausgewählt**. „Zurücknehmen" ruft `demoteMastery` für die
+    angehakten Items (nicht mehr gemeistert), die anderen bleiben. Der Nutzer bestimmt also gezielt,
+    welche zurückgestuft werden. „Fertig/Weiter" ohne Auswahl lässt alles gemeistert.
+  - Keine neuen persistenten Felder: Rotation über vorhandenes `lastReviewTs`, Auswahl ist transiente
+    Runden-UI, Zurückstufen über `demoteMastery`.
 - Kein neues persistentes Feld nötig; Demotion wirkt über `srs[itemId].mastery`. Nach Demotion muss
   das Wort regulär (inkl. Produktion, 1.1) neu verdient werden.
 
@@ -192,6 +204,9 @@ Keine Änderung an bestehenden Feldern; State-`version` bleibt 1. Merge (`mergeS
 - Mastery: reines Erkennen deckelt bei 2; erst eine Produktionsantwort hebt auf 3; Erstkontakt in
   derselben Session zählt nicht.
 - Veto/Demotion: `demoteMastery` setzt 3→2, `masteredCount` sinkt.
+- Mastery-Check: Prüf-Modus zieht nur gemeisterte Items in Häppchen (least-recently-checked zuerst);
+  Runden-Abschluss zeigt Auswahl mit vorausgewählten Falschen; „Zurücknehmen" stuft genau die
+  angehakten zurück, der Rest bleibt gemeistert.
 - Home „Heute"-Block vorhanden; Häppchen startet eine (kurze) Session; „Wort/Buchstabe des Tages"
   stabil bei gleichem Datum.
 - Buchstaben-Erstpfad startet und paart Buchstabe+Wort.
