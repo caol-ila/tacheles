@@ -77,6 +77,10 @@
   }
   function todayStr() { return dateStr(new Date()); }
 
+  /** Deterministischer Tages-Hash ("des Tages"-Auswahl): stabil ueber den Tag,
+   *  lokales Datum via dateStr()/todayStr(), niemals Math.random. */
+  function dayHash(s) { return fnv1a(s); }
+
   // Gleichzeitige Toasts (z. B. Abzeichen + Level-Up) sollen sich nicht
   // ueberlappen: jeder neue Toast wird um die Zahl lebender Toasts nach oben
   // versetzt. Beim Entfernen aus der Liste austragen.
@@ -580,6 +584,22 @@
     return n;
   }
 
+  /** "Heute"-Auswahl (1.3): Buchstabe + Wort des Tages, deterministisch per
+   *  Datums-Hash aus dem freigeschalteten Material. Faellt nie leer aus,
+   *  solange Content da ist (Buchstaben sind A0 = immer offen; Wort-Fallback
+   *  ignoriert notfalls das Gating). */
+  function dailyPicks() {
+    var key = todayStr();
+    var letters = ALEFBET_ORDER.map(itemById).filter(Boolean);
+    var letter = letters.length ? letters[dayHash(key + "|letter") % letters.length] : null;
+    var pool = CONTENT.items.filter(function (it) {
+      return it.type !== "letter" && bandUnlocked(itemBand(it));
+    });
+    if (!pool.length) pool = CONTENT.items.filter(function (it) { return it.type !== "letter"; });
+    var word = pool.length ? pool[dayHash(key + "|word") % pool.length] : null;
+    return { letter: letter, word: word };
+  }
+
   /* ==========================================================
    * 6. XP & zentrale Antwort-Verbuchung
    * XP nur fuer echten Abruf, gewichtet nach Lerntiefe
@@ -915,13 +935,19 @@
     } catch (e) { /* kein/kaputtes Manifest -> TTS-Betrieb */ }
   }
 
-  /** FNV-1a (32-bit) -> 8 Hex-Zeichen. IDENTISCH zu audioHash() in tools/audio-lib.cjs,
-   *  damit die App genau die dort erzeugten Dateinamen findet (Dialog/Grammatik). */
-  function audioHash(s) {
+  /** FNV-1a (32-bit) als unsigned int. Gemeinsamer Kern fuer audioHash und
+   *  dayHash (deterministisch, KEIN Math.random). */
+  function fnv1a(s) {
     var h = 0x811c9dc5 >>> 0;
     s = String(s == null ? "" : s);
     for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
-    return ("0000000" + h.toString(16)).slice(-8);
+    return h >>> 0;
+  }
+
+  /** FNV-1a -> 8 Hex-Zeichen. IDENTISCH zu audioHash() in tools/audio-lib.cjs,
+   *  damit die App genau die dort erzeugten Dateinamen findet (Dialog/Grammatik). */
+  function audioHash(s) {
+    return ("0000000" + fnv1a(s).toString(16)).slice(-8);
   }
 
   function clipUrl(key) {
@@ -1451,6 +1477,27 @@
       '<div class="stat"><div class="stat-num">⭐ ' + g.xpTotal + '</div><div class="stat-label">XP</div></div>' +
       '<div class="stat"><div class="stat-num">🏅 ' + g.masteredCount + '</div><div class="stat-label">gemeistert</div></div>' +
       '</section>' +
+      (function () {
+        // "Heute"-Block (1.3): Tages-Haeppchen + Buchstabe/Wort des Tages.
+        var picks = dailyPicks();
+        var tile = function (kind, item, label) {
+          if (!item) return "";
+          return '<div class="today-tile" role="button" tabindex="0" data-today="' + esc(item.id) + '">' +
+            '<div class="today-label">' + label + '</div>' +
+            '<div class="today-he" dir="rtl" lang="he">' + esc(item.niqqud || item.he) + '</div>' +
+            '<div class="today-meta">' + esc(item.translit || "") + ' · ' + esc(item.de) + '</div>' +
+            '<button class="icon-btn small-btn" data-say="' + esc(item.id) + '" title="Anhören">🔊</button>' +
+            '</div>';
+        };
+        return '<section class="card today-card">' +
+          '<div class="setting-label">🌅 Heute</div>' +
+          '<div class="today-tiles">' +
+          tile("letter", picks.letter, "Buchstabe des Tages") +
+          tile("word", picks.word, "Wort des Tages") +
+          '</div>' +
+          '<button class="btn primary" id="btn-snack">🥨 Häppchen · 5 Aufgaben</button>' +
+          '</section>';
+      })() +
       '<section class="card goal-card">' +
       '<div class="goal-line"><span>Heute fällig: <b>' + dueCount() + '</b> · Neu: <b>' + newCount() + '</b></span>' +
       '<span>' + today.answers + ' / ' + goal + '</span></div>' +
@@ -1479,6 +1526,24 @@
       '<div class="theme-list">' + themeListHtml() + '</div>' +
       '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>';
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
+    var snack = $("#btn-snack");
+    if (snack) snack.addEventListener("click", function () { startSession("smart", { size: 5 }); });
+    app.querySelectorAll("[data-today]").forEach(function (row) {
+      var go = function () {
+        startSession("smart", { itemIds: [row.dataset.today], size: 3, label: "🌅 Heute" });
+      };
+      row.addEventListener("click", go);
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+    });
+    app.querySelectorAll(".today-card [data-say]").forEach(function (b) {
+      b.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        var it = itemById(b.dataset.say);
+        if (it) say(it);
+      });
+    });
     wireModeTiles(app);
     wireThemeRows(app);
     wireLockedSummary(app);
@@ -1800,7 +1865,7 @@
   function startSession(modeId, opts) {
     opts = opts || {};
     cleanupSession();
-    var size = sessionSize();
+    var size = opts.size ? clamp(opts.size, 1, 20) : sessionSize();
     session = {
       mode: modeId, answered: 0, correct: 0, wrong: 0, xp: 0, mastered: 0,
       timer: null, keyHandler: null, startedAt: Date.now(), lastWheel: 0,
@@ -4441,6 +4506,11 @@
     sessionInfo: function () {
       if (!session) return null;
       return { mode: session.mode, taskIds: (session.tasks || []).map(function (t) { return t.item.id; }) };
+    },
+    dayHash: function (s) { return dayHash(s); },
+    dailyPicks: function () {
+      var p = dailyPicks();
+      return { letter: p.letter && p.letter.id, word: p.word && p.word.id };
     },
     // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
     currentTaskItem: function () {

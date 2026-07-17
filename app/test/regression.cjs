@@ -977,6 +977,38 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
   await page.waitForTimeout(300);
 
+  // --- 14f. Heute-Block: stabil per Datums-Hash, Haeppchen startet Mini-Session ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const heute = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const p1 = D.dailyPicks();
+    const p2 = D.dailyPicks(); // gleicher Tag -> identisch (deterministisch)
+    return {
+      card: !!document.querySelector(".today-card"),
+      tiles: document.querySelectorAll(".today-tile").length,
+      snack: !!document.querySelector("#btn-snack"),
+      stable: p1.letter === p2.letter && p1.word === p2.word,
+      letterIsLetter: /^let_/.test(p1.letter || ""),
+      hashDet: D.dayHash("2026-07-17|word") === D.dayHash("2026-07-17|word") &&
+               D.dayHash("2026-07-17|word") !== D.dayHash("2026-07-18|word")
+    };
+  });
+  check("Heute: Block mit Buchstabe+Wort des Tages auf Home",
+    heute.card && heute.tiles === 2 && heute.snack, JSON.stringify(heute));
+  check("Heute: Auswahl deterministisch (Datums-Hash, kein Math.random)",
+    heute.stable && heute.letterIsLetter && heute.hashDet);
+  await page.evaluate(() => { const b = document.querySelector("#btn-snack"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const snackInfo = await page.evaluate(() => window.TACHELES_DEBUG.sessionInfo());
+  check("Heute: Haeppchen startet Mini-Session (<= 5 Aufgaben)",
+    snackInfo && snackInfo.mode === "smart" && snackInfo.taskIds.length > 0 && snackInfo.taskIds.length <= 5,
+    JSON.stringify(snackInfo && snackInfo.taskIds.length));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 

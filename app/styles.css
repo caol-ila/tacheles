@@ -936,3 +936,11 @@ body.in-session .bottom-nav { display: none; }
 .mcheck-mark { margin-left: auto; font-weight: 700; }
 .mcheck-mark.ok { color: var(--ok, #2e7d32); }
 .mcheck-mark.re { color: var(--danger, #c62828); }
+
+/* Heute-Block (Home) */
+.today-card { border: 2px solid var(--primary, #177e89); }
+.today-tiles { display: flex; gap: 10px; margin: 10px 0 12px; }
+.today-tile { flex: 1; background: rgba(23, 126, 137, .06); border: 1px solid var(--line); border-radius: 12px; padding: 10px; cursor: pointer; text-align: center; position: relative; }
+.today-label { font-size: .75rem; color: var(--muted); margin-bottom: 4px; }
+.today-he { font-size: 1.6rem; line-height: 1.3; }
+.today-meta { font-size: .8rem; color: var(--muted); margin: 4px 0 6px; }
