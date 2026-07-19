@@ -1386,11 +1386,12 @@
     });
   }
 
-  /** Dezente Footer-Links der Hauptscreens (Feedback; Task 9 ergaenzt
-   *  Kontakt + Datenschutz). */
+  /** Dezente Footer-Links der Hauptscreens: Feedback, Kontakt, Datenschutz. */
   function footerLinksHtml() {
     return '<div class="footer-links">' +
-      '<a href="#" data-goto="feedback">Feedback</a>' +
+      '<a href="#" data-goto="feedback">Feedback</a> · ' +
+      '<a href="#" data-goto="contact">Kontakt</a> · ' +
+      '<a href="#" data-goto="privacy">Datenschutz</a>' +
       '</div>';
   }
 
@@ -1400,6 +1401,8 @@
         e.preventDefault();
         var t = a.dataset.goto;
         if (t === "feedback") renderFeedback();
+        else if (t === "contact") renderContact();
+        else if (t === "privacy") renderPrivacy();
       });
     });
   }
@@ -1837,6 +1840,12 @@
       '<div class="setting-row"><div><div class="setting-label">💬 Feedback</div>' +
       '<div class="setting-sub">Notizen sammeln und als GitHub-Issue oder E-Mail übermitteln</div></div>' +
       '<button class="btn" id="btn-feedback">Öffnen</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">📮 Kontakt / Impressum</div>' +
+      '<div class="setting-sub">Wer hinter Tacheles steckt</div></div>' +
+      '<button class="btn" id="btn-contact">Öffnen</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">🔒 Datenschutz</div>' +
+      '<div class="setting-sub">Was mit deinen Daten passiert (kurz: sie bleiben bei dir)</div></div>' +
+      '<button class="btn" id="btn-privacy">Öffnen</button></div>' +
       '</section>' +
       '<h2 class="h2">Daten</h2>' +
       '<section class="card">' +
@@ -1883,6 +1892,8 @@
     $("#btn-placement").addEventListener("click", function () { startPlacement(false); });
     $("#btn-vocab").addEventListener("click", function () { renderVocabBrowser(effectiveBand(), false); });
     $("#btn-feedback").addEventListener("click", renderFeedback);
+    $("#btn-contact").addEventListener("click", renderContact);
+    $("#btn-privacy").addEventListener("click", renderPrivacy);
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
     $("#btn-reset").addEventListener("click", resetProgress);
@@ -3995,6 +4006,93 @@
     sCard.appendChild(actions);
     app.appendChild(sCard);
     window.scrollTo(0, 0);
+  }
+
+  /* ---------- Kontakt/Impressum + Datenschutz (WS4, In-App-Screens) ---------- */
+
+  /** Statischer Info-Screen (Kontakt/Datenschutz): Titel + HTML-Body,
+   *  Zurueck fuehrt ins Profil. Inhalte sind feste, vertrauenswuerdige Strings. */
+  function renderInfoScreen(titleText, bodyHtml) {
+    cleanupSession();
+    document.body.classList.add("in-session");
+    var app = $("#app");
+    app.innerHTML = "";
+    var head = el("div", "session-head");
+    var back = btn("✕", "quit-btn", function () {
+      document.body.classList.remove("in-session");
+      showScreen("profile");
+    });
+    back.title = "Zurück zum Profil";
+    head.appendChild(back);
+    var mid = el("div", "session-info");
+    mid.appendChild(el("div", "session-title", titleText));
+    head.appendChild(mid);
+    head.appendChild(el("div", "session-xp", ""));
+    app.appendChild(head);
+    var body = el("div", "legal-body");
+    body.innerHTML = bodyHtml;
+    app.appendChild(body);
+    window.scrollTo(0, 0);
+  }
+
+  var LEGAL_DISCLAIMER =
+    '<section class="card legal-disclaimer"><p class="setting-sub"><b>Hinweis:</b> Dieser Text ist eine ' +
+    'Laien-Vorlage und keine Rechtsberatung. Vor einem Betrieb über den privaten Rahmen hinaus ' +
+    'bitte fachlich prüfen lassen.</p></section>';
+
+  function renderContact() {
+    renderInfoScreen("📮 Kontakt / Impressum",
+      '<section class="card">' +
+      '<p>Tacheles ist ein privates, nicht-kommerzielles Lernprojekt, ohne Werbung, ' +
+      'ohne Bezahlfunktionen, ohne geschäftsmäßigen Hintergrund.</p>' +
+      '<p style="margin-top:10px"><b>Verantwortlich:</b> Thomas Mahlberg<br>' +
+      '<b>Kontakt:</b> <a href="mailto:tacheles@mahlberg.rocks">tacheles@mahlberg.rocks</a></p>' +
+      '<p class="setting-sub" style="margin-top:10px">Als rein privates Angebot besteht keine ' +
+      'Impressumspflicht mit ladungsfähiger Anschrift. Sollte Tacheles einmal kommerzielle Züge ' +
+      'bekommen (Werbung, Spenden, Verkauf), wäre eine ladungsfähige Anschrift nachzurüsten.</p>' +
+      '</section>' + LEGAL_DISCLAIMER);
+  }
+
+  function renderPrivacy() {
+    renderInfoScreen("🔒 Datenschutz",
+      '<section class="card">' +
+      '<h3 class="legal-h">Verantwortlicher</h3>' +
+      '<p>Thomas Mahlberg · <a href="mailto:tacheles@mahlberg.rocks">tacheles@mahlberg.rocks</a></p>' +
+
+      '<h3 class="legal-h">Hosting (GitHub Pages)</h3>' +
+      '<p>Wenn du Tacheles über das Internet aufrufst, wird die App von GitHub Pages ausgeliefert ' +
+      '(GitHub Inc., ein Unternehmen von Microsoft, USA). Dabei verarbeitet GitHub technisch bedingt ' +
+      'Verbindungsdaten, insbesondere deine IP-Adresse und Server-Logs. Darauf haben wir keinen ' +
+      'Einfluss. Es findet dabei eine Datenübermittlung in die USA statt (Drittland). Details: ' +
+      '<a href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement" ' +
+      'target="_blank" rel="noopener">Datenschutzerklärung von GitHub</a>.</p>' +
+
+      '<h3 class="legal-h">Keine eigene Datenerhebung</h3>' +
+      '<p>Tacheles selbst erhebt nichts: kein Tracking, keine Cookies, keine Analyse, keine Konten. ' +
+      'Dein gesamter Lernfortschritt liegt ausschließlich lokal in deinem Browser (localStorage) und ' +
+      'verlässt dein Gerät nur, wenn du ihn selbst exportierst oder einen Sync-Code erzeugst.</p>' +
+
+      '<h3 class="legal-h">Mikrofon &amp; Spracherkennung</h3>' +
+      '<p>Nur wenn du den Sprechen-Modus aktiv nutzt, greift die Spracherkennung deines Browsers ' +
+      '(Chrome/Edge). Diese sendet die Aufnahme zur Auswertung an einen Dienst des ' +
+      'Browser-Herstellers. Tacheles speichert keine Aufnahmen. Vor der ersten Aufnahme wirst du in ' +
+      'der App darauf hingewiesen.</p>' +
+
+      '<h3 class="legal-h">Sprachausgabe</h3>' +
+      '<p>Die vorproduzierten Audiodateien werden zusammen mit der App ausgeliefert. Zur Laufzeit ' +
+      'wird dafür nichts bei Dritten abgerufen.</p>' +
+
+      '<h3 class="legal-h">Feedback</h3>' +
+      '<p>„Übermitteln“ im Feedback-Bereich öffnet auf deinen Klick hin GitHub (öffentliches Issue, ' +
+      'GitHub-Konto nötig) oder dein E-Mail-Programm. Erst dann verlassen die von dir eingegebenen ' +
+      'Inhalte dein Gerät. Die App sendet nichts automatisch.</p>' +
+
+      '<h3 class="legal-h">Deine Rechte</h3>' +
+      '<p>Auskunft, Berichtigung, Löschung und Co. laufen mangels serverseitiger Speicherung faktisch ' +
+      'über dein Gerät: Im Profil kannst du alle Daten exportieren oder vollständig zurücksetzen; ' +
+      'zusätzlich löscht das Leeren der Browserdaten alles. Bei Fragen: ' +
+      '<a href="mailto:tacheles@mahlberg.rocks">tacheles@mahlberg.rocks</a>.</p>' +
+      '</section>' + LEGAL_DISCLAIMER);
   }
 
   /* ---------- Onboarding (nur beim allerersten Start) ---------- */

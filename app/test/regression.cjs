@@ -1202,6 +1202,33 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(300);
 
+  // --- 14j. Kontakt/Impressum + Datenschutz erreichbar und nicht leer ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const footerLegal = await page.evaluate(() => ({
+    contact: !!document.querySelector('.footer-links [data-goto="contact"]'),
+    privacy: !!document.querySelector('.footer-links [data-goto="privacy"]')
+  }));
+  check("Recht: Footer-Links Kontakt + Datenschutz", footerLegal.contact && footerLegal.privacy);
+  await page.evaluate(() => { const a = document.querySelector('[data-goto="contact"]'); if (a) a.click(); });
+  await page.waitForTimeout(350);
+  const contact = await page.evaluate(() => document.body.innerText);
+  check("Recht: Kontakt nennt Verantwortlichen + E-Mail + Disclaimer",
+    /Thomas Mahlberg/.test(contact) && /tacheles@mahlberg\.rocks/.test(contact) &&
+    /keine Rechtsberatung/i.test(contact) && /privates, nicht-kommerzielles/i.test(contact));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#btn-privacy"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  const privacy = await page.evaluate(() => document.body.innerText);
+  check("Recht: Datenschutz deckt GitHub Pages/USA/localStorage/Mikrofon/Feedback/Rechte ab",
+    /GitHub Pages/i.test(privacy) && /IP-Adresse/i.test(privacy) && /USA/.test(privacy) &&
+    /localStorage/i.test(privacy) && /Spracherkennung/i.test(privacy) &&
+    /Feedback/i.test(privacy) && /Rechte/i.test(privacy) && /keine Rechtsberatung/i.test(privacy));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Recht: Zurueck fuehrt ins Profil", await page.evaluate(() => !!document.querySelector("#btn-privacy")));
+
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));
 
