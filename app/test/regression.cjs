@@ -136,7 +136,13 @@ function check(name, ok, detail) {
   await page.waitForTimeout(300);
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /und los/i.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(500);
-  check("Onboarding fuehrt zu Home", await page.evaluate(() => !!document.querySelector("#cta-start")));
+  check("Onboarding fuehrt zur Tour (Folie 1)", await page.evaluate(() =>
+    /Einführung · 1\//i.test(document.body.innerText)));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  check("Tour ueberspringen fuehrt zu Home, tourSeen gesetzt", await page.evaluate(() =>
+    !!document.querySelector("#cta-start") &&
+    JSON.parse(localStorage.getItem("tacheles_state_v1")).profile.tourSeen === true));
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
     s.profile.autoplay = false; s.profile.micHintDismissed = true;
@@ -549,7 +555,7 @@ function check(name, ok, detail) {
   await page.evaluate(() => {
     localStorage.setItem("tacheles_state_v1", JSON.stringify({
       version: 1,
-      profile: { onboarded: true, autoplay: false, micHintDismissed: true, sttNoticeConfirmed: true },
+      profile: { onboarded: true, autoplay: false, micHintDismissed: true, sttNoticeConfirmed: true, tourSeen: true },
       gamification: { xpTotal: -500, answersTotal: -3, counters: { bestBlitz: -1 } },
       srs: { shalom: 5, w_valid: { ease: 2.5, intervalDays: 2, dueTs: 0, reps: 2, lapses: 0, mastery: 9, lastReviewTs: 100 } },
       log: { "2026-01-01": 3, "2026-01-02": { answers: -5, correct: 2, xp: -1, goalMet: true } }
@@ -677,6 +683,26 @@ function check(name, ok, detail) {
     legacy.defaults && legacy.noOnb && legacy.home && legacy.themeRows === 20,
     "defaults=" + legacy.defaults + " themen=" + legacy.themeRows);
 
+  // Bestandsnutzer-Hinweis (WS5): Alt-State (onboarded, tourSeen fehlt) sieht
+  // EINMALIG den Einfuehrungs-Hinweis; Ueberspringen setzt tourSeen.
+  const notice = await page.evaluate(() => ({
+    shown: !!document.querySelector(".overlay") && /kurze Einführung/i.test(document.body.innerText),
+    hasBtns: [...document.querySelectorAll(".overlay-actions .btn")].some(b => /ansehen/i.test(b.textContent)) &&
+             [...document.querySelectorAll(".overlay-actions .btn")].some(b => /überspringen/i.test(b.textContent))
+  }));
+  check("Alt-State: einmaliger Tour-Hinweis mit Ansehen/Ueberspringen", notice.shown && notice.hasBtns,
+    JSON.stringify(notice));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".overlay-actions .btn")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const noticeGone = await page.evaluate(() => ({
+    overlay: !!document.querySelector(".overlay"),
+    tourSeen: JSON.parse(localStorage.getItem("tacheles_state_v1")).profile.tourSeen
+  }));
+  check("Alt-State: Ueberspringen schliesst Hinweis und setzt tourSeen",
+    noticeGone.overlay === false && noticeGone.tourSeen === true, JSON.stringify(noticeGone));
+  await page.reload(); await page.waitForTimeout(500);
+  check("Alt-State: Hinweis kommt nur EINMAL", await page.evaluate(() => !document.querySelector(".overlay")));
+
   // --- 14. Audio-Schicht: Manifest konsistent + URL-Mapping ---
   // Frisch laden (der Alt-State oben hat autoplay=false, gut fuer diesen Check).
   await page.reload(); await page.waitForTimeout(500);
@@ -707,6 +733,571 @@ function check(name, ok, detail) {
     audioMap.active === true && audioMap.hit === "audio/shalom.opus" &&
     audioMap.miss === null && audioMap.backInactive === false,
     JSON.stringify(audioMap));
+
+  // --- 14b. State-Schema: feedback + tourSeen (Allowlist, Merge) ---
+  await page.evaluate(() => { localStorage.removeItem("tacheles_state_v1"); });
+  await page.reload(); await page.waitForTimeout(500);
+  const schema = await page.evaluate(() => {
+    // frischer Default-State liegt nach init() im Storage
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return {
+      tourSeen: s.profile.tourSeen,
+      fb: s.feedback,
+      notesIsArr: Array.isArray(s.feedback && s.feedback.notes),
+      pronIsObj: !!s.feedback && typeof s.feedback.pronIssues === "object" && !Array.isArray(s.feedback.pronIssues)
+    };
+  });
+  check("Schema: feedback + tourSeen im Default-State (Allowlist)",
+    schema.tourSeen === false && schema.notesIsArr && schema.pronIsObj, JSON.stringify(schema.fb));
+  const fbRound = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.feedback = { notes: [{ ts: 111, text: "Notiz A" }, { ts: 0, text: "" }, "junk"], pronIssues: { shalom: true } };
+    s.profile.tourSeen = true;
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    return true;
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const fbAfter = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { notes: s.feedback.notes, pron: s.feedback.pronIssues, tourSeen: s.profile.tourSeen };
+  });
+  check("Schema: feedback ueberlebt Laden/Normalisieren (kaputte Notizen verworfen)",
+    fbRound && fbAfter.notes.length === 1 && fbAfter.notes[0].text === "Notiz A" &&
+    fbAfter.pron.shalom === true && fbAfter.tourSeen === true, JSON.stringify(fbAfter));
+  const fbMerge = await page.evaluate(() => {
+    const base = () => ({
+      version: 1,
+      profile: { onboarded: true },
+      gamification: {}, srs: {}, log: {}
+    });
+    const A = base();
+    A.feedback = { notes: [{ ts: 1, text: "gleich" }, { ts: 2, text: "nur A" }], pronIssues: { w1: true } };
+    A.profile.tourSeen = false;
+    const B = base();
+    B.feedback = { notes: [{ ts: 1, text: "gleich" }, { ts: 3, text: "nur B" }], pronIssues: { w2: true } };
+    B.profile.tourSeen = true;
+    const m = window.TACHELES_DEBUG.mergeStates(A, B);
+    return {
+      texts: m.feedback.notes.map(n => n.text).join(","),
+      pron: Object.keys(m.feedback.pronIssues).sort().join(","),
+      tourSeen: m.profile.tourSeen
+    };
+  });
+  check("merge: feedback.notes dedupliziert vereinigt, pronIssues vereinigt, tourSeen OR",
+    fbMerge.texts === "gleich,nur A,nur B" && fbMerge.pron === "w1,w2" && fbMerge.tourSeen === true,
+    JSON.stringify(fbMerge));
+  // Zustand fuer nachfolgende Sektionen neutral hinterlassen (onboarded, tour gesehen).
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.profile.onboarded = true; s.profile.tourSeen = true; s.profile.autoplay = false; s.profile.micHintDismissed = true;
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(400);
+
+  // --- 14c. Ehrliche Mastery: Erkennen deckelt bei 2, Produktion hebt auf 3 ---
+  const mastery = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    return {
+      cls: D.isProduction("mc", "he2de") === false && D.isProduction("mc", "de2he") === true &&
+           D.isProduction("build") === true && D.isProduction("speak") === true &&
+           D.isProduction("swipe") === false && D.isProduction("listen") === false
+    };
+  });
+  check("Mastery: Klassifikation Erkennen/Produzieren (isProduction)", mastery.cls);
+  await page.reload(); await page.waitForTimeout(500);
+  const capRes = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const id = window.TACHELES_CONTENT.items[0].id;
+    // 5x Erkennen richtig: darf nie ueber 2 kommen.
+    for (let i = 0; i < 5; i++) D.recordAnswer(id, "mc", "good", "he2de");
+    const afterRecog = D.getMastery(id);
+    // 1x Produktion richtig: hebt auf 3 (gemeistert).
+    D.recordAnswer(id, "mc", "good", "de2he");
+    const afterProd = D.getMastery(id);
+    // Erkennen demotet ein 3+-Item NICHT.
+    D.recordAnswer(id, "mc", "good", "he2de");
+    const stillMastered = D.getMastery(id);
+    return { afterRecog, afterProd, stillMastered };
+  });
+  check("Mastery: reines Erkennen deckelt bei 2", capRes.afterRecog === 2, capRes.afterRecog);
+  check("Mastery: Produktionsantwort hebt auf 3", capRes.afterProd === 3, capRes.afterProd);
+  check("Mastery: Erkennen senkt Gemeistertes nicht", capRes.stillMastered === 3, capRes.stillMastered);
+
+  // Erstkontakt zaehlt nicht: frisches Wort in einer Smart-Session vorstellen,
+  // sofort korrekt beantworten -> Mastery bleibt 0.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = document.querySelector("#cta-start"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const introId = await page.evaluate(() => window.TACHELES_DEBUG.currentTaskItem());
+  check("Erstkontakt: Intro-Karte zu einem neuen Wort", !!introId &&
+    await page.evaluate(() => !!document.querySelector(".intro-tag")), introId);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test(x.textContent.trim())); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  // Die unmittelbar folgende Abfrage desselben Worts KORREKT beantworten.
+  await page.evaluate((id) => {
+    // MC he->de: richtige Option per data-item-id; Flash: Aufdecken + "Gut".
+    const opt = document.querySelector('.opt[data-item-id="' + id + '"]');
+    if (opt) { opt.click(); return; }
+    const reveal = [...document.querySelectorAll("button")].find(x => /aufdecken/i.test(x.textContent));
+    if (reveal) { reveal.click(); }
+  }, introId);
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const g = [...document.querySelectorAll(".grade-btn")].find(x => /gut/i.test(x.textContent));
+    if (g) g.click();
+  });
+  await page.waitForTimeout(400);
+  const firstContactMastery = await page.evaluate((id) => window.TACHELES_DEBUG.getMastery(id), introId);
+  check("Erstkontakt: erste Abfrage nach der Vorstellung hebt Mastery NICHT",
+    firstContactMastery === 0, introId + " -> " + firstContactMastery);
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+
+  // MC hat immer 4 Optionen; Buchstaben-Frage verraet die Umschrift nicht.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    // ein paar Woerter "gelernt", damit MC ohne Intro startet
+    window.TACHELES_CONTENT.items.slice(0, 10).forEach(i => {
+      s.srs[i.id] = { ease: 2.5, intervalDays: 2, dueTs: Date.now() - 1000, reps: 2, lapses: 0, mastery: 1, lastReviewTs: Date.now() - 86400000 };
+    });
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("[data-mode]")].find(x => x.dataset.mode === "mc"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  let sawFourOpts = false;
+  for (let i = 0; i < 6; i++) {
+    const optCount = await page.evaluate(() => document.querySelectorAll(".opt:not(:disabled)").length);
+    if (optCount > 0) { sawFourOpts = optCount === 4; break; }
+    await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter|aufdecken/i.test(x.textContent.trim())); if (b) b.click(); });
+    await page.waitForTimeout(400);
+  }
+  check("MC zeigt immer 4 Optionen", sawFourOpts);
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
+  // --- 14d. Mastery-Veto: demoteMastery + antippbarer Gold-Toast ---
+  const veto = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const it = window.TACHELES_CONTENT.items[1];
+    s.srs = {};
+    s.srs[it.id] = { ease: 2.5, intervalDays: 5, dueTs: Date.now() + 86400000, reps: 4, lapses: 0, mastery: 4, lastReviewTs: Date.now() };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    return it.id;
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const vetoRes = await page.evaluate((id) => {
+    const D = window.TACHELES_DEBUG;
+    const before = JSON.parse(localStorage.getItem("tacheles_state_v1")).gamification.masteredCount;
+    const ok = D.demoteMastery(id);
+    const after = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const noop = D.demoteMastery(id); // jetzt mastery 2 -> No-Op
+    return { ok, noop, mastery: after.srs[id].mastery, before, after: after.gamification.masteredCount };
+  }, veto);
+  check("Veto: demoteMastery setzt 3+ auf 2, masteredCount sinkt",
+    vetoRes.ok === true && vetoRes.mastery === 2 && vetoRes.after === vetoRes.before - 1,
+    JSON.stringify(vetoRes));
+  check("Veto: Demotion eines nicht-gemeisterten Items ist No-Op", vetoRes.noop === false);
+  // Gold-Toast mit Veto: Item auf mastery 2 + Produktionsantwort -> Toast, Tipp -> zurueck auf 2.
+  const toastVeto = await page.evaluate((id) => {
+    const D = window.TACHELES_DEBUG;
+    D.recordAnswer(id, "mc", "good", "de2he"); // 2 -> 3, Gold-Toast erscheint
+    const t = [...document.querySelectorAll(".toast.gold")].find(x => /noch nicht sitzt/i.test(x.textContent));
+    if (!t) return { found: false };
+    t.click();
+    return { found: true, mastery: D.getMastery(id) };
+  }, veto);
+  check("Veto: Gold-Toast ist antippbar und demotet", toastVeto.found && toastVeto.mastery === 2,
+    JSON.stringify(toastVeto));
+
+  // --- 14e. Mastery-Check: nur Gemeisterte, least-recently-checked, Review-Demote ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {};
+    // 8 gemeisterte Items mit gestaffeltem lastReviewTs; das aelteste zuerst erwartet.
+    window.TACHELES_CONTENT.items.slice(0, 8).forEach((it, i) => {
+      s.srs[it.id] = { ease: 2.5, intervalDays: 10, dueTs: Date.now() + 86400000, reps: 5, lapses: 0, mastery: 3, lastReviewTs: 1000 + i };
+    });
+    // plus 1 NICHT gemeistertes Item, das nie auftauchen darf
+    const extra = window.TACHELES_CONTENT.items[9];
+    s.srs[extra.id] = { ease: 2.5, intervalDays: 2, dueTs: 0, reps: 2, lapses: 0, mastery: 1, lastReviewTs: 1 };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "progress"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  check("Mastery-Check: Start-Karte auf Fortschritt", await page.evaluate(() => !!document.querySelector("#btn-mastercheck")));
+  await page.evaluate(() => { const b = document.querySelector("#btn-mastercheck"); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  const mchk = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const info = D.sessionInfo();
+    const masteredIds = window.TACHELES_CONTENT.items.slice(0, 8).map(i => i.id);
+    return {
+      mode: info && info.mode,
+      n: info ? info.taskIds.length : 0,
+      onlyMastered: info ? info.taskIds.every(id => masteredIds.includes(id)) : false,
+      taskIds: info ? info.taskIds : []
+    };
+  });
+  check("Mastery-Check: Session nur ueber gemeisterte Items, Haeppchen-Groesse",
+    mchk.mode === "mastercheck" && mchk.n === 6 && mchk.onlyMastered, JSON.stringify(mchk));
+  // Runde durchspielen: erste Aufgabe FALSCH, Rest richtig (Weiter-Button nach Fehler!).
+  let mcheckWrongId = null;
+  for (let i = 0; i < 20; i++) {
+    const st = await page.evaluate(() => ({
+      review: !!document.querySelector(".mcheck-list"),
+      curId: window.TACHELES_DEBUG.currentTaskItem(),
+      hasOpt: !!document.querySelector(".opt:not(:disabled)"),
+      hasWeiter: !![...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim()))
+    }));
+    if (st.review) break;
+    if (st.hasWeiter) {
+      await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+    } else if (st.hasOpt) {
+      if (mcheckWrongId === null) {
+        mcheckWrongId = st.curId;
+        await page.evaluate((id) => {
+          const btns = [...document.querySelectorAll(".opt:not(:disabled)")];
+          const wrong = btns.find(b => b.dataset.itemId && b.dataset.itemId !== id);
+          (wrong || btns[0]).click();
+        }, st.curId);
+      } else {
+        await page.evaluate((id) => {
+          const right = document.querySelector('.opt[data-item-id="' + id + '"]');
+          const btns = [...document.querySelectorAll(".opt:not(:disabled)")];
+          (right || btns[0]).click();
+        }, st.curId);
+      }
+    }
+    await page.waitForTimeout(1200);
+  }
+  const review = await page.evaluate((wrongId) => {
+    const rows = [...document.querySelectorAll(".mcheck-row")];
+    const checked = rows.filter(r => r.querySelector("input").checked).length;
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { rows: rows.length, checked, hasList: !!document.querySelector(".mcheck-list"),
+      wrongMastery: wrongId && s.srs[wrongId] ? s.srs[wrongId].mastery : null };
+  }, mcheckWrongId);
+  check("Mastery-Check: Runden-Abschluss zeigt Auswahl, Falsche vorausgewaehlt",
+    review.hasList && review.rows >= 6 && review.checked >= 1, JSON.stringify(review));
+  // FIX-1: Mastery friert waehrend der Runde ein — die falsch beantwortete Aufgabe
+  // bleibt bis zur Review auf 3 (Demotion nur ueber die Haken).
+  check("Mastery-Check: falsche Antwort senkt Mastery NICHT mid-round (bleibt 3)",
+    review.wrongMastery === 3, JSON.stringify(review));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /zurücknehmen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const afterDemote = await page.evaluate((wrongId) => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const masteredLeft = window.TACHELES_CONTENT.items.slice(0, 8)
+      .filter(i => s.srs[i.id] && s.srs[i.id].mastery >= 3).length;
+    return { wrongMastery: s.srs[wrongId] ? s.srs[wrongId].mastery : null, masteredLeft, done: !!document.querySelector(".done-screen") };
+  }, mcheckWrongId);
+  check("Mastery-Check: Zuruecknehmen stuft genau die Angehakten zurueck",
+    afterDemote.wrongMastery === 2 && afterDemote.masteredLeft >= 5 && afterDemote.done, JSON.stringify(afterDemote));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+
+  // --- 14f. Heute-Block: stabil per Datums-Hash, Haeppchen startet Mini-Session ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const heute = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const p1 = D.dailyPicks();
+    const p2 = D.dailyPicks(); // gleicher Tag -> identisch (deterministisch)
+    return {
+      card: !!document.querySelector(".today-card"),
+      tiles: document.querySelectorAll(".today-tile").length,
+      snack: !!document.querySelector("#btn-snack"),
+      stable: p1.letter === p2.letter && p1.word === p2.word,
+      letterIsLetter: /^let_/.test(p1.letter || ""),
+      hashDet: D.dayHash("2026-07-17|word") === D.dayHash("2026-07-17|word") &&
+               D.dayHash("2026-07-17|word") !== D.dayHash("2026-07-18|word")
+    };
+  });
+  check("Heute: Block mit Buchstabe+Wort des Tages auf Home",
+    heute.card && heute.tiles === 2 && heute.snack, JSON.stringify(heute));
+  check("Heute: Auswahl deterministisch (Datums-Hash, kein Math.random)",
+    heute.stable && heute.letterIsLetter && heute.hashDet);
+  await page.evaluate(() => { const b = document.querySelector("#btn-snack"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const snackInfo = await page.evaluate(() => window.TACHELES_DEBUG.sessionInfo());
+  check("Heute: Haeppchen startet Mini-Session (<= 5 Aufgaben)",
+    snackInfo && snackInfo.mode === "smart" && snackInfo.taskIds.length > 0 && snackInfo.taskIds.length <= 5,
+    JSON.stringify(snackInfo && snackInfo.taskIds.length));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
+  // --- 14g. Lesen lernen: Buchstabe+enthaltendes Wort gepaart, Home-Einstieg ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; // Anfaenger: 0 gemeisterte Buchstaben -> Einstieg sichtbar
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const reading = await page.evaluate(() => {
+    const steps = window.TACHELES_DEBUG.readingModuleSteps();
+    const byId = {}; window.TACHELES_CONTENT.items.forEach(i => byId[i.id] = i);
+    // Muster: teach:let_X, [teach:wort das X enthaelt,] quiz:let_X
+    let pairsOk = true, quizzes = 0, teachesLetters = 0;
+    for (let i = 0; i < steps.length; i++) {
+      const [type, id] = steps[i].split(":");
+      if (type === "teach" && /^let_/.test(id)) {
+        teachesLetters++;
+        const next = (steps[i + 1] || "").split(":");
+        if (next[0] === "teach" && !/^let_/.test(next[1])) {
+          const letter = byId[id], word = byId[next[1]];
+          if (!word || String(word.he).indexOf(letter.he) < 0) pairsOk = false;
+        }
+      }
+      if (type === "quiz") quizzes++;
+    }
+    return { steps: steps.length, pairsOk, quizzes, teachesLetters,
+      btn: !!document.querySelector("#btn-reading") };
+  });
+  check("Lesen lernen: Home-Einstieg fuer Anfaenger sichtbar", reading.btn);
+  check("Lesen lernen: Sequenz paart Buchstabe + enthaltendes Wort + Quiz",
+    reading.teachesLetters >= 1 && reading.quizzes >= 1 && reading.pairsOk, JSON.stringify(reading));
+  await page.evaluate(() => { const b = document.querySelector("#btn-reading"); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  const readingSession = await page.evaluate(() => ({
+    title: (document.querySelector(".session-title") || {}).textContent || "",
+    stepType: window.TACHELES_DEBUG.moduleStepType()
+  }));
+  check("Lesen lernen: startet als gefuehrtes Modul (teach-Schritt)",
+    /lesen lernen/i.test(readingSession.title) && readingSession.stepType === "teach",
+    JSON.stringify(readingSession));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
+  // --- 14h. Vokabel-Browser: Band-Waehler, Zeile, Demote, Aussprache-Toggle ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; s.feedback = { notes: [], pronIssues: {} };
+    // Ein A0-Item als gemeistert seeden (erstes Item ist per Content A0).
+    const it = window.TACHELES_CONTENT.items[0];
+    s.srs[it.id] = { ease: 2.5, intervalDays: 9, dueTs: Date.now() + 86400000, reps: 5, lapses: 0, mastery: 4, lastReviewTs: Date.now() };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  check("Vokabelliste: Profil-Eintrag vorhanden", await page.evaluate(() => !!document.querySelector("#btn-vocab")));
+  await page.evaluate(() => { const b = document.querySelector("#btn-vocab"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const vocab = await page.evaluate(() => {
+    // Auf Band A0 schalten (deterministisch fuer die Checks).
+    const sel = document.querySelector("#vocab-band");
+    return {
+      selBands: sel ? [...sel.options].map(o => o.value) : [],
+      title: (document.querySelector(".session-title") || {}).textContent || ""
+    };
+  });
+  check("Vokabelliste: Screen mit Band-Waehler (A0 vorhanden)",
+    /vokabelliste/i.test(vocab.title) && vocab.selBands.includes("A0"), vocab.selBands.join(","));
+  await page.evaluate(() => {
+    const sel = document.querySelector("#vocab-band");
+    sel.value = "A0"; sel.dispatchEvent(new Event("change"));
+  });
+  await page.waitForTimeout(400);
+  const vocabRows = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".vocab-row")];
+    const first = rows[0];
+    return {
+      n: rows.length,
+      hasParts: !!first && !!first.querySelector(".vocab-de") && !!first.querySelector(".vocab-he") &&
+        !!first.querySelector(".vocab-badge") && !!first.querySelector(".pron-btn") &&
+        first.querySelector(".vocab-he").getAttribute("dir") === "rtl",
+      demoteBtns: document.querySelectorAll(".vocab-demote").length
+    };
+  });
+  check("Vokabelliste: Zeilen mit DE/he(RTL)/Badge/Aussprache-Knopf",
+    vocabRows.n >= 30 && vocabRows.hasParts, JSON.stringify(vocabRows));
+  check("Vokabelliste: gemeisterte Zeile hat 'nicht gemeistert'-Knopf", vocabRows.demoteBtns >= 1);
+  // Filter "nur gemeisterte"
+  await page.evaluate(() => {
+    const chk = document.querySelector("#vocab-mastered");
+    chk.checked = true; chk.dispatchEvent(new Event("change"));
+  });
+  await page.waitForTimeout(400);
+  const filtered = await page.evaluate(() => document.querySelectorAll(".vocab-row").length);
+  check("Vokabelliste: Filter 'nur gemeisterte'", filtered === 1, filtered);
+  // Aussprache-Toggle schreibt feedback.pronIssues
+  const pronToggle = await page.evaluate(() => {
+    const btn = document.querySelector(".pron-btn");
+    btn.click();
+    const on = JSON.parse(localStorage.getItem("tacheles_state_v1")).feedback.pronIssues;
+    btn.click();
+    const off = JSON.parse(localStorage.getItem("tacheles_state_v1")).feedback.pronIssues;
+    return { onCount: Object.keys(on).length, offCount: Object.keys(off).length };
+  });
+  check("Vokabelliste: 'Aussprache falsch' schreibt/entfernt feedback.pronIssues",
+    pronToggle.onCount === 1 && pronToggle.offCount === 0, JSON.stringify(pronToggle));
+  // Demote aus der Liste
+  await page.evaluate(() => { const b = document.querySelector(".vocab-demote"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const vocabDemote = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const it = window.TACHELES_CONTENT.items[0];
+    return { mastery: s.srs[it.id].mastery, rowsNow: document.querySelectorAll(".vocab-row").length };
+  });
+  check("Vokabelliste: 'nicht gemeistert' demotet auf 2 (Liste aktualisiert)",
+    vocabDemote.mastery === 2 && vocabDemote.rowsNow === 0, JSON.stringify(vocabDemote));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Vokabelliste: Zurueck fuehrt ins Profil", await page.evaluate(() => !!document.querySelector("#btn-vocab")));
+
+  // --- 14i. Feedback: Notiz speichern/loeschen, URL-Prefill + Laengenlimit, Footer ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.feedback = { notes: [], pronIssues: { shalom: true } };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  check("Feedback: Footer-Link auf Home", await page.evaluate(() =>
+    !![...document.querySelectorAll('.footer-links [data-goto="feedback"]')].length));
+  await page.evaluate(() => { const a = document.querySelector('[data-goto="feedback"]'); if (a) a.click(); });
+  await page.waitForTimeout(400);
+  check("Feedback: Hub oeffnet", await page.evaluate(() =>
+    /feedback/i.test((document.querySelector(".session-title") || {}).textContent || "")));
+  await page.evaluate(() => {
+    document.querySelector(".fb-textarea").value = "Testnotiz aus der Regression";
+    const b = [...document.querySelectorAll("button")].find(x => /notiz speichern/i.test(x.textContent));
+    if (b) b.click();
+  });
+  await page.waitForTimeout(400);
+  const fbSaved = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return {
+      n: s.feedback.notes.length,
+      text: s.feedback.notes[0] && s.feedback.notes[0].text,
+      shown: /Testnotiz aus der Regression/.test(document.body.innerText),
+      pronShown: /Aussprache gemeldet \(1\)/.test(document.body.innerText)
+    };
+  });
+  check("Feedback: Notiz speichern + anzeigen (inkl. Aussprache-Liste)",
+    fbSaved.n === 1 && fbSaved.text === "Testnotiz aus der Regression" && fbSaved.shown && fbSaved.pronShown,
+    JSON.stringify(fbSaved));
+  const fbUrls = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const issue = D.feedbackIssueUrl();
+    const mail = D.feedbackMailtoUrl();
+    return {
+      issueOk: issue.url.indexOf("https://github.com/caol-ila/tacheles/issues/new?title=") === 0 &&
+        issue.url.indexOf(encodeURIComponent("Testnotiz aus der Regression")) > 0 && !issue.truncated,
+      mailOk: mail.url.indexOf("mailto:tacheles@mahlberg.rocks?subject=") === 0
+    };
+  });
+  check("Feedback: GitHub- und mailto-URL korrekt vorbefuellt", fbUrls.issueOk && fbUrls.mailOk, JSON.stringify(fbUrls));
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.feedback.notes = [];
+    for (let i = 0; i < 20; i++) s.feedback.notes.push({ ts: i, text: new Array(500).join("x") });
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const fbCap2 = await page.evaluate(() => {
+    const issue = window.TACHELES_DEBUG.feedbackIssueUrl();
+    return { len: issue.url.length, truncated: issue.truncated };
+  });
+  check("Feedback: Prefill-URL bei Ueberlaenge auf <= 6000 gekappt",
+    fbCap2.len <= 6000 && fbCap2.truncated === true, JSON.stringify(fbCap2));
+  // FIX-14: Kappen darf ein Emoji-Surrogatpaar auftrennen — capUrl muss das
+  // abfangen (kein "URI malformed"-Wurf) und trotzdem sauber kuerzen.
+  const surrogate = await page.evaluate(() => {
+    const body = "🎙️🥨🕊️😀".repeat(2000); // emoji-lastig + weit ueber dem mailto-Limit
+    let threw = false, r = null;
+    try { r = window.TACHELES_DEBUG.capUrl("mailto:x?body=", body, 1800); }
+    catch (e) { threw = true; }
+    return { threw, len: r ? r.url.length : -1, truncated: r ? r.truncated : null,
+      valid: !!(r && typeof r.url === "string") };
+  });
+  check("Feedback: capUrl kappt surrogat-sicher (Emoji-lastig, kein Wurf)",
+    !surrogate.threw && surrogate.valid && surrogate.truncated === true && surrogate.len <= 1800,
+    JSON.stringify(surrogate));
+  // Notiz loeschen (im Hub)
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.feedback = { notes: [{ ts: 5, text: "wegdamit" }], pronIssues: {} };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#btn-feedback"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const b = document.querySelector(".fb-note .icon-btn"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const fbDeleted = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("tacheles_state_v1")).feedback.notes.length);
+  check("Feedback: Notiz einzeln loeschen", fbDeleted === 0, fbDeleted);
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+
+  // --- 14j. Kontakt/Impressum + Datenschutz erreichbar und nicht leer ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const footerLegal = await page.evaluate(() => ({
+    contact: !!document.querySelector('.footer-links [data-goto="contact"]'),
+    privacy: !!document.querySelector('.footer-links [data-goto="privacy"]')
+  }));
+  check("Recht: Footer-Links Kontakt + Datenschutz", footerLegal.contact && footerLegal.privacy);
+  await page.evaluate(() => { const a = document.querySelector('.footer-links [data-goto="contact"]'); if (a) a.click(); });
+  await page.waitForTimeout(350);
+  const contact = await page.evaluate(() => document.body.innerText);
+  check("Recht: Kontakt nennt Verantwortlichen + E-Mail + Disclaimer + Stand",
+    /Thomas Mahlberg/.test(contact) && /tacheles@mahlberg\.rocks/.test(contact) &&
+    /keine Rechtsberatung/i.test(contact) && /privates, nicht-kommerzielles/i.test(contact) &&
+    /Stand: Juli 2026/.test(contact));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  // FIX-6: von Home geoeffnet -> Zurueck fuehrt zurueck nach Home (nicht pauschal Profil).
+  check("Recht: Zurueck fuehrt zum Ausgangs-Screen (Home)",
+    await page.evaluate(() => !!document.querySelector("#cta-start")));
+  // Datenschutz aus dem Profil oeffnen (Button dort).
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#btn-privacy"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  const privacy = await page.evaluate(() => document.body.innerText);
+  check("Recht: Datenschutz deckt GitHub Pages/USA/localStorage/Mikrofon/Feedback/Rechte ab",
+    /GitHub Pages/i.test(privacy) && /IP-Adresse/i.test(privacy) && /USA/.test(privacy) &&
+    /localStorage/i.test(privacy) && /Spracherkennung/i.test(privacy) &&
+    /Feedback/i.test(privacy) && /Rechte/i.test(privacy) && /keine Rechtsberatung/i.test(privacy));
+  check("Recht: Datenschutz enthaelt FIX-5-Zusaetze (TTS-Fallback, DPF, Aufsichtsbehörde, Stand)",
+    /ersatzweise die Sprachausgabe/i.test(privacy) && /Data Privacy Framework/i.test(privacy) &&
+    /Aufsichtsbehörde/i.test(privacy) && /Art\. 6 Abs\. 1 lit\. f/i.test(privacy) &&
+    /Stand: Juli 2026/.test(privacy));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Recht: Zurueck fuehrt ins Profil", await page.evaluate(() => !!document.querySelector("#btn-privacy")));
+
+  // --- 14k. Tour: aus dem Profil neustartbar, Folien blaetterbar, skippbar ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Tour: Profil-Eintrag 'Einführung ansehen'", await page.evaluate(() => !!document.querySelector("#btn-tour")));
+  await page.evaluate(() => { const b = document.querySelector("#btn-tour"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  check("Tour: Folie 1 sichtbar", await page.evaluate(() => /Einführung · 1\/5/i.test(document.body.innerText)));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test(x.textContent.trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Tour: Weiter blaettert zu Folie 2", await page.evaluate(() => /Einführung · 2\/5/i.test(document.body.innerText)));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  check("Tour: Ueberspringen fuehrt zu Home", await page.evaluate(() => !!document.querySelector("#cta-start")));
 
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));

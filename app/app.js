@@ -77,20 +77,37 @@
   }
   function todayStr() { return dateStr(new Date()); }
 
+  /** Deterministischer Tages-Hash ("des Tages"-Auswahl): stabil ueber den Tag,
+   *  lokales Datum via dateStr()/todayStr(), niemals Math.random. */
+  function dayHash(s) { return fnv1a(s); }
+
   // Gleichzeitige Toasts (z. B. Abzeichen + Level-Up) sollen sich nicht
   // ueberlappen: jeder neue Toast wird um die Zahl lebender Toasts nach oben
   // versetzt. Beim Entfernen aus der Liste austragen.
   var liveToasts = [];
-  function toast(msg, cls) {
+  /** Toast; optionales onTap macht ihn antippbar (z. B. Mastery-Veto). */
+  function toast(msg, cls, onTap) {
     var t = el("div", "toast" + (cls ? " " + cls : ""), msg);
     t.style.bottom = (90 + liveToasts.length * 54) + "px";
     liveToasts.push(t);
-    document.body.appendChild(t);
-    setTimeout(function () {
+    var dismiss = function () {
       var idx = liveToasts.indexOf(t);
       if (idx >= 0) liveToasts.splice(idx, 1);
       t.remove();
-    }, cls === "gold" ? 3600 : 2600);
+    };
+    if (onTap) {
+      t.classList.add("tappable");
+      t.setAttribute("role", "button");
+      t.setAttribute("tabindex", "0");
+      var fire = function () { onTap(); dismiss(); };
+      t.addEventListener("click", fire);
+      t.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fire(); }
+      });
+    }
+    document.body.appendChild(t);
+    // Antippbare Toasts leben laenger (~6 s), damit man sie in Ruhe treffen kann.
+    setTimeout(dismiss, onTap ? 6000 : (cls === "gold" ? 3600 : 2600));
   }
 
   /* ==========================================================
@@ -167,7 +184,8 @@
         onboarded: false,       // Willkommens-Tour beim ersten Start gezeigt?
         levelCap: "auto",       // 'auto' | 'A0'..'C2' — manuelle Level-Grenze
         unlockedBand: "A1",     // hoechstes ERREICHTES Band (Default A1 = A0+A1 offen)
-        placementDone: false    // Einstufungstest schon einmal gemacht?
+        placementDone: false,   // Einstufungstest schon einmal gemacht?
+        tourSeen: false         // App-Tour (Erklaer-Slideshow) gesehen/uebersprungen?
       },
       gamification: {
         xpTotal: 0,
@@ -185,6 +203,12 @@
           modulesDone: {}       // { moduleId: true } abgeschlossene Module
         }
       },
+      // Lokales Feedback: freie Notizen + als "Aussprache falsch" markierte Items.
+      // Verlaesst das Geraet nur nutzerinitiiert (GitHub-Issue-Prefill / mailto).
+      feedback: {
+        notes: [],       // [{ ts, text }]
+        pronIssues: {}   // { itemId: true }
+      },
       // pro Item: { ease, intervalDays, dueTs, reps, lapses, mastery, lastReviewTs }
       srs: {},
       // pro Tag (YYYY-MM-DD): { answers, correct, xp, goalMet }
@@ -192,7 +216,8 @@
     };
   }
 
-  /** Fremde/alte Daten defensiv in die aktuelle Struktur ueberfuehren. */
+  /** Fremde/alte Daten defensiv in die aktuelle Struktur ueberfuehren
+   *  (Allowlist: nur bekannte Felder mit gueltigen Typen werden uebernommen). */
   function normalizeState(raw) {
     var s = defaultState();
     if (!raw || typeof raw !== "object") return s;
@@ -206,6 +231,7 @@
       if (LEVEL_CAPS.indexOf(raw.profile.levelCap) >= 0) s.profile.levelCap = raw.profile.levelCap;
       if (BANDS.indexOf(raw.profile.unlockedBand) >= 0) s.profile.unlockedBand = raw.profile.unlockedBand;
       if (typeof raw.profile.placementDone === "boolean") s.profile.placementDone = raw.profile.placementDone;
+      if (typeof raw.profile.tourSeen === "boolean") s.profile.tourSeen = raw.profile.tourSeen;
     }
     // Migration: wer schon Lernfortschritt hat (State von vor dem Onboarding-
     // Feature), soll die Willkommens-Tour nicht erneut durchlaufen.
@@ -270,6 +296,23 @@
         if (d.mastered !== undefined) entry.mastered = nn(d.mastered);
         s.log[day] = entry;
       });
+    }
+    // feedback (Allowlist): notes nur als Array sauberer {ts,text}-Objekte
+    // (Text gekappt, damit kein Import den State aufblaeht), pronIssues nur
+    // als Objekt-nicht-Array mit true-Werten.
+    if (raw.feedback && typeof raw.feedback === "object" && !Array.isArray(raw.feedback)) {
+      if (Array.isArray(raw.feedback.notes)) {
+        raw.feedback.notes.forEach(function (n) {
+          if (!n || typeof n !== "object" || Array.isArray(n)) return;
+          var text = typeof n.text === "string" ? n.text.slice(0, 2000) : "";
+          if (!text) return;
+          s.feedback.notes.push({ ts: Math.max(0, Number(n.ts) || 0), text: text });
+        });
+      }
+      var rp = raw.feedback.pronIssues;
+      if (rp && typeof rp === "object" && !Array.isArray(rp)) {
+        Object.keys(rp).forEach(function (id) { if (rp[id]) s.feedback.pronIssues[id] = true; });
+      }
     }
     return s;
   }
@@ -441,8 +484,12 @@
     return e ? (e.mastery || 0) : 0;
   }
 
-  /** Wendet eine Bewertung auf den SRS-Zustand eines Items an. */
-  function rateItem(id, grade) {
+  /** Wendet eine Bewertung auf den SRS-Zustand eines Items an.
+   *  masteryCap (Default 5) begrenzt nur den ANSTIEG der Mastery dieser einen
+   *  Bewertung (Erkennen deckelt bei 2, Erstkontakt bei "keinem Anstieg");
+   *  Absenkungen ("again") und die SRS-Planung sind nie betroffen. */
+  function rateItem(id, grade, masteryCap) {
+    var cap = masteryCap === undefined ? 5 : masteryCap;
     var now = Date.now();
     var e = getSrs(id);
     switch (grade) {
@@ -460,13 +507,13 @@
         break;
       case "good":
         e.intervalDays = e.intervalDays < 1 ? 1 : e.intervalDays * e.ease;
-        e.mastery = Math.min(5, e.mastery + 1);
+        if (e.mastery < cap) e.mastery = Math.min(cap, e.mastery + 1);
         e.dueTs = now + e.intervalDays * DAY_MS;
         break;
       case "easy":
         e.ease = Math.min(3.2, e.ease + 0.1);
         e.intervalDays = e.intervalDays < 1 ? 2.5 : e.intervalDays * e.ease * 1.3;
-        e.mastery = Math.min(5, e.mastery + 1);
+        if (e.mastery < cap) e.mastery = Math.min(cap, e.mastery + 1);
         e.dueTs = now + e.intervalDays * DAY_MS;
         break;
     }
@@ -506,6 +553,36 @@
     state.gamification.masteredCount = n;
   }
 
+  /** Mastery-Veto (1.2): setzt ein gemeistertes Item zurueck auf 2 ("in
+   *  Arbeit"); SRS-Plan bleibt unangetastet. No-Op fuer nicht-gemeisterte.
+   *  Zieht die "gemeistert"-Zaehler (Tag/Session) mit zurueck (Floor 0). */
+  function demoteMastery(itemId) {
+    var e = state.srs[itemId];
+    if (!e || typeof e !== "object" || (e.mastery || 0) < 3) return false;
+    e.mastery = 2;
+    updateMasteredCount();
+    var day = ensureDay(todayStr());
+    day.mastered = Math.max(0, (day.mastered || 0) - 1);
+    if (session) session.mastered = Math.max(0, (session.mastered || 0) - 1);
+    saveState();
+    return true;
+  }
+
+  /** Gegenstueck zum Veto: ein zurueckgenommenes Item wieder als gemeistert
+   *  markieren (auf 3) und die Zaehler wieder hochsetzen. No-Op fuer bereits
+   *  Gemeistertes. */
+  function restoreMastery(itemId) {
+    var e = state.srs[itemId];
+    if (!e || typeof e !== "object" || (e.mastery || 0) >= 3) return false;
+    e.mastery = 3;
+    updateMasteredCount();
+    var day = ensureDay(todayStr());
+    day.mastered = (day.mastered || 0) + 1;
+    if (session) session.mastered = (session.mastered || 0) + 1;
+    saveState();
+    return true;
+  }
+
   /** Fällige/neue Zaehler nur ueber freigeschaltete Baender (gesperrte zaehlen nicht). */
   function dueCount() {
     var now = Date.now(), n = 0;
@@ -530,6 +607,24 @@
       if (bandUnlocked(itemBand(CONTENT.items[i]))) n++;
     }
     return n;
+  }
+
+  /** "Heute"-Auswahl (1.3): Buchstabe + Wort des Tages, deterministisch per
+   *  Datums-Hash aus dem freigeschalteten Material. Faellt nie leer aus,
+   *  solange Content da ist (Buchstaben sind A0 = immer offen; Wort-Fallback
+   *  ignoriert notfalls das Gating). */
+  function dailyPicks() {
+    var key = todayStr();
+    var letters = ALEFBET_ORDER.map(itemById).filter(Boolean);
+    var letter = letters.length ? letters[dayHash(key + "|letter") % letters.length] : null;
+    // "Wort des Tages": nur echte Vokabeln (Wort/Phrase/Zahl), keine Schilder/Saetze.
+    var wordTypes = ["word", "phrase", "number"];
+    var pool = CONTENT.items.filter(function (it) {
+      return wordTypes.indexOf(it.type) >= 0 && bandUnlocked(itemBand(it));
+    });
+    if (!pool.length) pool = CONTENT.items.filter(function (it) { return wordTypes.indexOf(it.type) >= 0; });
+    var word = pool.length ? pool[dayHash(key + "|word") % pool.length] : null;
+    return { letter: letter, word: word };
   }
 
   /* ==========================================================
@@ -606,11 +701,27 @@
     });
   }
 
+  /* Aufgaben-Klassifikation (ehrliche Mastery, R-Spec 1.1):
+   * "production" = die hebraeische Form muss aktiv produziert werden
+   * (Satzbau, Sprechen, jede de->he-Abfrage inkl. Grammatik cloze/form).
+   * Alles andere ist "recognition" (Erkennen) und deckelt mastery bei 2. */
+  var RECALL_KIND = { build: "production", speak: "production" };
+
+  /** Erklaerzeile fuer die Erkennen-/Produzieren-Regel (R-Spec 1.1). Sichtbar
+   *  in der Vokabelliste und auf der Mastery-Check-Karte. */
+  var MASTERY_RULE_TEXT = "Gemeistert wird ein Wort erst, wenn du es aktiv abrufst – " +
+    "Deutsch→Hebräisch, Satzbau oder Sprechen. Wiedererkennen allein reicht nicht.";
+
+  function isProduction(mode, dir) {
+    if (RECALL_KIND[mode] === "production") return true;
+    return dir === "de2he";
+  }
+
   /**
    * Zentrale Verbuchung jedes Abruf-Ereignisses:
    * SRS-Update, XP, Tageslog, Tagesziel/Streak, Session-Statistik, Auto-Save.
    */
-  function recordAnswer(itemId, mode, grade) {
+  function recordAnswer(itemId, mode, grade, dir) {
     // "Richtig" = gewusst. Auch "Schwer" ist gewusst (nur muehsam) — als falsch
     // zaehlt NUR "Nochmal" (= wusste ich nicht). Sonst drueckt ehrliches
     // Selbstbewerten die Trefferquote strukturell Richtung 50 %.
@@ -618,7 +729,25 @@
     var wasDue = isDue(itemId, Date.now());
     var masteryBefore = getMastery(itemId);
 
-    rateItem(itemId, grade);
+    // Ehrliche Mastery (1.1): Erkennen hebt hoechstens auf 2; erst Produktion
+    // (good/easy) erreicht 3+. Der ERSTE Abruf eines in DIESER Session frisch
+    // vorgestellten Worts erhoeht die Mastery gar nicht (nur SRS-Planung/XP).
+    var cap = isProduction(mode, dir) ? 5 : 2;
+    if (session && session.introducedThisSession && session.introducedThisSession[itemId]) {
+      delete session.introducedThisSession[itemId];
+      cap = masteryBefore;
+    }
+    // Mastery-Check (1.2): Mastery waehrend der Runde in BEIDE Richtungen
+    // einfrieren. Bewertung darf nichts anheben (cap = Ist-Stand) und nichts
+    // absenken ("Nochmal"-Abzug wird gleich zurueckgenommen). SRS-Planung, XP
+    // und Log laufen normal; Demotion passiert nur ueber die Review-Haken.
+    var freezeMastery = !!(session && session.masteryCheck);
+    if (freezeMastery) cap = masteryBefore;
+    rateItem(itemId, grade, cap);
+    if (freezeMastery) {
+      var fe = state.srs[itemId];
+      if (fe && fe.mastery !== masteryBefore) { fe.mastery = masteryBefore; updateMasteredCount(); }
+    }
 
     var xp = Math.max(1, Math.round((XP_BASE[mode] || 5) * (correct ? 1 : 0.3) * (wasDue ? 1.2 : 1)));
     state.gamification.xpTotal += xp;
@@ -632,7 +761,16 @@
       day.mastered = (day.mastered || 0) + 1;
       // Der kleine Duolingo-Moment: ein Wort sitzt jetzt wirklich.
       var mItem = itemById(itemId);
-      if (mItem) toast("🏅 " + mItem.he + " (" + mItem.de + ") sitzt!", "gold");
+      if (mItem) {
+        toast("🏅 " + mItem.he + " (" + mItem.de + ") sitzt! · tippen, falls es doch noch nicht sitzt", "gold", function () {
+          if (demoteMastery(itemId)) {
+            // Bestaetigung ist selbst antippbar: Veto rueckgaengig machen.
+            toast("Okay, zählt noch nicht als gemeistert. 💪 · tippen zum Rückgängigmachen", null, function () {
+              if (restoreMastery(itemId)) toast("Wieder als gemeistert markiert.");
+            });
+          }
+        });
+      }
     }
     if (!day.goalMet && day.answers >= goalItems()) day.goalMet = true;
     state.gamification.streakDays = recomputeStreak();
@@ -844,13 +982,19 @@
     } catch (e) { /* kein/kaputtes Manifest -> TTS-Betrieb */ }
   }
 
-  /** FNV-1a (32-bit) -> 8 Hex-Zeichen. IDENTISCH zu audioHash() in tools/audio-lib.cjs,
-   *  damit die App genau die dort erzeugten Dateinamen findet (Dialog/Grammatik). */
-  function audioHash(s) {
+  /** FNV-1a (32-bit) als unsigned int. Gemeinsamer Kern fuer audioHash und
+   *  dayHash (deterministisch, KEIN Math.random). */
+  function fnv1a(s) {
     var h = 0x811c9dc5 >>> 0;
     s = String(s == null ? "" : s);
     for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
-    return ("0000000" + h.toString(16)).slice(-8);
+    return h >>> 0;
+  }
+
+  /** FNV-1a -> 8 Hex-Zeichen. IDENTISCH zu audioHash() in tools/audio-lib.cjs,
+   *  damit die App genau die dort erzeugten Dateinamen findet (Dialog/Grammatik). */
+  function audioHash(s) {
+    return ("0000000" + fnv1a(s).toString(16)).slice(-8);
   }
 
   function clipUrl(key) {
@@ -1289,6 +1433,28 @@
     });
   }
 
+  /** Dezente Footer-Links der Hauptscreens: Feedback, Kontakt, Datenschutz. */
+  function footerLinksHtml() {
+    return '<div class="footer-links">' +
+      '<a href="#" data-goto="feedback">Feedback</a> · ' +
+      '<a href="#" data-goto="contact">Kontakt</a> · ' +
+      '<a href="#" data-goto="privacy">Datenschutz</a>' +
+      '</div>';
+  }
+
+  function wireFooterLinks(root) {
+    root.querySelectorAll("[data-goto]").forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        var t = a.dataset.goto;
+        var from = currentScreen; // dahin zurueck, wo der Link angetippt wurde
+        if (t === "feedback") renderFeedback(from);
+        else if (t === "contact") renderContact(from);
+        else if (t === "privacy") renderPrivacy(from);
+      });
+    });
+  }
+
   function modeTilesHtml(wide) {
     return '<div class="tile-grid' + (wide ? " wide" : "") + '">' +
       MODES.map(function (m) {
@@ -1380,6 +1546,31 @@
       '<div class="stat"><div class="stat-num">⭐ ' + g.xpTotal + '</div><div class="stat-label">XP</div></div>' +
       '<div class="stat"><div class="stat-num">🏅 ' + g.masteredCount + '</div><div class="stat-label">gemeistert</div></div>' +
       '</section>' +
+      (function () {
+        // "Heute"-Block (1.3): Tages-Haeppchen + Buchstabe/Wort des Tages.
+        var picks = dailyPicks();
+        var tile = function (kind, item, label) {
+          if (!item) return "";
+          return '<div class="today-tile" role="button" tabindex="0" data-today="' + esc(item.id) + '">' +
+            '<div class="today-label">' + label + '</div>' +
+            '<div class="today-he" dir="rtl" lang="he">' + esc(item.niqqud || item.he) + '</div>' +
+            '<div class="today-meta">' + esc(item.translit || "") + ' · ' + esc(item.de) + '</div>' +
+            '<button class="icon-btn small-btn" data-say="' + esc(item.id) + '" title="Anhören">🔊</button>' +
+            '</div>';
+        };
+        return '<section class="card today-card">' +
+          '<div class="setting-label">🌅 Heute</div>' +
+          '<div class="today-tiles">' +
+          tile("letter", picks.letter, "Buchstabe des Tages") +
+          tile("word", picks.word, "Wort des Tages") +
+          '</div>' +
+          '<div class="today-actions">' +
+          '<button class="btn primary" id="btn-snack">🥨 Häppchen · kurze Runde</button>' +
+          (countMastered(function (it) { return it.theme === "alefbet"; }) < 8 ?
+            '<button class="btn" id="btn-reading">👓 Lesen lernen</button>' : '') +
+          '</div>' +
+          '</section>';
+      })() +
       '<section class="card goal-card">' +
       '<div class="goal-line"><span>Heute fällig: <b>' + dueCount() + '</b> · Neu: <b>' + newCount() + '</b></span>' +
       '<span>' + today.answers + ' / ' + goal + '</span></div>' +
@@ -1406,11 +1597,34 @@
       '<h2 class="h2">Modi</h2>' + modeTilesHtml(false) +
       '<h2 class="h2">Themen <span class="h2-sub">· antippen zum gezielten Üben</span></h2>' +
       '<div class="theme-list">' + themeListHtml() + '</div>' +
-      '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>';
+      '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>' + footerLinksHtml();
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
+    var snack = $("#btn-snack");
+    if (snack) snack.addEventListener("click", function () { startSession("smart", { size: 5 }); });
+    var reading = $("#btn-reading");
+    if (reading) reading.addEventListener("click", function () {
+      startSession("module", { moduleObj: buildReadingModule() });
+    });
+    app.querySelectorAll("[data-today]").forEach(function (row) {
+      var go = function () {
+        startSession("smart", { itemIds: [row.dataset.today], size: 3, label: "🌅 Heute" });
+      };
+      row.addEventListener("click", go);
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+    });
+    app.querySelectorAll(".today-card [data-say]").forEach(function (b) {
+      b.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        var it = itemById(b.dataset.say);
+        if (it) say(it);
+      });
+    });
     wireModeTiles(app);
     wireThemeRows(app);
     wireLockedSummary(app);
+    wireFooterLinks(app);
   }
 
   /** Eine Station des gefuehrten Pfads (Lernen-Screen). */
@@ -1449,11 +1663,12 @@
       '<div class="theme-list path-list">' +
       CONTENT.themes.map(function (t) { return pathRowHtml(t, next && t.id === next.id); }).join("") +
       '</div>' +
-      '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true);
+      '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true) + footerLinksHtml();
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
     wireModeTiles(app);
     wireModuleTiles(app);
     wireThemeRows(app);
+    wireFooterLinks(app);
   }
 
   function renderProgress() {
@@ -1504,6 +1719,14 @@
       '<div class="setting-sub">Alle 27 Buchstaben im Überblick, mit deinem Lernstand.</div></div>' +
       '<button class="btn" id="btn-alefbet">Ansehen</button>' +
       '</section>' +
+      (state.gamification.masteredCount > 0 ?
+        '<section class="card exam-card">' +
+        '<div><div class="setting-label">🏅 Mastery-Check</div>' +
+        '<div class="setting-sub">Sitzt das wirklich noch? Kurze Prüf-Häppchen über deine gemeisterten Wörter, ' +
+        'mit der Möglichkeit, einzelne zurückzunehmen.</div>' +
+        '<div class="setting-sub" style="margin-top:6px">' + esc(MASTERY_RULE_TEXT) + '</div></div>' +
+        '<button class="btn" id="btn-mastercheck">Start</button>' +
+        '</section>' : '') +
       (function () {
         // Knacknuesse: die 5 am haeufigsten vergessenen Woerter (lapses >= 2)
         var hard = CONTENT.items.filter(function (it) {
@@ -1578,11 +1801,13 @@
       '<section class="card"><div class="data-actions">' +
       '<button class="btn" id="btn-export">📤 Export</button>' +
       '<button class="btn" id="btn-import">📥 Import</button>' +
-      '</div></section>';
+      '</div></section>' + footerLinksHtml();
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
     $("#btn-exam").addEventListener("click", function () { startSession("exam"); });
     $("#btn-alefbet").addEventListener("click", renderAlefbetChart);
+    var mcheckBtn = $("#btn-mastercheck");
+    if (mcheckBtn) mcheckBtn.addEventListener("click", function () { startSession("mastercheck"); });
     var hardBtn = $("#btn-hard");
     if (hardBtn) {
       hardBtn.addEventListener("click", function () {
@@ -1597,6 +1822,7 @@
     });
     wireThemeRows(app);
     wireLockedSummary(app);
+    wireFooterLinks(app);
   }
 
   function renderProfile() {
@@ -1655,6 +1881,24 @@
       '<div class="kv-row"><span>Beste Blitz-Runde</span><b>⚡ ' + (state.gamification.counters.bestBlitz || 0) + ' richtig</b></div>' +
       '<div class="kv-row"><span>Streak-Freezes übrig</span><b>❄️ ' + freezesAvailable() + '</b></div>' +
       '</section>' +
+      '<h2 class="h2">Mehr</h2>' +
+      '<section class="card" id="more-card">' +
+      '<div class="setting-row"><div><div class="setting-label">📖 Vokabelliste</div>' +
+      '<div class="setting-sub">Alle Wörter nach Level durchsehen, anhören, Aussprache melden</div></div>' +
+      '<button class="btn" id="btn-vocab">Öffnen</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">💬 Feedback</div>' +
+      '<div class="setting-sub">Notizen sammeln und als GitHub-Issue oder E-Mail übermitteln</div></div>' +
+      '<button class="btn" id="btn-feedback">Öffnen</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">📮 Kontakt / Impressum</div>' +
+      '<div class="setting-sub">Wer hinter Tacheles steckt</div></div>' +
+      '<button class="btn" id="btn-contact">Öffnen</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">🔒 Datenschutz</div>' +
+      '<div class="setting-sub">Was mit deinen Daten passiert (kurz: sie bleiben bei dir)</div></div>' +
+      '<button class="btn" id="btn-privacy">Öffnen</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">✨ Einführung ansehen</div>' +
+      '<div class="setting-sub">Die kurze Tour durch die App, jederzeit erneut</div></div>' +
+      '<button class="btn" id="btn-tour">Starten</button></div>' +
+      '</section>' +
       '<h2 class="h2">Daten</h2>' +
       '<section class="card">' +
       '<div class="data-actions data-grid">' +
@@ -1678,7 +1922,8 @@
       '<button class="btn danger" id="btn-reset">🗑 Zurücksetzen</button>' +
       '</div></section>' +
       '<div class="footer-tag">🔊 Sprach-Samples erzeugt mit ElevenLabs (elevenlabs.io)</div>' +
-      '<div class="footer-tag">Tacheles · Version ' + esc(CONTENT.version) + ' · Reden wir Tacheles. 🕊️</div>';
+      '<div class="footer-tag">Tacheles · Version ' + esc(CONTENT.version) + ' · Reden wir Tacheles. 🕊️</div>' +
+      footerLinksHtml();
     $("#goal-sel").addEventListener("change", function (e) {
       state.profile.dailyGoalMin = parseInt(e.target.value, 10) || 5;
       saveState();
@@ -1697,11 +1942,17 @@
       renderProfile(); // Sub-Zeile "Erreichtes Level" bleibt, Gating wirkt sofort
     });
     $("#btn-placement").addEventListener("click", function () { startPlacement(false); });
+    $("#btn-vocab").addEventListener("click", function () { renderVocabBrowser(effectiveBand(), false, "profile"); });
+    $("#btn-feedback").addEventListener("click", function () { renderFeedback("profile"); });
+    $("#btn-contact").addEventListener("click", function () { renderContact("profile"); });
+    $("#btn-privacy").addEventListener("click", function () { renderPrivacy("profile"); });
+    $("#btn-tour").addEventListener("click", function () { renderTour(0); });
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
     $("#btn-reset").addEventListener("click", resetProgress);
     $("#btn-sync-copy").addEventListener("click", copySyncCode);
     $("#btn-sync-paste").addEventListener("click", pasteSyncCode);
+    wireFooterLinks(app);
   }
 
   /* ==========================================================
@@ -1714,13 +1965,13 @@
     smart: "Smart-Session", flash: "Karten", mc: "Multiple Choice", match: "Paare",
     swipe: "Wisch", reels: "Reels", signs: "Schilder lesen", listen: "Hören", speak: "Sprechen",
     dialog: "Dialog", build: "Satzbau", image: "Bilder", blitz: "Blitz", audio: "Audio-Kurs",
-    module: "Modul"
+    module: "Modul", mastercheck: "Mastery-Check"
   };
 
   function startSession(modeId, opts) {
     opts = opts || {};
     cleanupSession();
-    var size = sessionSize();
+    var size = opts.size ? clamp(opts.size, 1, 20) : sessionSize();
     session = {
       mode: modeId, answered: 0, correct: 0, wrong: 0, xp: 0, mastered: 0,
       timer: null, keyHandler: null, startedAt: Date.now(), lastWheel: 0,
@@ -1803,12 +2054,29 @@
       }
     } else if (modeId === "module") {
       // Modul: gefuehrte Mini-Lektion, linearer Schritt-Ablauf (kein Task-Mix).
-      var mod = moduleById(opts.moduleId);
+      // opts.moduleObj erlaubt ein zur Laufzeit gebautes Modul (z. B. "Lesen lernen").
+      var mod = opts.moduleObj || moduleById(opts.moduleId);
       if (!mod || !mod.steps || !mod.steps.length) { session = null; toast("Modul nicht gefunden."); return; }
       session.module = mod;
       session.steps = mod.steps.slice();
       session.stepIdx = 0;
       session.label = (mod.emoji || "📚") + " " + mod.title;
+    } else if (modeId === "mastercheck") {
+      // Mastery-Check (1.2): Haeppchen-Wiederholung NUR ueber gemeisterte
+      // Items. Rotation ohne neues Feld: am laengsten ungeprueft zuerst
+      // (lastReviewTs aufsteigend) + etwas Zufall, damit ueber die Runden
+      // alle drankommen.
+      var mastered = CONTENT.items.filter(function (it) { return getMastery(it.id) >= 3; });
+      if (!mastered.length) { session = null; toast("Noch nichts gemeistert – erst lernen, dann prüfen. 🙂"); return; }
+      mastered.sort(function (a, b) { return (getSrs(a.id).lastReviewTs || 0) - (getSrs(b.id).lastReviewTs || 0); });
+      var chunk = shuffle(mastered.slice(0, 10)).slice(0, 6);
+      session.tasks = chunk.map(function (it, idx) {
+        // Erkennen und Produzieren im Wechsel (wie im normalen Lernen).
+        return { item: it, kind: "mc", dir: idx % 2 === 0 ? "he2de" : "de2he", requeued: false };
+      });
+      session.i = 0;
+      session.masteryCheck = true;
+      session.label = "🏅 Mastery-Check";
     } else {
       // Schilder-Modus: nur Schilder. Sprechen: keine Einzelbuchstaben. Satzbau: nur Saetze.
       // Bilder: nur Items mit Emoji. Blitz: schnelle MC-Runde gegen die Uhr.
@@ -2107,7 +2375,11 @@
 
   function renderTask() {
     var task = session.tasks[session.i];
-    if (!task) return endSession();
+    if (!task) {
+      // Mastery-Check: vor dem Abschluss die Auswahl-Ansicht (Zuruecknehmen).
+      if (session.masteryCheck) return renderMasteryCheckReview();
+      return endSession();
+    }
     setOptKeys(null); // alter Aufgaben-Tastaturhandler weg; Renderer setzen ggf. neu
     var title = (session.label || MODE_TITLES[session.mode]) + " · " + (session.i + 1) + "/" + session.tasks.length;
     // Teach-First: nie eine Frage zu einem Wort stellen, das die App noch nie
@@ -2238,6 +2510,13 @@
     var body = sessionShell(title, session.i / session.tasks.length);
     var item = task.item;
 
+    // Erstkontakt-Merker (1.1): die erste Abfrage dieses Worts in DIESER
+    // Session zaehlt nicht fuer die Mastery.
+    if (session) {
+      if (!session.introducedThisSession) session.introducedThisSession = {};
+      session.introducedThisSession[item.id] = true;
+    }
+
     body.appendChild(el("div", "intro-tag", INTRO_TAGS[item.type] || INTRO_TAGS.word));
     var card = el("div", "card learn-card intro-card");
     if (item.emoji) card.appendChild(el("div", "intro-emoji", item.emoji));
@@ -2316,7 +2595,7 @@
       g.appendChild(el("span", null, def[1]));
       g.appendChild(el("span", "grade-sub", def[2]));
       g.addEventListener("click", function () {
-        recordAnswer(item.id, "flash", def[0]);
+        recordAnswer(item.id, "flash", def[0], task.dir);
         // "Nochmal" haengt das Item einmal hinten an die Session an.
         if (def[0] === "again" && !task.requeued) {
           session.tasks.push({ item: item, kind: task.kind, dir: null, requeued: true });
@@ -2449,19 +2728,11 @@
       return x.id !== item.id && typeGroup(x.type) === grp && !seenDe[x.de] && !seenHe[x.he];
     });
 
-    if (getMastery(item.id) >= 2) {
-      // 3a. Schwerer: nach Aehnlichkeit sortiert (+ kleiner Jitter) die Top-n.
-      var scored = pool.map(function (c) { return { c: c, s: distractorScore(item, c) + Math.random() }; });
-      scored.sort(function (a, b) { return b.s - a.s; });
-      for (var i = 0; i < scored.length && out.length < n; i++) tryAdd(scored[i].c);
-    } else {
-      // 3b. Freundlich: gleiches Thema zuerst, dann Rest, jeweils zufaellig.
-      var same = shuffle(pool.filter(function (x) { return x.theme === item.theme; }).slice());
-      var other = shuffle(pool.filter(function (x) { return x.theme !== item.theme; }).slice());
-      [same, other].forEach(function (src) {
-        for (var j = 0; j < src.length && out.length < n; j++) tryAdd(src[j]);
-      });
-    }
+    // 3. Immer nach Aehnlichkeit sortiert (+ kleiner Jitter) die Top-n:
+    // plausible Distraktoren statt Raten "an der Wortlaenge" (1.1).
+    var scored = pool.map(function (c) { return { c: c, s: distractorScore(item, c) + Math.random() }; });
+    scored.sort(function (a, b) { return b.s - a.s; });
+    for (var i = 0; i < scored.length && out.length < n; i++) tryAdd(scored[i].c);
     // 5. Notfall-Auffuellung, falls die Gruppe zu klein ist (sollte nicht passieren).
     if (out.length < n) {
       var rest = shuffle(CONTENT.items.filter(function (x) {
@@ -2510,7 +2781,7 @@
             if (btns[i].dataset.itemId === item.id) { btns[i].classList.add("correct"); btns[i].classList.remove("dim"); }
           }
         }
-        recordAnswer(item.id, mode, correct ? "good" : "again");
+        recordAnswer(item.id, mode, correct ? "good" : "again", task && task.dir);
         if (!correct) requeueOnWrong(task);
         if (afterAnswer) afterAnswer(correct);
         if (correct) {
@@ -3346,6 +3617,45 @@
     app.appendChild(wrap);
   }
 
+  /** Mastery-Check-Abschluss (1.2): Items der Runde mit Checkboxen; falsch
+   *  beantwortete sind vorausgewaehlt. "Zuruecknehmen" demotet die angehakten,
+   *  der Rest bleibt gemeistert. Danach normaler Abschluss-Screen. */
+  function renderMasteryCheckReview() {
+    var s = session;
+    if (!s) return;
+    setOptKeys(null);
+    var body = sessionShell("🏅 Mastery-Check · Runde fertig", 1);
+    body.appendChild(el("div", "task-question", "Sitzt das wirklich noch? Hake an, was zurück in die Übung soll."));
+    var list = el("div", "mcheck-list");
+    var boxes = {};
+    (s.seenList || []).forEach(function (id) {
+      var item = itemById(id);
+      if (!item) return;
+      var row = el("label", "mcheck-row");
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !s.seenIds[id]; // falsch beantwortete vorausgewaehlt
+      boxes[id] = cb;
+      row.appendChild(cb);
+      var he = el("span", "done-review-he", item.he);
+      he.dir = "rtl"; he.lang = "he";
+      row.appendChild(he);
+      row.appendChild(el("span", "done-review-de", item.de));
+      row.appendChild(el("span", "mcheck-mark " + (s.seenIds[id] ? "ok" : "re"), s.seenIds[id] ? "✓" : "✗"));
+      list.appendChild(row);
+    });
+    body.appendChild(list);
+    var actions = el("div", "done-actions");
+    actions.appendChild(btn("Ausgewählte zurücknehmen", "btn primary", function () {
+      var n = 0;
+      Object.keys(boxes).forEach(function (id) { if (boxes[id].checked && demoteMastery(id)) n++; });
+      if (n) toast("💪 " + n + (n === 1 ? " Wort" : " Wörter") + " zurück in die Übung.");
+      endSession();
+    }));
+    actions.appendChild(btn("Alles bleibt gemeistert", "btn ghost", function () { endSession(); }));
+    body.appendChild(actions);
+  }
+
   /** Dezentes Konfetti; respektiert prefers-reduced-motion. */
   function celebrate() {
     try {
@@ -3373,6 +3683,38 @@
     "let_mem_s", "let_nun", "let_nun_s", "let_samech", "let_ayin", "let_pe", "let_pe_s",
     "let_tsadi", "let_tsadi_s", "let_qof", "let_resh", "let_shin", "let_tav"
   ];
+
+  /** "Lesen lernen" (1.4): baut zur Laufzeit ein gefuehrtes Modul aus
+   *  vorhandenen Items. Bis zu 3 noch nicht gemeisterte Buchstaben in
+   *  Alef-Bet-Reihenfolge; je Buchstabe: Buchstabe vorstellen -> ein kurzes
+   *  freigeschaltetes Wort, das ihn ENTHAELT ("so liest man das") ->
+   *  Erkennungsfrage zum Buchstaben. Kein neuer Engine, kein neuer Content. */
+  function buildReadingModule() {
+    var letters = ALEFBET_ORDER.map(itemById).filter(function (it) {
+      return it && getMastery(it.id) < 3;
+    }).slice(0, 3);
+    if (!letters.length) {
+      // Alles gemeistert: von vorn wiederholen statt leer auszusteigen.
+      letters = ALEFBET_ORDER.map(itemById).filter(Boolean).slice(0, 3);
+    }
+    var steps = [];
+    letters.forEach(function (L) {
+      steps.push({ type: "teach", itemId: L.id });
+      var word = CONTENT.items.filter(function (it) {
+        return (it.type === "word" || it.type === "phrase") &&
+          bandUnlocked(itemBand(it)) && String(it.he).indexOf(L.he) >= 0;
+      }).sort(function (a, b) {
+        // kurz vor lang, dann haeufig vor selten: das lesbarste Aha-Wort zuerst
+        return (a.he.length - b.he.length) || ((a.freq || 999) - (b.freq || 999));
+      })[0];
+      if (word) steps.push({ type: "teach", itemId: word.id, hlLetter: L.he });
+      steps.push({ type: "quiz", itemId: L.id });
+    });
+    return {
+      id: "lesen_lernen", title: "Lesen lernen", emoji: "👓",
+      sub: "Buchstabe für Buchstabe zum ersten Wort", steps: steps
+    };
+  }
 
   function renderAlefbetChart() {
     cleanupSession();
@@ -3428,6 +3770,414 @@
     practice.style.marginTop = "14px";
     app.appendChild(practice);
     window.scrollTo(0, 0);
+  }
+
+  /* ---------- Vokabel-Browser (Settings -> "Vokabelliste") ---------- */
+
+  /** Bandweise Vokabelliste (WS2): lesen, anhoeren, Mastery zuruecknehmen,
+   *  Aussprache als falsch melden. Immer genau EIN Band gerendert (Performance). */
+  function renderVocabBrowser(band, onlyMastered, backScreen) {
+    cleanupSession();
+    document.body.classList.add("in-session");
+    if (BANDS.indexOf(band) < 0) band = "A0";
+    onlyMastered = !!onlyMastered;
+    backScreen = backScreen || "profile";
+    var app = $("#app");
+    app.innerHTML = "";
+
+    var head = el("div", "session-head");
+    var back = btn("✕", "quit-btn", function () {
+      document.body.classList.remove("in-session");
+      showScreen(backScreen);
+    });
+    back.title = "Zurück";
+    head.appendChild(back);
+    var mid = el("div", "session-info");
+    mid.appendChild(el("div", "session-title", "📖 Vokabelliste"));
+    head.appendChild(mid);
+    head.appendChild(el("div", "session-xp", ""));
+    app.appendChild(head);
+
+    // Steuerleiste: Band-Waehler (nur Baender mit Items) + Gemeistert-Filter.
+    var bar = el("div", "vocab-bar");
+    var sel = document.createElement("select");
+    sel.id = "vocab-band";
+    sel.setAttribute("aria-label", "Level-Band wählen");
+    BANDS.filter(function (b) {
+      return CONTENT.items.some(function (it) { return itemBand(it) === b; });
+    }).forEach(function (b) {
+      var o = document.createElement("option");
+      o.value = b; o.textContent = b;
+      if (b === band) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", function () { renderVocabBrowser(sel.value, chk.checked, backScreen); });
+    bar.appendChild(sel);
+    var lbl = el("label", "vocab-filter");
+    var chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.id = "vocab-mastered";
+    chk.checked = onlyMastered;
+    chk.addEventListener("change", function () { renderVocabBrowser(sel.value, chk.checked, backScreen); });
+    lbl.appendChild(chk);
+    lbl.appendChild(document.createTextNode(" nur gemeisterte"));
+    bar.appendChild(lbl);
+    if (state.gamification.masteredCount > 0) {
+      bar.appendChild(btn("🏅 Mastery-Check", "btn small", function () {
+        document.body.classList.remove("in-session");
+        startSession("mastercheck");
+      }));
+    }
+    app.appendChild(bar);
+
+    var items = CONTENT.items.filter(function (it) { return itemBand(it) === band; });
+    if (onlyMastered) items = items.filter(function (it) { return getMastery(it.id) >= 3; });
+    app.appendChild(el("div", "vocab-count",
+      items.length + (items.length === 1 ? " Wort" : " Wörter") + " · Band " + band));
+    app.appendChild(el("div", "vocab-rule setting-sub", MASTERY_RULE_TEXT));
+
+    var list = el("div", "vocab-list");
+    items.forEach(function (item) {
+      var m = getMastery(item.id);
+      var row = el("div", "vocab-row");
+      var play = btn("🔊", "icon-btn small-btn", function () { say(item); });
+      play.title = "Anhören";
+      row.appendChild(play);
+      var mainCol = el("div", "vocab-main");
+      mainCol.appendChild(el("div", "vocab-de", item.de));
+      mainCol.appendChild(el("div", "vocab-translit", item.translit || ""));
+      row.appendChild(mainCol);
+      var he = el("div", "vocab-he", item.niqqud || item.he);
+      he.dir = "rtl"; he.lang = "he";
+      row.appendChild(he);
+      var badge = el("span", "vocab-badge " + (m >= 3 ? "done" : (!isNew(item.id) ? "started" : "fresh")),
+        m >= 3 ? "gemeistert" : (!isNew(item.id) ? "in Arbeit" : "neu"));
+      row.appendChild(badge);
+      if (m >= 3) {
+        row.appendChild(btn("nicht gemeistert", "btn ghost small vocab-demote", function () {
+          if (demoteMastery(item.id)) {
+            toast("💪 " + item.he + " ist zurück in der Übung.");
+            renderVocabBrowser(band, onlyMastered, backScreen);
+          }
+        }));
+      }
+      var pron = btn("🎙 Aussprache falsch?", "btn ghost small pron-btn" +
+        (state.feedback.pronIssues[item.id] ? " active" : ""), function () {
+        // "Aussprache falsch"-Schalter (WS2): schreibt/entfernt feedback.pronIssues.
+        if (state.feedback.pronIssues[item.id]) {
+          delete state.feedback.pronIssues[item.id];
+          pron.classList.remove("active");
+        } else {
+          state.feedback.pronIssues[item.id] = true;
+          pron.classList.add("active");
+        }
+        saveState();
+      });
+      pron.title = "Aussprache als falsch melden (landet im Feedback)";
+      row.appendChild(pron);
+      list.appendChild(row);
+    });
+    app.appendChild(list);
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------- Feedback (WS3): lokale Notizen + Uebermittlung ---------- */
+
+  var FEEDBACK_ISSUE_BASE = "https://github.com/caol-ila/tacheles/issues/new";
+  var FEEDBACK_MAIL = "tacheles@mahlberg.rocks";
+  var FEEDBACK_URL_MAX = 6000; // GitHub-Issue-Prefill (grosszuegig)
+  var FEEDBACK_MAILTO_MAX = 1800; // mailto: viel enger (Betriebssystem-/Client-Limits)
+
+  /** Notizen + gemeldete Aussprache-Woerter als Markdown-Body. */
+  function feedbackBody() {
+    var fb = state.feedback;
+    var lines = ["Feedback aus der Tacheles-App (Version " + CONTENT.version + ")", ""];
+    if (fb.notes.length) {
+      lines.push("## Notizen");
+      fb.notes.forEach(function (n) {
+        lines.push("- (" + dateStr(new Date(n.ts || 0)) + ") " + n.text);
+      });
+      lines.push("");
+    }
+    var ids = Object.keys(fb.pronIssues);
+    if (ids.length) {
+      lines.push("## Aussprache klingt falsch");
+      ids.forEach(function (id) {
+        var it = itemById(id);
+        lines.push(it ? "- " + it.he + " (" + it.translit + " = " + it.de + ") [" + id + "]" : "- " + id);
+      });
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+
+  /** base + encodeURIComponent(body), auf max Zeichen gekappt (mit Hinweis im
+   *  Text). Surrogat-sicher: Kappen kann ein Emoji mitten in einem Surrogatpaar
+   *  auftrennen; ein alleinstehendes High-Surrogate am Ende wuerde
+   *  encodeURIComponent werfen. Wir schneiden dann ein Zeichen mehr weg und
+   *  fangen den Wurf zusaetzlich ab. */
+  function capUrl(base, body, max) {
+    var suffix = "\n\n… [gekürzt – Rest bitte anhängen]";
+    function enc(s) { try { return encodeURIComponent(s); } catch (e) { return null; } }
+    var truncated = false;
+    var e = enc(body);
+    var url = e === null ? null : base + e;
+    while (url === null || url.length > max) {
+      truncated = true;
+      if (body.length === 0) { url = base + enc(suffix); break; }
+      body = body.slice(0, Math.max(0, body.length - 200));
+      // Einzelnes High-Surrogate am Ende (halbes Emoji)? Noch ein Zeichen weg.
+      var last = body.charCodeAt(body.length - 1);
+      if (body.length && last >= 0xD800 && last <= 0xDBFF) body = body.slice(0, body.length - 1);
+      var e2 = enc(body + suffix);
+      url = e2 === null ? null : base + e2;
+    }
+    return { url: url, truncated: truncated };
+  }
+
+  function feedbackIssueUrl() {
+    return capUrl(FEEDBACK_ISSUE_BASE + "?title=" + encodeURIComponent("App-Feedback") + "&body=",
+      feedbackBody(), FEEDBACK_URL_MAX);
+  }
+
+  function feedbackMailtoUrl() {
+    return capUrl("mailto:" + FEEDBACK_MAIL + "?subject=" + encodeURIComponent("Tacheles-Feedback") + "&body=",
+      feedbackBody(), FEEDBACK_MAILTO_MAX);
+  }
+
+  /** Link nutzerinitiiert oeffnen (funktioniert auch auf file:// und fuer mailto:). */
+  function openExternal(url) {
+    var a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  /** Feedback-Hub (WS3): Notizen erfassen/ansehen/loeschen, gemeldete
+   *  Aussprache-Woerter, Uebermitteln via GitHub-Issue-Prefill oder mailto.
+   *  Uebermitteln leert die lokale Sammlung bewusst NICHT. */
+  function renderFeedback(backScreen) {
+    backScreen = backScreen || "profile";
+    cleanupSession();
+    document.body.classList.add("in-session");
+    var app = $("#app");
+    app.innerHTML = "";
+
+    var head = el("div", "session-head");
+    var back = btn("✕", "quit-btn", function () {
+      document.body.classList.remove("in-session");
+      showScreen(backScreen);
+    });
+    back.title = "Zurück";
+    head.appendChild(back);
+    var mid = el("div", "session-info");
+    mid.appendChild(el("div", "session-title", "💬 Feedback"));
+    head.appendChild(mid);
+    head.appendChild(el("div", "session-xp", ""));
+    app.appendChild(head);
+
+    // Erfassen
+    var card = el("section", "card");
+    card.appendChild(el("div", "setting-label", "Was soll besser werden?"));
+    var ta = el("textarea", "fb-textarea");
+    ta.rows = 3;
+    ta.maxLength = 2000;
+    ta.placeholder = "Tippfehler, komische Übersetzung, Wunsch … alles hilft.";
+    ta.setAttribute("aria-label", "Feedback-Notiz");
+    card.appendChild(ta);
+    card.appendChild(btn("Notiz speichern", "btn primary", function () {
+      var text = ta.value.trim();
+      if (!text) { toast("Erst etwas schreiben. 🙂"); return; }
+      state.feedback.notes.push({ ts: Date.now(), text: text.slice(0, 2000) });
+      saveState();
+      toast("Gespeichert. 📝");
+      renderFeedback(backScreen);
+    }));
+    app.appendChild(card);
+
+    // Gesammelte Notizen
+    var notes = state.feedback.notes;
+    var nCard = el("section", "card");
+    nCard.appendChild(el("div", "setting-label", "Deine Notizen (" + notes.length + ")"));
+    if (!notes.length) {
+      nCard.appendChild(el("div", "setting-sub", "Noch keine Notizen."));
+    } else {
+      notes.forEach(function (n, idx) {
+        var row = el("div", "fb-note");
+        row.appendChild(el("span", "fb-note-date", dateStr(new Date(n.ts || 0))));
+        row.appendChild(el("span", "fb-note-text", n.text));
+        var del = btn("🗑", "icon-btn small-btn", function () {
+          state.feedback.notes.splice(idx, 1);
+          saveState();
+          renderFeedback(backScreen);
+        });
+        del.title = "Notiz löschen";
+        row.appendChild(del);
+        nCard.appendChild(row);
+      });
+      nCard.appendChild(btn("Alle Notizen löschen", "btn ghost small", function () {
+        if (!confirm("Wirklich alle Notizen löschen?")) return;
+        state.feedback.notes = [];
+        saveState();
+        renderFeedback(backScreen);
+      }));
+    }
+    app.appendChild(nCard);
+
+    // Gemeldete Aussprache (aus der Vokabelliste)
+    var ids = Object.keys(state.feedback.pronIssues);
+    var pCard = el("section", "card");
+    pCard.appendChild(el("div", "setting-label", "Aussprache gemeldet (" + ids.length + ")"));
+    if (!ids.length) {
+      pCard.appendChild(el("div", "setting-sub",
+        "Nichts markiert. In der 📖 Vokabelliste kannst du Wörter mit „🎙 Aussprache falsch?“ melden."));
+    } else {
+      ids.forEach(function (id) {
+        var it = itemById(id);
+        var row = el("div", "fb-note");
+        var he = el("span", "done-review-he", it ? it.he : id);
+        he.dir = "rtl"; he.lang = "he";
+        row.appendChild(he);
+        row.appendChild(el("span", "fb-note-text", it ? (it.translit + " = " + it.de) : ""));
+        var del = btn("🗑", "icon-btn small-btn", function () {
+          delete state.feedback.pronIssues[id];
+          saveState();
+          renderFeedback(backScreen);
+        });
+        del.title = "Meldung entfernen";
+        row.appendChild(del);
+        pCard.appendChild(row);
+      });
+    }
+    app.appendChild(pCard);
+
+    // Uebermitteln (ehrlicher Hinweis: oeffentlich + Login, nichts automatisch)
+    var sCard = el("section", "card");
+    sCard.appendChild(el("div", "setting-label", "Übermitteln"));
+    // Betonung ueber <b> statt Grossbuchstaben (barrierefreier, ruhiger Ton).
+    var note = el("p", "setting-sub");
+    note.appendChild(document.createTextNode(
+      "Die App sendet nichts von selbst. „Auf GitHub übermitteln“ öffnet ein vorbefülltes, "));
+    note.appendChild(el("b", null, "öffentliches"));
+    note.appendChild(document.createTextNode(
+      " GitHub-Issue (GitHub-Konto nötig). Ohne GitHub geht es per E-Mail. " +
+      "Deine Sammlung hier bleibt danach erhalten, löschen kannst du sie oben selbst."));
+    sCard.appendChild(note);
+    var actions = el("div", "data-actions");
+    actions.appendChild(btn("🐙 Auf GitHub übermitteln", "btn primary", function () {
+      var r = feedbackIssueUrl();
+      if (r.truncated) toast("Hinweis: Das Feedback war zu lang und wurde gekürzt.");
+      openExternal(r.url);
+    }));
+    actions.appendChild(btn("✉️ Per E-Mail senden", "btn", function () {
+      var r = feedbackMailtoUrl();
+      if (r.truncated) toast("Hinweis: Das Feedback war zu lang und wurde gekürzt.");
+      openExternal(r.url);
+    }));
+    sCard.appendChild(actions);
+    app.appendChild(sCard);
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------- Kontakt/Impressum + Datenschutz (WS4, In-App-Screens) ---------- */
+
+  /** Statischer Info-Screen (Kontakt/Datenschutz): Titel + HTML-Body,
+   *  Zurueck fuehrt ins Profil. Inhalte sind feste, vertrauenswuerdige Strings. */
+  function renderInfoScreen(titleText, bodyHtml, backScreen) {
+    backScreen = backScreen || "profile";
+    cleanupSession();
+    document.body.classList.add("in-session");
+    var app = $("#app");
+    app.innerHTML = "";
+    var head = el("div", "session-head");
+    var back = btn("✕", "quit-btn", function () {
+      document.body.classList.remove("in-session");
+      showScreen(backScreen);
+    });
+    back.title = "Zurück";
+    head.appendChild(back);
+    var mid = el("div", "session-info");
+    mid.appendChild(el("div", "session-title", titleText));
+    head.appendChild(mid);
+    head.appendChild(el("div", "session-xp", ""));
+    app.appendChild(head);
+    var body = el("div", "legal-body");
+    body.innerHTML = bodyHtml;
+    app.appendChild(body);
+    window.scrollTo(0, 0);
+  }
+
+  var LEGAL_DISCLAIMER =
+    '<section class="card legal-disclaimer"><p class="setting-sub"><b>Hinweis:</b> Dieser Text ist eine ' +
+    'Laien-Vorlage und keine Rechtsberatung. Vor einem Betrieb über den privaten Rahmen hinaus ' +
+    'bitte fachlich prüfen lassen.</p></section>';
+
+  var LEGAL_STAND = '<p class="setting-sub legal-stand" style="margin-top:12px">Stand: Juli 2026</p>';
+
+  function renderContact(backScreen) {
+    renderInfoScreen("📮 Kontakt / Impressum",
+      '<section class="card">' +
+      '<p>Tacheles ist ein privates, nicht-kommerzielles Lernprojekt, ohne Werbung, ' +
+      'ohne Bezahlfunktionen, ohne geschäftsmäßigen Hintergrund.</p>' +
+      '<p style="margin-top:10px"><b>Verantwortlich:</b> Thomas Mahlberg<br>' +
+      '<b>Kontakt:</b> <a href="mailto:tacheles@mahlberg.rocks">tacheles@mahlberg.rocks</a></p>' +
+      '<p class="setting-sub" style="margin-top:10px">Als rein privates Angebot besteht keine ' +
+      'Impressumspflicht mit ladungsfähiger Anschrift. Sollte Tacheles einmal kommerzielle Züge ' +
+      'bekommen (Werbung, Spenden, Verkauf), wäre eine ladungsfähige Anschrift nachzurüsten.</p>' +
+      LEGAL_STAND +
+      '</section>' + LEGAL_DISCLAIMER, backScreen);
+  }
+
+  function renderPrivacy(backScreen) {
+    renderInfoScreen("🔒 Datenschutz",
+      '<section class="card">' +
+      '<h3 class="legal-h">Verantwortlicher</h3>' +
+      '<p>Thomas Mahlberg · <a href="mailto:tacheles@mahlberg.rocks">tacheles@mahlberg.rocks</a></p>' +
+
+      '<h3 class="legal-h">Hosting (GitHub Pages)</h3>' +
+      '<p>Wenn du Tacheles über das Internet aufrufst, wird die App von GitHub Pages ausgeliefert ' +
+      '(GitHub Inc., ein Unternehmen von Microsoft, USA). Dabei verarbeitet GitHub technisch bedingt ' +
+      'Verbindungsdaten, insbesondere deine IP-Adresse und Server-Logs. Darauf haben wir keinen ' +
+      'Einfluss. Es findet dabei eine Datenübermittlung in die USA statt (Drittland). Rechtsgrundlage ' +
+      'ist unser berechtigtes Interesse an einer sicheren und effizienten Bereitstellung der App ' +
+      '(Art. 6 Abs. 1 lit. f DSGVO). GitHub ist nach eigenen Angaben unter dem EU-U.S. Data Privacy ' +
+      'Framework zertifiziert. Details: ' +
+      '<a href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement" ' +
+      'target="_blank" rel="noopener">Datenschutzerklärung von GitHub</a>.</p>' +
+
+      '<h3 class="legal-h">Keine eigene Datenerhebung</h3>' +
+      '<p>Tacheles selbst erhebt nichts: kein Tracking, keine Cookies, keine Analyse, keine Konten. ' +
+      'Dein gesamter Lernfortschritt liegt ausschließlich lokal in deinem Browser (localStorage) und ' +
+      'verlässt dein Gerät nur, wenn du ihn selbst exportierst oder einen Sync-Code erzeugst.</p>' +
+
+      '<h3 class="legal-h">Mikrofon &amp; Spracherkennung</h3>' +
+      '<p>Nur wenn du den Sprechen-Modus aktiv nutzt, greift die Spracherkennung deines Browsers ' +
+      '(Chrome/Edge). Diese sendet die Aufnahme zur Auswertung an einen Dienst des ' +
+      'Browser-Herstellers. Tacheles speichert keine Aufnahmen. Vor der ersten Aufnahme wirst du in ' +
+      'der App darauf hingewiesen.</p>' +
+
+      '<h3 class="legal-h">Sprachausgabe</h3>' +
+      '<p>Die vorproduzierten Audiodateien werden zusammen mit der App ausgeliefert. Zur Laufzeit ' +
+      'wird dafür nichts bei Dritten abgerufen. Fehlt eine Audiodatei, nutzt Tacheles ersatzweise die ' +
+      'Sprachausgabe deines Browsers. Je nach Browser und Stimme kann dabei der vorzulesende Text an ' +
+      'einen Dienst des Browser-Herstellers übertragen werden.</p>' +
+
+      '<h3 class="legal-h">Feedback</h3>' +
+      '<p>„Übermitteln“ im Feedback-Bereich öffnet auf deinen Klick hin GitHub (öffentliches Issue, ' +
+      'GitHub-Konto nötig) oder dein E-Mail-Programm. Erst dann verlassen die von dir eingegebenen ' +
+      'Inhalte dein Gerät. Die App sendet nichts automatisch.</p>' +
+
+      '<h3 class="legal-h">Deine Rechte</h3>' +
+      '<p>Auskunft, Berichtigung, Löschung und Co. laufen mangels serverseitiger Speicherung faktisch ' +
+      'über dein Gerät: Im Profil kannst du alle Daten exportieren oder vollständig zurücksetzen; ' +
+      'zusätzlich löscht das Leeren der Browserdaten alles. Außerdem hast du das Recht, dich bei einer ' +
+      'Datenschutz-Aufsichtsbehörde zu beschweren. Bei Fragen: ' +
+      '<a href="mailto:tacheles@mahlberg.rocks">tacheles@mahlberg.rocks</a>.</p>' +
+      LEGAL_STAND +
+      '</section>' + LEGAL_DISCLAIMER, backScreen);
   }
 
   /* ---------- Onboarding (nur beim allerersten Start) ---------- */
@@ -3502,13 +4252,85 @@
       wrap.appendChild(btn("Und los! 🚀", "btn primary big", function () {
         state.profile.onboarded = true;
         saveState();
-        document.body.classList.remove("in-session");
-        showScreen("home");
         toast("Schalom! Schön, dass du da bist. 🕊️");
+        // Frisch onboarded: die Tour einmal automatisch (skippbar, WS5).
+        renderTour(0);
       }));
     }
     app.appendChild(wrap);
     window.scrollTo(0, 0);
+  }
+
+  /* ---------- App-Tour (WS5): skippbare Erklaer-Slideshow ---------- */
+
+  var TOUR_SLIDES = [
+    { emoji: "🏠", title: "Home & Heute",
+      text: "Auf Home siehst du dein Tagesziel und den „Heute“-Block: Buchstabe und Wort des Tages " +
+        "und das Häppchen, eine Mini-Runde für zwischendurch." },
+    { emoji: "🎓", title: "Lernen: Pfad, Module & Level",
+      text: "Im Lernen-Tab wartet dein Pfad, Thema für Thema, dazu geführte Module und Grammatik. " +
+        "Neue Level (A0 bis C2) schalten sich mit deinem Fortschritt frei." },
+    { emoji: "📈", title: "Fortschritt, ehrlich gemessen",
+      text: "„Gemeistert“ heißt: aktiv abgerufen, nicht nur wiedererkannt. Mit dem Mastery-Check " +
+        "prüfst du regelmäßig, ob alles noch sitzt, und nimmst Wörter bei Bedarf zurück." },
+    { emoji: "⚙️", title: "Profil & deine Daten",
+      text: "Alles bleibt auf deinem Gerät. Im Profil stellst du Tagesziel und Level ein und nimmst " +
+        "deinen Fortschritt per Export oder Sync-Code mit aufs nächste Gerät." },
+    { emoji: "🔊", title: "Audio & Aussprache",
+      text: "Jedes Wort hat eine vorproduzierte Stimme. Klingt etwas falsch? Markiere es in der " +
+        "Vokabelliste mit „Aussprache falsch“ und schick es als Feedback." }
+  ];
+
+  /** Tour-Folie idx rendern; nach der letzten (oder per Ueberspringen) fertig. */
+  function renderTour(idx) {
+    cleanupSession();
+    document.body.classList.add("in-session");
+    idx = idx || 0;
+    // Tour gilt beim START als gesehen (idempotent): wer neu ist und die Tour
+    // mittendrin verlaesst, bekommt spaeter NICHT den Bestandsnutzer-Hinweis.
+    if (!state.profile.tourSeen) { state.profile.tourSeen = true; saveState(); }
+    var slide = TOUR_SLIDES[idx];
+    if (!slide) return finishTour();
+    var app = $("#app");
+    app.innerHTML = "";
+    var wrap = el("div", "onb tour");
+    wrap.appendChild(el("div", "onb-step", "Einführung · " + (idx + 1) + "/" + TOUR_SLIDES.length));
+    wrap.appendChild(el("div", "onb-logo", slide.emoji));
+    wrap.appendChild(el("div", "onb-title small", slide.title));
+    wrap.appendChild(el("div", "onb-sub", slide.text));
+    wrap.appendChild(btn(idx + 1 < TOUR_SLIDES.length ? "Weiter →" : "Los geht’s 🚀", "btn primary big",
+      function () { renderTour(idx + 1); }));
+    wrap.appendChild(btn("Überspringen", "btn ghost", finishTour));
+    app.appendChild(wrap);
+    window.scrollTo(0, 0);
+  }
+
+  function finishTour() {
+    state.profile.tourSeen = true;
+    saveState();
+    document.body.classList.remove("in-session");
+    showScreen("home");
+  }
+
+  /** Einmaliger Hinweis fuer Bestandsnutzer (onboarded && !tourSeen).
+   *  tourSeen wird schon beim ANZEIGEN gesetzt: der Hinweis kommt garantiert
+   *  nur einmal, egal wie das Overlay geschlossen wird. */
+  function showTourNotice() {
+    state.profile.tourSeen = true;
+    saveState();
+    var o = buildOverlay("✨ Neu: kurze Einführung");
+    o.box.appendChild(el("div", "overlay-text",
+      "Tacheles hat einiges dazugelernt: Heute-Häppchen, ehrlichere Mastery, Vokabelliste, " +
+      "Feedback und mehr. Eine kurze Einführung zeigt dir alles. Du findest sie jederzeit " +
+      "im Profil unter „Einführung ansehen“."));
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn("Ansehen", "btn primary big", function () {
+      o.close();
+      renderTour(0);
+    }));
+    actions.appendChild(btn("Überspringen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
   }
 
   /* ==========================================================
@@ -3737,8 +4559,13 @@
     var step = s.steps[s.stepIdx];
     if (!step) {
       // Modul komplett: Zaehler setzen, dann normaler Abschluss-Screen.
-      state.gamification.counters.modulesDone[s.module.id] = true;
-      saveState();
+      // Nur echte Module aus CONTENT.modules zaehlen — das zur Laufzeit gebaute
+      // "Lesen lernen" (synthetisch, nicht im Content) darf keinen Phantom-
+      // Zaehler schreiben.
+      if (moduleById(s.module.id)) {
+        state.gamification.counters.modulesDone[s.module.id] = true;
+        saveState();
+      }
       return endSession();
     }
     setOptKeys(null);
@@ -3791,16 +4618,59 @@
     moduleContinueBtn(body);
   }
 
+  /** Hebt die Vorkommen eines Buchstabens im .he-text von `wrap` hervor.
+   *  Trailing-Niqqud (U+0591–U+05C7) wird in die Markierung eingeschlossen,
+   *  damit der Grapheme-Cluster zusammenbleibt. */
+  function highlightLetterIn(wrap, letter) {
+    var heDiv = wrap.querySelector(".he-text");
+    if (!heDiv || !letter) return;
+    var text = heDiv.textContent;
+    if (!text || text.indexOf(letter) < 0) return;
+    heDiv.textContent = "";
+    var i = 0, idx;
+    while ((idx = text.indexOf(letter, i)) >= 0) {
+      if (idx > i) heDiv.appendChild(document.createTextNode(text.slice(i, idx)));
+      var end = idx + letter.length;
+      while (end < text.length) {
+        var cc = text.charCodeAt(end);
+        if (cc >= 0x0591 && cc <= 0x05C7) end++; else break;
+      }
+      var sp = el("span", "he-hl", text.slice(idx, end));
+      heDiv.appendChild(sp);
+      i = end;
+    }
+    if (i < text.length) heDiv.appendChild(document.createTextNode(text.slice(i)));
+  }
+
   function renderModuleTeach(step, title) {
     var item = itemById(step.itemId);
     if (!item) return moduleStepNext();
+    // Erstkontakt-Merker (1.1), siehe renderIntro: NUR fuer wirklich neue Items,
+    // sonst wuerde ein erneut gelehrtes, laengst bekanntes Wort faelschlich
+    // "neutralisiert" (erster Abruf zaehlt dann nicht).
+    if (session && isNew(item.id)) {
+      if (!session.introducedThisSession) session.introducedThisSession = {};
+      session.introducedThisSession[item.id] = true;
+    }
     var body = sessionShell(title, session.stepIdx / session.steps.length);
     // Vorstellungs-Schritt vergibt keine XP: "⭐"-Zaehler leer lassen (erst ab Quiz).
     var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
-    body.appendChild(el("div", "intro-tag", INTRO_TAGS[item.type] || INTRO_TAGS.word));
+    if (step.hlLetter) {
+      // "Lesen lernen": zeigen, welcher Buchstabe im Wort steckt.
+      var tag = el("div", "intro-tag");
+      tag.appendChild(document.createTextNode("Hier steckt dein Buchstabe drin: "));
+      var lsp = el("span", "hl-letter", step.hlLetter);
+      lsp.dir = "rtl"; lsp.lang = "he";
+      tag.appendChild(lsp);
+      body.appendChild(tag);
+    } else {
+      body.appendChild(el("div", "intro-tag", INTRO_TAGS[item.type] || INTRO_TAGS.word));
+    }
     var card = el("div", "card learn-card intro-card");
     if (item.emoji) card.appendChild(el("div", "intro-emoji", item.emoji));
-    card.appendChild(heEl(item, { big: true, tapReveal: false }));
+    var heWrap = heEl(item, { big: true, tapReveal: false });
+    if (step.hlLetter) highlightLetterIn(heWrap, step.hlLetter);
+    card.appendChild(heWrap);
     if (item.type === "sign") card.appendChild(el("div", "translit", item.translit));
     card.appendChild(el("div", "de-prompt", item.de));
     if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
@@ -3834,7 +4704,7 @@
             if (ob.dataset.itemId === item.id) { ob.classList.add("correct"); ob.classList.remove("dim"); }
           });
         }
-        recordAnswer(item.id, "mc", correct ? "good" : "again");
+        recordAnswer(item.id, "mc", correct ? "good" : "again", optionKind === "he" ? "de2he" : "he2de");
         if (afterAnswer) afterAnswer(correct);
         if (correct) later(moduleStepNext, 1000);
         else {
@@ -3956,7 +4826,7 @@
           });
         }
         if (step.itemId && itemById(step.itemId)) {
-          recordAnswer(step.itemId, "mc", correct ? "good" : "again");
+          recordAnswer(step.itemId, "mc", correct ? "good" : "again", "de2he");
         } else {
           recordFreeAnswer("mc", correct);
         }
@@ -4031,6 +4901,7 @@
    *  - gamification: xp/answers max, achievements/frozenDays/counters vereinigt.
    *  - profile: lokale Einstellungen bleiben; onboarded/placementDone per ODER,
    *    unlockedBand das weitere von beiden, levelCap lokal.
+   *  - feedback: notes vereinigt (dedupliziert nach ts+text), pronIssues vereinigt.
    */
   function mergeStates(local, imported) {
     var a = normalizeState(local);
@@ -4099,6 +4970,16 @@
     mc.dialogsDone = unionObj(ca.dialogsDone, cb.dialogsDone);
     mc.modulesDone = unionObj(ca.modulesDone, cb.modulesDone);
 
+    // feedback: Notizen nach (ts, text) dedupliziert vereinigen, pronIssues vereinigen.
+    var seenNotes = {};
+    m.feedback.notes = a.feedback.notes.concat(b.feedback.notes).filter(function (n) {
+      var k = n.ts + "|" + n.text;
+      if (seenNotes[k]) return false;
+      seenNotes[k] = true;
+      return true;
+    }).sort(function (x, y) { return x.ts - y.ts; });
+    m.feedback.pronIssues = unionObj(a.feedback.pronIssues, b.feedback.pronIssues);
+
     // profile: lokale Geraete-Einstellungen behalten, Fortschritts-Flags verschmelzen
     m.profile.dailyGoalMin = a.profile.dailyGoalMin;
     m.profile.fadeMode = a.profile.fadeMode;
@@ -4108,6 +4989,7 @@
     m.profile.sttNoticeConfirmed = !!(a.profile.sttNoticeConfirmed || b.profile.sttNoticeConfirmed);
     m.profile.onboarded = !!(a.profile.onboarded || b.profile.onboarded);
     m.profile.placementDone = !!(a.profile.placementDone || b.profile.placementDone);
+    m.profile.tourSeen = !!(a.profile.tourSeen || b.profile.tourSeen);
     m.profile.unlockedBand = bandIndex(a.profile.unlockedBand) >= bandIndex(b.profile.unlockedBand)
       ? a.profile.unlockedBand : b.profile.unlockedBand;
 
@@ -4267,8 +5149,13 @@
       b.addEventListener("click", function () { showScreen(b.dataset.screen); });
     });
     // Erster Start: kurze Willkommens-Tour statt Home.
-    if (state.profile.onboarded) showScreen("home");
-    else renderOnboarding(1);
+    if (state.profile.onboarded) {
+      showScreen("home");
+      // Bestandsnutzer: einmaliger Hinweis auf die neue Einfuehrung (WS5).
+      if (!state.profile.tourSeen) showTourNotice();
+    } else {
+      renderOnboarding(1);
+    }
   }
 
   // Kleine, lesbare Debug-Oberflaeche fuer den Regressionstest.
@@ -4277,6 +5164,33 @@
     BANDS: BANDS,
     // Ist ein Band beim AKTUELLEN Zustand freigeschaltet? (Gating-Check im Test)
     bandUnlocked: function (band) { return bandUnlocked(band); },
+    // Mastery-Reform (Tests): Klassifikation, direkte Verbuchung, Mastery-Read.
+    isProduction: function (mode, dir) { return isProduction(mode, dir); },
+    getMastery: function (id) { return getMastery(id); },
+    recordAnswer: function (id, mode, grade, dir) { return recordAnswer(id, mode, grade, dir); },
+    demoteMastery: function (id) { return demoteMastery(id); },
+    // Aktuelle Session (Modus + Task-Item-IDs) fuer Mastery-Check-/Heute-Tests.
+    sessionInfo: function () {
+      if (!session) return null;
+      return { mode: session.mode, taskIds: (session.tasks || []).map(function (t) { return t.item.id; }) };
+    },
+    dayHash: function (s) { return dayHash(s); },
+    dailyPicks: function () {
+      var p = dailyPicks();
+      return { letter: p.letter && p.letter.id, word: p.word && p.word.id };
+    },
+    readingModuleSteps: function () {
+      return buildReadingModule().steps.map(function (s) { return s.type + ":" + s.itemId; });
+    },
+    feedbackIssueUrl: function () { return feedbackIssueUrl(); },
+    feedbackMailtoUrl: function () { return feedbackMailtoUrl(); },
+    capUrl: function (base, body, max) { return capUrl(base, body, max); },
+    // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
+    currentTaskItem: function () {
+      if (!session || !session.tasks) return null;
+      var t = session.tasks[session.i];
+      return t ? t.item.id : null;
+    },
     // Aktueller Modul-Schritt-Typ (fuer den Grammatik-E2E-Walk).
     moduleStepType: function () {
       if (!session || !session.steps) return null;
