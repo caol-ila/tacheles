@@ -71,15 +71,22 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; bo
 }
 .nav-btn {
   flex: 1;
+  min-width: 0;                 /* 5 Tabs muessen auch bei 430px passen */
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 10px 4px 12px;
-  font-size: .72rem;
+  padding: 10px 2px 12px;
+  font-size: .68rem;
   color: var(--muted);
 }
-.nav-ico { font-size: 1.3rem; }
+.nav-btn span:not(.nav-ico) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-ico { font-size: 1.25rem; }
 .nav-btn.active { color: var(--primary); font-weight: 600; }
 
 body.in-session .bottom-nav { display: none; }
@@ -155,6 +162,8 @@ body.in-session .bottom-nav { display: none; }
 .brand-sub { color: var(--muted); font-size: .95rem; margin-top: 2px; }
 
 .stats-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.stats-row.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.stats-row.tappable:active { transform: scale(.99); }
 .stat {
   flex: 1;
   background: var(--card);
@@ -865,6 +874,14 @@ body.in-session .bottom-nav { display: none; }
 .module-tile:active { transform: scale(.985); }
 .module-tile.done { border-color: var(--good); }
 .module-tile.locked { opacity: .72; }
+/* "empfohlen fuer dich" (Grammatik-Tab): hervorgehobene Kachel + ▶-Badge. */
+.module-tile.recommended { outline: 2px solid var(--accent); outline-offset: 1px; }
+.recommended .module-title::after { content: " ▶"; color: var(--accent); }
+/* Level-Ueberschrift der Grammatik-Sektionen + Empfehlungs-Hinweis. */
+.gram-band-h { margin-top: 18px; }
+.rec-tag { margin: 2px 0 8px; }
+/* Power-Training-Karte (Vokabeln-Tab): Groessenauswahl umbricht bei Bedarf. */
+.power-card .data-actions { flex-wrap: wrap; }
 .module-emoji { font-size: 1.6rem; flex-shrink: 0; }
 .module-body { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .module-title { font-weight: 700; font-size: .95rem; }

@@ -1394,8 +1394,10 @@
       b.classList.toggle("active", b.dataset.screen === name);
     });
     if (name === "home") renderHome();
-    else if (name === "modes") renderModes();
-    else if (name === "progress") renderProgress();
+    else if (name === "course") renderCourse();
+    else if (name === "vocab") renderVocab();
+    else if (name === "grammar") renderGrammar();
+    else if (name === "progress") renderProgress(); // kein Tab mehr: via Statistik-Tipp
     else if (name === "profile") renderProfile();
     window.scrollTo(0, 0);
   }
@@ -1478,20 +1480,20 @@
         .sort(function (a, b) { return bandIndex(a) - bandIndex(b); })[0];
       html += '<div class="theme-row locked-summary" role="button" tabindex="0" data-locked-summary="1" ' +
         'aria-label="' + locked.length + ' weitere Themen ab Level ' + esc(firstBand) +
-        ', im Lernen-Tab freischalten">' +
+        ', im Vokabeln-Tab freischalten">' +
         '<span class="theme-emoji">🔒</span>' +
         '<div class="theme-info"><div class="theme-title">' + locked.length +
         ' weitere Themen ab Level ' + esc(firstBand) + '</div>' +
-        '<div class="setting-sub">dein Pfad im Lernen-Tab schaltet sie frei</div></div>' +
+        '<div class="setting-sub">dein Training im Vokabeln-Tab schaltet sie frei</div></div>' +
         '<span class="next-go">▶</span></div>';
     }
     return html;
   }
 
-  /** Sammelzeile der gesperrten Themen: fuehrt in den Lernen-Tab (voller Pfad). */
+  /** Sammelzeile der gesperrten Themen: fuehrt in den Vokabeln-Tab (volles Training). */
   function wireLockedSummary(root) {
     root.querySelectorAll("[data-locked-summary]").forEach(function (row) {
-      var go = function () { showScreen("modes"); };
+      var go = function () { showScreen("vocab"); };
       row.addEventListener("click", go);
       row.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
@@ -1605,7 +1607,7 @@
       '<div class="brand-title">🕊️ Tacheles</div>' +
       '<div class="brand-sub">dein Schalömchen</div>' +
       '</header>' +
-      '<section class="stats-row">' +
+      '<section class="stats-row tappable" id="stats-row" role="button" tabindex="0" title="Fortschritt ansehen">' +
       '<div class="stat" title="Streak-Freezes retten verpasste Tage"><div class="stat-num">🔥 ' + g.streakDays +
       (g.streakDays > 0 && freezesAvailable() > 0 ? ' <span class="freeze-mini">❄️' + freezesAvailable() + '</span>' : '') +
       '</div><div class="stat-label">Streak</div></div>' +
@@ -1687,6 +1689,14 @@
         if (it) say(it);
       });
     });
+    var stats = $("#stats-row");
+    if (stats) {
+      var goProg = function () { showScreen("progress"); };
+      stats.addEventListener("click", goProg);
+      stats.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goProg(); }
+      });
+    }
     wireModeTiles(app);
     wireThemeRows(app);
     wireLockedSummary(app);
@@ -1716,7 +1726,9 @@
       '</div>';
   }
 
-  function renderModes() {
+  /** Lernen-Tab (interim, T7 ersetzt das durch die Kurs-UI): Pfad + Smart-CTA.
+   *  Module und "Alle Modi" sind in T5 in die Grammatik-/Vokabeln-Tabs gewandert. */
+  function renderCourse() {
     var app = $("#app");
     var next = recommendedTheme();
     app.innerHTML =
@@ -1724,16 +1736,111 @@
       '<div class="brand-sub">dein Pfad: ein Thema nach dem anderen</div></header>' +
       '<section class="card"><button class="btn primary big" id="cta-start">▶ Smart-Session starten</button>' +
       '<p class="setting-sub" style="margin:10px 0 0">Mischt fällige Wiederholungen und neue Wörter im passenden Modus-Mix.</p></section>' +
-      moduleTilesHtml() +
       '<h2 class="h2">Dein Pfad <span class="h2-sub">· ✓ sitzt · ▶ dran · antippen zum Üben</span></h2>' +
       '<div class="theme-list path-list">' +
       CONTENT.themes.map(function (t) { return pathRowHtml(t, next && t.id === next.id); }).join("") +
-      '</div>' +
-      '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true) + footerLinksHtml();
+      '</div>' + footerLinksHtml();
     $("#cta-start").addEventListener("click", function () { startSession("smart"); });
-    wireModeTiles(app);
-    wireModuleTiles(app);
     wireThemeRows(app);
+    wireFooterLinks(app);
+  }
+
+  /** Vokabeln-Tab (WS-E): starkes freies Training auf erster Ebene. */
+  function renderVocab() {
+    var app = $("#app");
+    var next = recommendedTheme();
+    app.innerHTML =
+      '<header class="brand"><div class="brand-title">Vokabeln</div>' +
+      '<div class="brand-sub">dein freies Training – so viel du willst</div></header>' +
+      '<section class="card power-card">' +
+      '<div class="setting-label">⚡ Power-Training</div>' +
+      '<div class="setting-sub">Fälliges + Neues im smarten Mix. Wie lang?</div>' +
+      '<div class="data-actions" style="margin-top:10px">' +
+      '<button class="btn" data-power="5">5 Aufgaben</button>' +
+      '<button class="btn primary" id="cta-power" data-power="10">10 Aufgaben</button>' +
+      '<button class="btn" data-power="20">20 Aufgaben</button>' +
+      '</div></section>' +
+      '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true) +
+      '<section class="card exam-card">' +
+      '<div><div class="setting-label">🏅 Mastery-Check</div>' +
+      '<div class="setting-sub">' + esc(MASTERY_RULE_TEXT) + '</div></div>' +
+      '<button class="btn" id="btn-mastercheck">Start</button></section>' +
+      '<section class="card exam-card">' +
+      '<div><div class="setting-label">💪 Knacknüsse</div>' +
+      '<div class="setting-sub">Deine am häufigsten vergessenen Wörter gezielt üben.</div></div>' +
+      '<button class="btn" id="btn-hard">Start</button></section>' +
+      '<section class="card exam-card">' +
+      '<div><div class="setting-label">📖 Vokabelliste</div>' +
+      '<div class="setting-sub">Alle Wörter nach Level durchsehen und anhören.</div></div>' +
+      '<button class="btn" id="btn-vocab">Öffnen</button></section>' +
+      '<h2 class="h2">Themen-Training <span class="h2-sub">· ✓ sitzt · ▶ dran · antippen zum Üben</span></h2>' +
+      '<div class="theme-list path-list">' +
+      CONTENT.themes.map(function (t) {
+        return pathRowHtml(t, next && t.id === next.id);
+      }).join("") + '</div>' + footerLinksHtml();
+    app.querySelectorAll("[data-power]").forEach(function (b) {
+      b.addEventListener("click", function () { startSession("smart", { size: parseInt(b.dataset.power, 10) || 10 }); });
+    });
+    var mch = $("#btn-mastercheck");
+    if (mch) mch.addEventListener("click", function () { startSession("mastercheck"); });
+    $("#btn-hard").addEventListener("click", function () {
+      var hard = CONTENT.items.filter(function (it) {
+        var e = state.srs[it.id]; return e && (e.lapses || 0) >= 2;
+      }).sort(function (a, b) { return state.srs[b.id].lapses - state.srs[a.id].lapses; }).slice(0, 5);
+      if (!hard.length) { toast("🕊️ Keine Knacknüsse – alles im Griff!"); return; }
+      startSession("smart", { itemIds: hard.map(function (it) { return it.id; }) });
+    });
+    $("#btn-vocab").addEventListener("click", function () { renderVocabBrowser(effectiveBand(), false, "vocab"); });
+    wireModeTiles(app);
+    wireThemeRows(app);
+    wireFooterLinks(app);
+  }
+
+  /** Grammatik-Tab (WS-A): Module nach Level + Empfehlung + Lesen-Block. */
+  function renderGrammar() {
+    var app = $("#app");
+    var mods = (CONTENT && CONTENT.modules) || [];
+    var done = state.gamification.counters.modulesDone || {};
+    var grammar = mods.filter(function (m) { return m.group === "grammar"; });
+    var basic = mods.filter(function (m) { return m.group !== "grammar"; });
+    // "empfohlen fuer dich": erstes offene, noch nicht erledigte Grammatik-Modul.
+    var rec = null;
+    for (var i = 0; i < grammar.length; i++) {
+      var b = (BANDS.indexOf(grammar[i].band) >= 0) ? grammar[i].band : "A0";
+      if (bandUnlocked(b) && !done[grammar[i].id]) { rec = grammar[i].id; break; }
+    }
+    var byBand = BANDS.map(function (band) {
+      var list = grammar.filter(function (m) { return (m.band || "A0") === band; });
+      if (!list.length) return "";
+      return '<h2 class="h2 gram-band-h">🧠 ' + band + '</h2><div class="module-list">' +
+        list.map(function (m) {
+          var tile = moduleTileHtml(m, done);
+          if (m.id === rec) tile = tile.replace('class="module-tile', 'class="module-tile recommended');
+          return tile;
+        }).join("") + '</div>';
+    }).join("");
+    app.innerHTML =
+      '<header class="brand"><div class="brand-title">Grammatik</div>' +
+      '<div class="brand-sub">Regeln verstehen &amp; üben – plus Lesen lernen</div></header>' +
+      (rec ? '<div class="setting-sub rec-tag">▶ empfohlen für dich ist markiert</div>' : '') +
+      byBand +
+      '<h2 class="h2">👓 Lesen</h2>' +
+      '<section class="card" id="reading-block">' +
+      '<div class="setting-row"><div><div class="setting-label">👓 Lesen lernen</div>' +
+      '<div class="setting-sub">Buchstabe für Buchstabe zum ersten Wort</div></div>' +
+      '<button class="btn" id="btn-reading-path">Start</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">🔤 Alef-Bet-Tafel</div>' +
+      '<div class="setting-sub">Alle 27 Buchstaben mit deinem Lernstand</div></div>' +
+      '<button class="btn" id="btn-alefbet">Ansehen</button></div>' +
+      '<div id="drill-list"></div>' + // T6 fuellt die Silben-Drills hier ein
+      '</section>' +
+      moduleSectionHtml('📚 Module <span class="h2-sub">· geführte Mini-Lektionen</span>', basic, done) +
+      footerLinksHtml();
+    $("#btn-reading-path").addEventListener("click", function () {
+      startSession("module", { moduleObj: buildReadingModule() });
+    });
+    $("#btn-alefbet").addEventListener("click", function () { renderAlefbetChart("grammar"); });
+    wireModuleTiles(app);
     wireFooterLinks(app);
   }
 
@@ -2201,7 +2308,7 @@
       "Lern erst ein paar Wörter, dann macht das richtig Spaß."));
     var actions = el("div", "done-actions");
     actions.appendChild(btn("▶ Jetzt lernen", "btn primary", function () { startSession("smart"); }));
-    actions.appendChild(btn("Zum Pfad", "btn ghost", function () { showScreen("modes"); }));
+    actions.appendChild(btn("Zu den Vokabeln", "btn ghost", function () { showScreen("vocab"); }));
     wrap.appendChild(actions);
     app.appendChild(wrap);
   }
@@ -3782,8 +3889,10 @@
     };
   }
 
-  function renderAlefbetChart() {
+  function renderAlefbetChart(backScreen) {
     cleanupSession();
+    // Default "progress"; als Event-Handler direkt verdrahtet -> Event ist kein String.
+    backScreen = (typeof backScreen === "string") ? backScreen : "progress";
     document.body.classList.add("in-session"); // voller Fokus, Nav aus
     var app = $("#app");
     app.innerHTML = "";
@@ -3791,7 +3900,7 @@
     var head = el("div", "session-head");
     var back = btn("✕", "quit-btn", function () {
       document.body.classList.remove("in-session");
-      showScreen("progress");
+      showScreen(backScreen);
     });
     back.title = "Zurück";
     head.appendChild(back);

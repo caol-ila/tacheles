@@ -190,7 +190,10 @@ function check(name, ok, detail) {
   await page.waitForTimeout(250);
 
   // Abruf-Spiele zeigen am Tag 1 einen freundlichen Hinweis statt Rate-Session.
+  // Modus-Kacheln liegen jetzt im Vokabeln-Tab (Home hat sie bis T9 auch noch).
   for (const m of ["swipe", "match", "blitz"]) {
+    await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+    await page.waitForTimeout(250);
     await page.evaluate(mm => { const b = [...document.querySelectorAll("[data-mode]")].find(x => x.dataset.mode === mm); if (b) b.click(); }, m);
     await page.waitForTimeout(400);
     const empty = await page.evaluate(() => /wartet noch/i.test(document.body.innerText));
@@ -211,9 +214,13 @@ function check(name, ok, detail) {
   });
   await page.reload(); await page.waitForTimeout(600);
 
-  // --- 3. Alle Modus-Kacheln oeffnen (jetzt mit gelerntem Bestand) ---
+  // --- 3. Alle Modus-Kacheln oeffnen (jetzt mit gelerntem Bestand, aus dem Vokabeln-Tab) ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+  await page.waitForTimeout(300);
   const modes = await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].map(b => b.dataset.mode));
   for (const m of modes) {
+    await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+    await page.waitForTimeout(220);
     await page.evaluate(mm => { const b = [...document.querySelectorAll("[data-mode]")].find(x => x.dataset.mode === mm); if (b) b.click(); }, m);
     await page.waitForTimeout(420);
     const title = await page.evaluate(() => (document.querySelector(".session-title") || {}).textContent || null);
@@ -225,6 +232,8 @@ function check(name, ok, detail) {
   }
 
   // --- 4. MC-Session: Antworten (inkl. Intro-Karten ueberspringen) -> Heute-Zeile ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+  await page.waitForTimeout(300);
   await page.evaluate(() => { const b = [...document.querySelectorAll("[data-mode]")].find(x => x.dataset.mode === "mc"); if (b) b.click(); });
   await page.waitForTimeout(450);
   for (let i = 0; i < 7; i++) {
@@ -246,17 +255,53 @@ function check(name, ok, detail) {
   await page.waitForTimeout(400);
   check("Heute-Zeile nach Antworten", !!(await page.evaluate(() => document.querySelector(".today-line"))));
 
-  // --- 5. Lernpfad + Fortschritt ---
-  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
+  // --- 5. Lernpfad (Vokabeln-Tab) + Fortschritt (per Statistik-Tipp) ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
   await page.waitForTimeout(350);
   const pathRows = await page.evaluate(() => document.querySelectorAll(".path-row").length);
   check("Lernpfad zeigt alle Themen", pathRows >= 20, pathRows);
-  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "progress"); if (b) b.click(); });
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const s = document.querySelector("#stats-row"); if (s) s.click(); });
   await page.waitForTimeout(350);
   check("Survival-Check-Button", await page.evaluate(() => !!document.querySelector("#btn-exam")));
   check("Alef-Bet-Tafel-Button", await page.evaluate(() => !!document.querySelector("#btn-alefbet")));
 
-  // --- 6. Export ---
+  // --- 5b. Neue 5-Tab-Navigation + Vokabeln-/Grammatik-Tab + Fortschritt via Tipp ---
+  const navInfo = await page.evaluate(() => ({
+    n: document.querySelectorAll(".nav-btn").length,
+    screens: [...document.querySelectorAll(".nav-btn")].map(b => b.dataset.screen).join(",")
+  }));
+  check("Nav: 5 Tabs (home,course,vocab,grammar,profile)",
+    navInfo.n === 5 && navInfo.screens === "home,course,vocab,grammar,profile", navInfo.screens);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  check("Vokabeln-Tab: Power-Training + Modi + Themen + Mastery-Check + Liste",
+    await page.evaluate(() =>
+      !!document.querySelector("#cta-power") && document.querySelectorAll("[data-mode]").length === 13 &&
+      document.querySelectorAll(".path-row").length >= 20 &&
+      !!document.querySelector("#btn-mastercheck") && !!document.querySelector("#btn-vocab")));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "grammar"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  check("Grammatik-Tab: Module nach Level + Lesen-Block",
+    await page.evaluate(() =>
+      document.querySelectorAll(".module-tile").length >= 20 &&
+      !!document.querySelector("#reading-block") && !!document.querySelector("#btn-alefbet") &&
+      !!document.querySelector("#btn-reading-path")));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const s = document.querySelector("#stats-row"); if (s) s.click(); });
+  await page.waitForTimeout(350);
+  check("Fortschritt: per Statistik-Tipp erreichbar (kein Tab)",
+    await page.evaluate(() => !!document.querySelector("#btn-exam")));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+
+  // --- 6. Export (Fortschritt via Statistik-Tipp) ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const s = document.querySelector("#stats-row"); if (s) s.click(); });
+  await page.waitForTimeout(350);
   const dlWait = page.waitForEvent("download", { timeout: 4000 }).catch(() => null);
   await page.evaluate(() => { const b = document.querySelector("#btn-export"); if (b) b.click(); });
   const dl = await dlWait;
@@ -318,7 +363,7 @@ function check(name, ok, detail) {
     merge.unlocked + "/" + merge.placement + "/" + merge.levelCap);
 
   // --- 9. Level-Gating (gesperrtes Thema vs. levelCap-Override) ---
-  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
   await page.waitForTimeout(300);
   const lockedInfo = await page.evaluate(() => {
     const row = document.querySelector(".path-row[data-locked]");
@@ -331,7 +376,7 @@ function check(name, ok, detail) {
       await page.evaluate(() => !document.querySelector(".session-title")), lockedInfo.band);
     await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("tacheles_state_v1")); s.profile.levelCap = "B2"; localStorage.setItem("tacheles_state_v1", JSON.stringify(s)); });
     await page.goto(APP); await page.waitForTimeout(400);
-    await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
+    await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
     await page.waitForTimeout(300);
     await page.evaluate((th) => { const r = document.querySelector('.path-row[data-theme="' + th + '"]'); if (r) r.click(); }, lockedInfo.theme);
     await page.waitForTimeout(400);
@@ -349,6 +394,9 @@ function check(name, ok, detail) {
   }
 
   // Dialog-Chooser zeigt nur freigeschaltete Baender (Default: A0+A1).
+  // Modi liegen jetzt im Vokabeln-Tab (Home behaelt sie bis T9; Hop macht den Check stabil).
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+  await page.waitForTimeout(300);
   await page.evaluate(() => { const b = document.querySelector('[data-mode="dialog"]'); if (b) b.click(); });
   await page.waitForTimeout(400);
   const dlgGate = await page.evaluate(() => {
@@ -362,12 +410,12 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(200);
 
-  // --- 10. Module (Lernen-Kacheln, oeffnen, Quiz zaehlt Antwort) ---
-  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
+  // --- 10. Module (Grammatik-Tab-Kacheln, oeffnen, Quiz zaehlt Antwort) ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "grammar"); if (b) b.click(); });
   await page.waitForTimeout(300);
   const modTiles = await page.evaluate(() => document.querySelectorAll(".module-tile:not(.locked)").length);
   if (modTiles > 0) {
-    check("Lernen-Screen zeigt Modul-Kacheln", modTiles > 0, modTiles);
+    check("Grammatik-Tab zeigt Modul-Kacheln", modTiles > 0, modTiles);
     const answersBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("tacheles_state_v1")).gamification.answersTotal || 0);
     await page.evaluate(() => { const b = document.querySelector(".module-tile:not(.locked)"); if (b) b.click(); });
     await page.waitForTimeout(400);
@@ -393,7 +441,7 @@ function check(name, ok, detail) {
     await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
     await page.waitForTimeout(200);
   } else {
-    check("Lernen-Screen zeigt Modul-Kacheln", true, "keine Module (Content?)");
+    check("Grammatik-Tab zeigt Modul-Kacheln", true, "keine Module (Content?)");
     check("Modul erreicht einen Quiz-Schritt", true, "n/a");
     check("Modul-Quiz zaehlt eine Antwort", true, "n/a");
   }
@@ -423,11 +471,11 @@ function check(name, ok, detail) {
       localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
     });
     await page.goto(APP); await page.waitForTimeout(400);
-    await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "modes"); if (b) b.click(); });
+    await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "grammar"); if (b) b.click(); });
     await page.waitForTimeout(300);
     // Grammatik-Sektion existiert (Ueberschrift "Grammatik").
     const hasGrammarSection = await page.evaluate(() => /Grammatik/.test(document.body.innerText));
-    check("Lernen-Screen zeigt Grammatik-Sektion", hasGrammarSection);
+    check("Grammatik-Tab zeigt Grammatik-Sektion", hasGrammarSection);
     // Modul aus der Grammatik-Sektion oeffnen.
     await page.evaluate((id) => { const b = document.querySelector('[data-module="' + id + '"]'); if (b) b.click(); }, gInfo.id);
     await page.waitForTimeout(400);
@@ -934,6 +982,8 @@ function check(name, ok, detail) {
     localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
   });
   await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+  await page.waitForTimeout(300);
   await page.evaluate(() => { const b = [...document.querySelectorAll("[data-mode]")].find(x => x.dataset.mode === "mc"); if (b) b.click(); });
   await page.waitForTimeout(500);
   let sawFourOpts = false;
@@ -998,7 +1048,10 @@ function check(name, ok, detail) {
     localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
   });
   await page.reload(); await page.waitForTimeout(500);
-  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "progress"); if (b) b.click(); });
+  // Fortschritt hat keinen Tab mehr: ueber Home + Statistik-Tipp erreichen.
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const s = document.querySelector("#stats-row"); if (s) s.click(); });
   await page.waitForTimeout(400);
   check("Mastery-Check: Start-Karte auf Fortschritt", await page.evaluate(() => !!document.querySelector("#btn-mastercheck")));
   await page.evaluate(() => { const b = document.querySelector("#btn-mastercheck"); if (b) b.click(); });
