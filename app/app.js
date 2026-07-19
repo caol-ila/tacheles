@@ -116,6 +116,24 @@
 
   var CONTENT = window.TACHELES_CONTENT || null;
 
+  // Neue Content-Globals (Kurs-Runde). Alle optional: fehlt eines, blendet sich
+  // das zugehoerige Feature aus (defensiv wie TACHELES_GRAMMAR).
+  var COURSE = (window.TACHELES_COURSE && Array.isArray(window.TACHELES_COURSE.lessons)) ? window.TACHELES_COURSE : null;
+  var SNACKS = (window.TACHELES_SNACKS && Array.isArray(window.TACHELES_SNACKS.snacks)) ? window.TACHELES_SNACKS : null;
+  var READING = (window.TACHELES_READING && typeof window.TACHELES_READING.syllabify === "function") ? window.TACHELES_READING : null;
+
+  function courseAvailable() { return !!(COURSE && COURSE.lessons.length); }
+  function lessonById(id) {
+    if (!COURSE) return null;
+    for (var i = 0; i < COURSE.lessons.length; i++) if (COURSE.lessons[i].id === id) return COURSE.lessons[i];
+    return null;
+  }
+  function lessonIndex(id) {
+    if (!COURSE) return -1;
+    for (var i = 0; i < COURSE.lessons.length; i++) if (COURSE.lessons[i].id === id) return i;
+    return -1;
+  }
+
   function itemById(id) {
     if (!CONTENT) return null;
     for (var i = 0; i < CONTENT.items.length; i++) {
@@ -185,7 +203,8 @@
         levelCap: "auto",       // 'auto' | 'A0'..'C2' — manuelle Level-Grenze
         unlockedBand: "A1",     // hoechstes ERREICHTES Band (Default A1 = A0+A1 offen)
         placementDone: false,   // Einstufungstest schon einmal gemacht?
-        tourSeen: false         // App-Tour (Erklaer-Slideshow) gesehen/uebersprungen?
+        tourSeen: false,        // App-Tour (Erklaer-Slideshow) gesehen/uebersprungen?
+        snackVocab: true        // Heute-Haeppchen: 2-3 faellige Vokabeln anhaengen
       },
       gamification: {
         xpTotal: 0,
@@ -208,6 +227,12 @@
       feedback: {
         notes: [],       // [{ ts, text }]
         pronIssues: {}   // { itemId: true }
+      },
+      // Kurs-Fortschritt: orchestriert das SRS, ersetzt es nicht.
+      course: {
+        lessons: {},   // { lessonId: { done: bool, step: int } }
+        entry: null,   // bestaetigter Quereinstieg (Lektions-ID)
+        snacksSeen: {} // { snackId: true } fuer die Heute-Rotation
       },
       // pro Item: { ease, intervalDays, dueTs, reps, lapses, mastery, lastReviewTs }
       srs: {},
@@ -232,6 +257,7 @@
       if (BANDS.indexOf(raw.profile.unlockedBand) >= 0) s.profile.unlockedBand = raw.profile.unlockedBand;
       if (typeof raw.profile.placementDone === "boolean") s.profile.placementDone = raw.profile.placementDone;
       if (typeof raw.profile.tourSeen === "boolean") s.profile.tourSeen = raw.profile.tourSeen;
+      if (typeof raw.profile.snackVocab === "boolean") s.profile.snackVocab = raw.profile.snackVocab;
     }
     // Migration: wer schon Lernfortschritt hat (State von vor dem Onboarding-
     // Feature), soll die Willkommens-Tour nicht erneut durchlaufen.
@@ -314,6 +340,26 @@
         Object.keys(rp).forEach(function (id) { if (rp[id]) s.feedback.pronIssues[id] = true; });
       }
     }
+    // course (Allowlist): lessons nur als Objekt sauberer {done,step}-Eintraege,
+    // entry nur als String, snacksSeen nur Objekt-nicht-Array mit true-Werten.
+    if (raw.course && typeof raw.course === "object" && !Array.isArray(raw.course)) {
+      var rl = raw.course.lessons;
+      if (rl && typeof rl === "object" && !Array.isArray(rl)) {
+        Object.keys(rl).forEach(function (id) {
+          var e = rl[id];
+          if (!e || typeof e !== "object" || Array.isArray(e)) return;
+          s.course.lessons[id] = {
+            done: !!e.done,
+            step: Math.max(0, Math.round(Number(e.step) || 0))
+          };
+        });
+      }
+      if (typeof raw.course.entry === "string" && raw.course.entry) s.course.entry = raw.course.entry;
+      var rsn = raw.course.snacksSeen;
+      if (rsn && typeof rsn === "object" && !Array.isArray(rsn)) {
+        Object.keys(rsn).forEach(function (id) { if (rsn[id]) s.course.snacksSeen[id] = true; });
+      }
+    }
     return s;
   }
 
@@ -386,6 +432,26 @@
     saveState();
     renderOnboarding(1); // frischer Start = wieder Willkommens-Tour
     toast("Fortschritt zurückgesetzt.");
+  }
+
+  /* 3b. Kurs-Zustand */
+
+  /** Kurs-Fortschritt eines einzelnen Eintrags (immer ein frisches Default-Objekt). */
+  function lessonState(id) {
+    var e = state.course.lessons[id];
+    if (!e || typeof e !== "object") return { done: false, step: 0 };
+    return { done: !!e.done, step: e.step || 0 };
+  }
+  function setLessonStep(id, step) {
+    var e = state.course.lessons[id] || (state.course.lessons[id] = { done: false, step: 0 });
+    e.step = Math.max(0, step | 0);
+    saveState();
+  }
+  function markLessonDone(id) {
+    var e = state.course.lessons[id] || (state.course.lessons[id] = { done: false, step: 0 });
+    e.done = true;
+    e.step = 0; // erledigt: Resume-Zeiger zuruecksetzen (erneut spielen startet vorn)
+    saveState();
   }
 
   /* ==========================================================
@@ -4980,10 +5046,28 @@
     }).sort(function (x, y) { return x.ts - y.ts; });
     m.feedback.pronIssues = unionObj(a.feedback.pronIssues, b.feedback.pronIssues);
 
+    // course: done per ODER, step max, entry das weitere (Kurs-Reihenfolge),
+    // snacksSeen vereinigt. snackVocab ist Geraete-Einstellung -> lokal (unten).
+    var lids = {};
+    Object.keys(a.course.lessons).forEach(function (k) { lids[k] = 1; });
+    Object.keys(b.course.lessons).forEach(function (k) { lids[k] = 1; });
+    Object.keys(lids).forEach(function (id) {
+      var la = a.course.lessons[id], lb = b.course.lessons[id];
+      m.course.lessons[id] = {
+        done: !!((la && la.done) || (lb && lb.done)),
+        step: Math.max(la ? la.step : 0, lb ? lb.step : 0)
+      };
+    });
+    var ea = a.course.entry, eb = b.course.entry;
+    if (ea && eb) m.course.entry = lessonIndex(eb) > lessonIndex(ea) ? eb : ea;
+    else m.course.entry = ea || eb || null;
+    m.course.snacksSeen = unionObj(a.course.snacksSeen, b.course.snacksSeen);
+
     // profile: lokale Geraete-Einstellungen behalten, Fortschritts-Flags verschmelzen
     m.profile.dailyGoalMin = a.profile.dailyGoalMin;
     m.profile.fadeMode = a.profile.fadeMode;
     m.profile.autoplay = a.profile.autoplay;
+    m.profile.snackVocab = a.profile.snackVocab; // Geraete-Einstellung wie autoplay
     m.profile.micHintDismissed = a.profile.micHintDismissed;
     m.profile.levelCap = a.profile.levelCap;
     m.profile.sttNoticeConfirmed = !!(a.profile.sttNoticeConfirmed || b.profile.sttNoticeConfirmed);
@@ -5208,7 +5292,18 @@
     // Audio-Schicht (fuer die Regression, ohne echte Dateien anzufassen).
     audioActive: function () { return !!AUDIO; },
     audioUrlFor: function (id) { return audioUrl(itemById(id)); },
-    reloadAudioManifest: function () { AUDIO = null; loadAudioManifest(); }
+    reloadAudioManifest: function () { AUDIO = null; loadAudioManifest(); },
+    // Kurs-Runde: Kurs-/Reading-Hooks fuer die Regression.
+    courseInfo: function () {
+      return {
+        available: courseAvailable(),
+        lessons: COURSE ? COURSE.lessons.length : 0,
+        sections: COURSE ? (COURSE.sections || []).length : 0,
+        entry: state.course.entry
+      };
+    },
+    lessonStateOf: function (id) { return lessonState(id); },
+    syllabify: function (s) { return READING ? READING.syllabify(s) : null; }
   };
 
   if (document.readyState === "loading") {

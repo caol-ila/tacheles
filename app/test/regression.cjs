@@ -786,6 +786,65 @@ function check(name, ok, detail) {
   check("merge: feedback.notes dedupliziert vereinigt, pronIssues vereinigt, tourSeen OR",
     fbMerge.texts === "gleich,nur A,nur B" && fbMerge.pron === "w1,w2" && fbMerge.tourSeen === true,
     JSON.stringify(fbMerge));
+
+  // Kurs-Runde: Globals geladen (Ladeordnung intakt) + Debug-Hooks vorhanden.
+  const courseGlobals = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG || {};
+    return {
+      course: !!window.TACHELES_COURSE && Array.isArray(window.TACHELES_COURSE.lessons),
+      snacks: !!window.TACHELES_SNACKS && Array.isArray(window.TACHELES_SNACKS.snacks),
+      reading: !!window.TACHELES_READING && typeof window.TACHELES_READING.syllabify === "function",
+      hooks: typeof D.courseInfo === "function" && typeof D.lessonStateOf === "function" && typeof D.syllabify === "function",
+      info: typeof D.courseInfo === "function" ? D.courseInfo() : null,
+      syl: typeof D.syllabify === "function" ? D.syllabify("שָׁלוֹם") : "MISSING"
+    };
+  });
+  check("Kurs: Globals geladen (course/snacks/reading) + Debug-Hooks + null-safe syllabify",
+    courseGlobals.course && courseGlobals.snacks && courseGlobals.reading && courseGlobals.hooks &&
+    courseGlobals.info && courseGlobals.info.lessons === 0 && courseGlobals.info.entry === null &&
+    courseGlobals.syl === null, JSON.stringify(courseGlobals));
+
+  // Kurs-State (Kurs-Runde): Allowlist + Merge.
+  const courseSchema = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return {
+      hasCourse: !!s.course && typeof s.course.lessons === "object" && !Array.isArray(s.course.lessons),
+      entry: s.course ? s.course.entry : "MISSING",
+      snacksSeen: !!s.course && typeof s.course.snacksSeen === "object" && !Array.isArray(s.course.snacksSeen),
+      snackVocab: s.profile.snackVocab
+    };
+  });
+  check("Schema: course-Slice + profile.snackVocab im Default-State",
+    courseSchema.hasCourse && courseSchema.entry === null && courseSchema.snacksSeen && courseSchema.snackVocab === true,
+    JSON.stringify(courseSchema));
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.course = { lessons: { l_a0_01: { done: true, step: 3 }, junk: 5 }, entry: "l_a0_02", snacksSeen: { snack_x: true } };
+    s.profile.snackVocab = false;
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const courseAfter = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { l1: s.course.lessons.l_a0_01, junk: s.course.lessons.junk, entry: s.course.entry,
+      seen: s.course.snacksSeen.snack_x, snackVocab: s.profile.snackVocab };
+  });
+  check("Schema: course ueberlebt Laden/Normalisieren (Junk verworfen)",
+    courseAfter.l1 && courseAfter.l1.done === true && courseAfter.l1.step === 3 &&
+    courseAfter.junk === undefined && courseAfter.entry === "l_a0_02" &&
+    courseAfter.seen === true && courseAfter.snackVocab === false, JSON.stringify(courseAfter));
+  const courseMerge = await page.evaluate(() => {
+    const base = () => ({ version: 1, profile: { onboarded: true }, gamification: {}, srs: {}, log: {} });
+    const A = base(); A.course = { lessons: { l1: { done: true, step: 0 }, l2: { done: false, step: 4 } }, entry: null, snacksSeen: { s1: true } };
+    const B = base(); B.course = { lessons: { l2: { done: true, step: 2 } }, entry: "l2", snacksSeen: { s2: true } };
+    const m = window.TACHELES_DEBUG.mergeStates(A, B);
+    return { l1: m.course.lessons.l1, l2: m.course.lessons.l2, entry: m.course.entry,
+      seen: Object.keys(m.course.snacksSeen).sort().join(",") };
+  });
+  check("merge: course done OR / step max / entry gesetzt / snacksSeen vereinigt",
+    courseMerge.l1.done === true && courseMerge.l2.done === true && courseMerge.l2.step === 4 &&
+    courseMerge.entry === "l2" && courseMerge.seen === "s1,s2", JSON.stringify(courseMerge));
+
   // Zustand fuer nachfolgende Sektionen neutral hinterlassen (onboarded, tour gesehen).
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
