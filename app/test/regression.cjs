@@ -913,7 +913,7 @@ function check(name, ok, detail) {
   const toastVeto = await page.evaluate((id) => {
     const D = window.TACHELES_DEBUG;
     D.recordAnswer(id, "mc", "good", "de2he"); // 2 -> 3, Gold-Toast erscheint
-    const t = [...document.querySelectorAll(".toast.gold")].find(x => /ablehnen/i.test(x.textContent));
+    const t = [...document.querySelectorAll(".toast.gold")].find(x => /noch nicht sitzt/i.test(x.textContent));
     if (!t) return { found: false };
     t.click();
     return { found: true, mastery: D.getMastery(id) };
@@ -986,10 +986,16 @@ function check(name, ok, detail) {
   const review = await page.evaluate((wrongId) => {
     const rows = [...document.querySelectorAll(".mcheck-row")];
     const checked = rows.filter(r => r.querySelector("input").checked).length;
-    return { rows: rows.length, checked, hasList: !!document.querySelector(".mcheck-list") };
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { rows: rows.length, checked, hasList: !!document.querySelector(".mcheck-list"),
+      wrongMastery: wrongId && s.srs[wrongId] ? s.srs[wrongId].mastery : null };
   }, mcheckWrongId);
   check("Mastery-Check: Runden-Abschluss zeigt Auswahl, Falsche vorausgewaehlt",
     review.hasList && review.rows >= 6 && review.checked >= 1, JSON.stringify(review));
+  // FIX-1: Mastery friert waehrend der Runde ein — die falsch beantwortete Aufgabe
+  // bleibt bis zur Review auf 3 (Demotion nur ueber die Haken).
+  check("Mastery-Check: falsche Antwort senkt Mastery NICHT mid-round (bleibt 3)",
+    review.wrongMastery === 3, JSON.stringify(review));
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /zurücknehmen/i.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(500);
   const afterDemote = await page.evaluate((wrongId) => {
@@ -1209,6 +1215,19 @@ function check(name, ok, detail) {
   });
   check("Feedback: Prefill-URL bei Ueberlaenge auf <= 6000 gekappt",
     fbCap2.len <= 6000 && fbCap2.truncated === true, JSON.stringify(fbCap2));
+  // FIX-14: Kappen darf ein Emoji-Surrogatpaar auftrennen — capUrl muss das
+  // abfangen (kein "URI malformed"-Wurf) und trotzdem sauber kuerzen.
+  const surrogate = await page.evaluate(() => {
+    const body = "🎙️🥨🕊️😀".repeat(2000); // emoji-lastig + weit ueber dem mailto-Limit
+    let threw = false, r = null;
+    try { r = window.TACHELES_DEBUG.capUrl("mailto:x?body=", body, 1800); }
+    catch (e) { threw = true; }
+    return { threw, len: r ? r.url.length : -1, truncated: r ? r.truncated : null,
+      valid: !!(r && typeof r.url === "string") };
+  });
+  check("Feedback: capUrl kappt surrogat-sicher (Emoji-lastig, kein Wurf)",
+    !surrogate.threw && surrogate.valid && surrogate.truncated === true && surrogate.len <= 1800,
+    JSON.stringify(surrogate));
   // Notiz loeschen (im Hub)
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
@@ -1236,13 +1255,20 @@ function check(name, ok, detail) {
     privacy: !!document.querySelector('.footer-links [data-goto="privacy"]')
   }));
   check("Recht: Footer-Links Kontakt + Datenschutz", footerLegal.contact && footerLegal.privacy);
-  await page.evaluate(() => { const a = document.querySelector('[data-goto="contact"]'); if (a) a.click(); });
+  await page.evaluate(() => { const a = document.querySelector('.footer-links [data-goto="contact"]'); if (a) a.click(); });
   await page.waitForTimeout(350);
   const contact = await page.evaluate(() => document.body.innerText);
-  check("Recht: Kontakt nennt Verantwortlichen + E-Mail + Disclaimer",
+  check("Recht: Kontakt nennt Verantwortlichen + E-Mail + Disclaimer + Stand",
     /Thomas Mahlberg/.test(contact) && /tacheles@mahlberg\.rocks/.test(contact) &&
-    /keine Rechtsberatung/i.test(contact) && /privates, nicht-kommerzielles/i.test(contact));
+    /keine Rechtsberatung/i.test(contact) && /privates, nicht-kommerzielles/i.test(contact) &&
+    /Stand: Juli 2026/.test(contact));
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  // FIX-6: von Home geoeffnet -> Zurueck fuehrt zurueck nach Home (nicht pauschal Profil).
+  check("Recht: Zurueck fuehrt zum Ausgangs-Screen (Home)",
+    await page.evaluate(() => !!document.querySelector("#cta-start")));
+  // Datenschutz aus dem Profil oeffnen (Button dort).
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
   await page.waitForTimeout(300);
   await page.evaluate(() => { const b = document.querySelector("#btn-privacy"); if (b) b.click(); });
   await page.waitForTimeout(350);
@@ -1251,6 +1277,10 @@ function check(name, ok, detail) {
     /GitHub Pages/i.test(privacy) && /IP-Adresse/i.test(privacy) && /USA/.test(privacy) &&
     /localStorage/i.test(privacy) && /Spracherkennung/i.test(privacy) &&
     /Feedback/i.test(privacy) && /Rechte/i.test(privacy) && /keine Rechtsberatung/i.test(privacy));
+  check("Recht: Datenschutz enthaelt FIX-5-Zusaetze (TTS-Fallback, DPF, Aufsichtsbehörde, Stand)",
+    /ersatzweise die Sprachausgabe/i.test(privacy) && /Data Privacy Framework/i.test(privacy) &&
+    /Aufsichtsbehörde/i.test(privacy) && /Art\. 6 Abs\. 1 lit\. f/i.test(privacy) &&
+    /Stand: Juli 2026/.test(privacy));
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(300);
   check("Recht: Zurueck fuehrt ins Profil", await page.evaluate(() => !!document.querySelector("#btn-privacy")));

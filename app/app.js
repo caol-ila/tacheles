@@ -98,10 +98,16 @@
     if (onTap) {
       t.classList.add("tappable");
       t.setAttribute("role", "button");
-      t.addEventListener("click", function () { onTap(); dismiss(); });
+      t.setAttribute("tabindex", "0");
+      var fire = function () { onTap(); dismiss(); };
+      t.addEventListener("click", fire);
+      t.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fire(); }
+      });
     }
     document.body.appendChild(t);
-    setTimeout(dismiss, cls === "gold" ? 3600 : 2600);
+    // Antippbare Toasts leben laenger (~6 s), damit man sie in Ruhe treffen kann.
+    setTimeout(dismiss, onTap ? 6000 : (cls === "gold" ? 3600 : 2600));
   }
 
   /* ==========================================================
@@ -548,12 +554,31 @@
   }
 
   /** Mastery-Veto (1.2): setzt ein gemeistertes Item zurueck auf 2 ("in
-   *  Arbeit"); SRS-Plan bleibt unangetastet. No-Op fuer nicht-gemeisterte. */
+   *  Arbeit"); SRS-Plan bleibt unangetastet. No-Op fuer nicht-gemeisterte.
+   *  Zieht die "gemeistert"-Zaehler (Tag/Session) mit zurueck (Floor 0). */
   function demoteMastery(itemId) {
     var e = state.srs[itemId];
     if (!e || typeof e !== "object" || (e.mastery || 0) < 3) return false;
     e.mastery = 2;
     updateMasteredCount();
+    var day = ensureDay(todayStr());
+    day.mastered = Math.max(0, (day.mastered || 0) - 1);
+    if (session) session.mastered = Math.max(0, (session.mastered || 0) - 1);
+    saveState();
+    return true;
+  }
+
+  /** Gegenstueck zum Veto: ein zurueckgenommenes Item wieder als gemeistert
+   *  markieren (auf 3) und die Zaehler wieder hochsetzen. No-Op fuer bereits
+   *  Gemeistertes. */
+  function restoreMastery(itemId) {
+    var e = state.srs[itemId];
+    if (!e || typeof e !== "object" || (e.mastery || 0) >= 3) return false;
+    e.mastery = 3;
+    updateMasteredCount();
+    var day = ensureDay(todayStr());
+    day.mastered = (day.mastered || 0) + 1;
+    if (session) session.mastered = (session.mastered || 0) + 1;
     saveState();
     return true;
   }
@@ -592,10 +617,12 @@
     var key = todayStr();
     var letters = ALEFBET_ORDER.map(itemById).filter(Boolean);
     var letter = letters.length ? letters[dayHash(key + "|letter") % letters.length] : null;
+    // "Wort des Tages": nur echte Vokabeln (Wort/Phrase/Zahl), keine Schilder/Saetze.
+    var wordTypes = ["word", "phrase", "number"];
     var pool = CONTENT.items.filter(function (it) {
-      return it.type !== "letter" && bandUnlocked(itemBand(it));
+      return wordTypes.indexOf(it.type) >= 0 && bandUnlocked(itemBand(it));
     });
-    if (!pool.length) pool = CONTENT.items.filter(function (it) { return it.type !== "letter"; });
+    if (!pool.length) pool = CONTENT.items.filter(function (it) { return wordTypes.indexOf(it.type) >= 0; });
     var word = pool.length ? pool[dayHash(key + "|word") % pool.length] : null;
     return { letter: letter, word: word };
   }
@@ -680,6 +707,11 @@
    * Alles andere ist "recognition" (Erkennen) und deckelt mastery bei 2. */
   var RECALL_KIND = { build: "production", speak: "production" };
 
+  /** Erklaerzeile fuer die Erkennen-/Produzieren-Regel (R-Spec 1.1). Sichtbar
+   *  in der Vokabelliste und auf der Mastery-Check-Karte. */
+  var MASTERY_RULE_TEXT = "Gemeistert wird ein Wort erst, wenn du es aktiv abrufst – " +
+    "Deutsch→Hebräisch, Satzbau oder Sprechen. Wiedererkennen allein reicht nicht.";
+
   function isProduction(mode, dir) {
     if (RECALL_KIND[mode] === "production") return true;
     return dir === "de2he";
@@ -705,7 +737,17 @@
       delete session.introducedThisSession[itemId];
       cap = masteryBefore;
     }
+    // Mastery-Check (1.2): Mastery waehrend der Runde in BEIDE Richtungen
+    // einfrieren. Bewertung darf nichts anheben (cap = Ist-Stand) und nichts
+    // absenken ("Nochmal"-Abzug wird gleich zurueckgenommen). SRS-Planung, XP
+    // und Log laufen normal; Demotion passiert nur ueber die Review-Haken.
+    var freezeMastery = !!(session && session.masteryCheck);
+    if (freezeMastery) cap = masteryBefore;
     rateItem(itemId, grade, cap);
+    if (freezeMastery) {
+      var fe = state.srs[itemId];
+      if (fe && fe.mastery !== masteryBefore) { fe.mastery = masteryBefore; updateMasteredCount(); }
+    }
 
     var xp = Math.max(1, Math.round((XP_BASE[mode] || 5) * (correct ? 1 : 0.3) * (wasDue ? 1.2 : 1)));
     state.gamification.xpTotal += xp;
@@ -720,8 +762,13 @@
       // Der kleine Duolingo-Moment: ein Wort sitzt jetzt wirklich.
       var mItem = itemById(itemId);
       if (mItem) {
-        toast("🏅 " + mItem.he + " (" + mItem.de + ") sitzt! · tippen zum Ablehnen", "gold", function () {
-          if (demoteMastery(itemId)) toast("Okay, zählt noch nicht als gemeistert. 💪");
+        toast("🏅 " + mItem.he + " (" + mItem.de + ") sitzt! · tippen, falls es doch noch nicht sitzt", "gold", function () {
+          if (demoteMastery(itemId)) {
+            // Bestaetigung ist selbst antippbar: Veto rueckgaengig machen.
+            toast("Okay, zählt noch nicht als gemeistert. 💪 · tippen zum Rückgängigmachen", null, function () {
+              if (restoreMastery(itemId)) toast("Wieder als gemeistert markiert.");
+            });
+          }
         });
       }
     }
@@ -1400,9 +1447,10 @@
       a.addEventListener("click", function (e) {
         e.preventDefault();
         var t = a.dataset.goto;
-        if (t === "feedback") renderFeedback();
-        else if (t === "contact") renderContact();
-        else if (t === "privacy") renderPrivacy();
+        var from = currentScreen; // dahin zurueck, wo der Link angetippt wurde
+        if (t === "feedback") renderFeedback(from);
+        else if (t === "contact") renderContact(from);
+        else if (t === "privacy") renderPrivacy(from);
       });
     });
   }
@@ -1517,7 +1565,7 @@
           tile("word", picks.word, "Wort des Tages") +
           '</div>' +
           '<div class="today-actions">' +
-          '<button class="btn primary" id="btn-snack">🥨 Häppchen · 5 Aufgaben</button>' +
+          '<button class="btn primary" id="btn-snack">🥨 Häppchen · kurze Runde</button>' +
           (countMastered(function (it) { return it.theme === "alefbet"; }) < 8 ?
             '<button class="btn" id="btn-reading">👓 Lesen lernen</button>' : '') +
           '</div>' +
@@ -1675,7 +1723,8 @@
         '<section class="card exam-card">' +
         '<div><div class="setting-label">🏅 Mastery-Check</div>' +
         '<div class="setting-sub">Sitzt das wirklich noch? Kurze Prüf-Häppchen über deine gemeisterten Wörter, ' +
-        'mit der Möglichkeit, einzelne zurückzunehmen.</div></div>' +
+        'mit der Möglichkeit, einzelne zurückzunehmen.</div>' +
+        '<div class="setting-sub" style="margin-top:6px">' + esc(MASTERY_RULE_TEXT) + '</div></div>' +
         '<button class="btn" id="btn-mastercheck">Start</button>' +
         '</section>' : '') +
       (function () {
@@ -1893,10 +1942,10 @@
       renderProfile(); // Sub-Zeile "Erreichtes Level" bleibt, Gating wirkt sofort
     });
     $("#btn-placement").addEventListener("click", function () { startPlacement(false); });
-    $("#btn-vocab").addEventListener("click", function () { renderVocabBrowser(effectiveBand(), false); });
-    $("#btn-feedback").addEventListener("click", renderFeedback);
-    $("#btn-contact").addEventListener("click", renderContact);
-    $("#btn-privacy").addEventListener("click", renderPrivacy);
+    $("#btn-vocab").addEventListener("click", function () { renderVocabBrowser(effectiveBand(), false, "profile"); });
+    $("#btn-feedback").addEventListener("click", function () { renderFeedback("profile"); });
+    $("#btn-contact").addEventListener("click", function () { renderContact("profile"); });
+    $("#btn-privacy").addEventListener("click", function () { renderPrivacy("profile"); });
     $("#btn-tour").addEventListener("click", function () { renderTour(0); });
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
@@ -3658,7 +3707,7 @@
         // kurz vor lang, dann haeufig vor selten: das lesbarste Aha-Wort zuerst
         return (a.he.length - b.he.length) || ((a.freq || 999) - (b.freq || 999));
       })[0];
-      if (word) steps.push({ type: "teach", itemId: word.id });
+      if (word) steps.push({ type: "teach", itemId: word.id, hlLetter: L.he });
       steps.push({ type: "quiz", itemId: L.id });
     });
     return {
@@ -3727,20 +3776,21 @@
 
   /** Bandweise Vokabelliste (WS2): lesen, anhoeren, Mastery zuruecknehmen,
    *  Aussprache als falsch melden. Immer genau EIN Band gerendert (Performance). */
-  function renderVocabBrowser(band, onlyMastered) {
+  function renderVocabBrowser(band, onlyMastered, backScreen) {
     cleanupSession();
     document.body.classList.add("in-session");
     if (BANDS.indexOf(band) < 0) band = "A0";
     onlyMastered = !!onlyMastered;
+    backScreen = backScreen || "profile";
     var app = $("#app");
     app.innerHTML = "";
 
     var head = el("div", "session-head");
     var back = btn("✕", "quit-btn", function () {
       document.body.classList.remove("in-session");
-      showScreen("profile");
+      showScreen(backScreen);
     });
-    back.title = "Zurück zum Profil";
+    back.title = "Zurück";
     head.appendChild(back);
     var mid = el("div", "session-info");
     mid.appendChild(el("div", "session-title", "📖 Vokabelliste"));
@@ -3761,14 +3811,14 @@
       if (b === band) o.selected = true;
       sel.appendChild(o);
     });
-    sel.addEventListener("change", function () { renderVocabBrowser(sel.value, chk.checked); });
+    sel.addEventListener("change", function () { renderVocabBrowser(sel.value, chk.checked, backScreen); });
     bar.appendChild(sel);
     var lbl = el("label", "vocab-filter");
     var chk = document.createElement("input");
     chk.type = "checkbox";
     chk.id = "vocab-mastered";
     chk.checked = onlyMastered;
-    chk.addEventListener("change", function () { renderVocabBrowser(sel.value, chk.checked); });
+    chk.addEventListener("change", function () { renderVocabBrowser(sel.value, chk.checked, backScreen); });
     lbl.appendChild(chk);
     lbl.appendChild(document.createTextNode(" nur gemeisterte"));
     bar.appendChild(lbl);
@@ -3784,6 +3834,7 @@
     if (onlyMastered) items = items.filter(function (it) { return getMastery(it.id) >= 3; });
     app.appendChild(el("div", "vocab-count",
       items.length + (items.length === 1 ? " Wort" : " Wörter") + " · Band " + band));
+    app.appendChild(el("div", "vocab-rule setting-sub", MASTERY_RULE_TEXT));
 
     var list = el("div", "vocab-list");
     items.forEach(function (item) {
@@ -3806,11 +3857,11 @@
         row.appendChild(btn("nicht gemeistert", "btn ghost small vocab-demote", function () {
           if (demoteMastery(item.id)) {
             toast("💪 " + item.he + " ist zurück in der Übung.");
-            renderVocabBrowser(band, onlyMastered);
+            renderVocabBrowser(band, onlyMastered, backScreen);
           }
         }));
       }
-      var pron = btn("🎙 falsch?", "btn ghost small pron-btn" +
+      var pron = btn("🎙 Aussprache falsch?", "btn ghost small pron-btn" +
         (state.feedback.pronIssues[item.id] ? " active" : ""), function () {
         // "Aussprache falsch"-Schalter (WS2): schreibt/entfernt feedback.pronIssues.
         if (state.feedback.pronIssues[item.id]) {
@@ -3834,7 +3885,8 @@
 
   var FEEDBACK_ISSUE_BASE = "https://github.com/caol-ila/tacheles/issues/new";
   var FEEDBACK_MAIL = "tacheles@mahlberg.rocks";
-  var FEEDBACK_URL_MAX = 6000; // Prefill-URLs laengenbegrenzen (Browser-/Server-Limits)
+  var FEEDBACK_URL_MAX = 6000; // GitHub-Issue-Prefill (grosszuegig)
+  var FEEDBACK_MAILTO_MAX = 1800; // mailto: viel enger (Betriebssystem-/Client-Limits)
 
   /** Notizen + gemeldete Aussprache-Woerter als Markdown-Body. */
   function feedbackBody() {
@@ -3859,14 +3911,26 @@
     return lines.join("\n");
   }
 
-  /** base + encodeURIComponent(body), auf max Zeichen gekappt (mit Hinweis im Text). */
+  /** base + encodeURIComponent(body), auf max Zeichen gekappt (mit Hinweis im
+   *  Text). Surrogat-sicher: Kappen kann ein Emoji mitten in einem Surrogatpaar
+   *  auftrennen; ein alleinstehendes High-Surrogate am Ende wuerde
+   *  encodeURIComponent werfen. Wir schneiden dann ein Zeichen mehr weg und
+   *  fangen den Wurf zusaetzlich ab. */
   function capUrl(base, body, max) {
-    var url = base + encodeURIComponent(body);
+    var suffix = "\n\n… [gekürzt – Rest bitte anhängen]";
+    function enc(s) { try { return encodeURIComponent(s); } catch (e) { return null; } }
     var truncated = false;
-    while (url.length > max && body.length > 0) {
+    var e = enc(body);
+    var url = e === null ? null : base + e;
+    while (url === null || url.length > max) {
       truncated = true;
-      body = body.slice(0, body.length - 200);
-      url = base + encodeURIComponent(body + "\n\n… [gekürzt – Rest bitte anhängen]");
+      if (body.length === 0) { url = base + enc(suffix); break; }
+      body = body.slice(0, Math.max(0, body.length - 200));
+      // Einzelnes High-Surrogate am Ende (halbes Emoji)? Noch ein Zeichen weg.
+      var last = body.charCodeAt(body.length - 1);
+      if (body.length && last >= 0xD800 && last <= 0xDBFF) body = body.slice(0, body.length - 1);
+      var e2 = enc(body + suffix);
+      url = e2 === null ? null : base + e2;
     }
     return { url: url, truncated: truncated };
   }
@@ -3878,7 +3942,7 @@
 
   function feedbackMailtoUrl() {
     return capUrl("mailto:" + FEEDBACK_MAIL + "?subject=" + encodeURIComponent("Tacheles-Feedback") + "&body=",
-      feedbackBody(), FEEDBACK_URL_MAX);
+      feedbackBody(), FEEDBACK_MAILTO_MAX);
   }
 
   /** Link nutzerinitiiert oeffnen (funktioniert auch auf file:// und fuer mailto:). */
@@ -3895,7 +3959,8 @@
   /** Feedback-Hub (WS3): Notizen erfassen/ansehen/loeschen, gemeldete
    *  Aussprache-Woerter, Uebermitteln via GitHub-Issue-Prefill oder mailto.
    *  Uebermitteln leert die lokale Sammlung bewusst NICHT. */
-  function renderFeedback() {
+  function renderFeedback(backScreen) {
+    backScreen = backScreen || "profile";
     cleanupSession();
     document.body.classList.add("in-session");
     var app = $("#app");
@@ -3904,9 +3969,9 @@
     var head = el("div", "session-head");
     var back = btn("✕", "quit-btn", function () {
       document.body.classList.remove("in-session");
-      showScreen("profile");
+      showScreen(backScreen);
     });
-    back.title = "Zurück zum Profil";
+    back.title = "Zurück";
     head.appendChild(back);
     var mid = el("div", "session-info");
     mid.appendChild(el("div", "session-title", "💬 Feedback"));
@@ -3929,7 +3994,7 @@
       state.feedback.notes.push({ ts: Date.now(), text: text.slice(0, 2000) });
       saveState();
       toast("Gespeichert. 📝");
-      renderFeedback();
+      renderFeedback(backScreen);
     }));
     app.appendChild(card);
 
@@ -3947,7 +4012,7 @@
         var del = btn("🗑", "icon-btn small-btn", function () {
           state.feedback.notes.splice(idx, 1);
           saveState();
-          renderFeedback();
+          renderFeedback(backScreen);
         });
         del.title = "Notiz löschen";
         row.appendChild(del);
@@ -3957,7 +4022,7 @@
         if (!confirm("Wirklich alle Notizen löschen?")) return;
         state.feedback.notes = [];
         saveState();
-        renderFeedback();
+        renderFeedback(backScreen);
       }));
     }
     app.appendChild(nCard);
@@ -3968,7 +4033,7 @@
     pCard.appendChild(el("div", "setting-label", "Aussprache gemeldet (" + ids.length + ")"));
     if (!ids.length) {
       pCard.appendChild(el("div", "setting-sub",
-        "Nichts markiert. In der 📖 Vokabelliste kannst du Wörter mit „🎙 falsch?“ melden."));
+        "Nichts markiert. In der 📖 Vokabelliste kannst du Wörter mit „🎙 Aussprache falsch?“ melden."));
     } else {
       ids.forEach(function (id) {
         var it = itemById(id);
@@ -3980,7 +4045,7 @@
         var del = btn("🗑", "icon-btn small-btn", function () {
           delete state.feedback.pronIssues[id];
           saveState();
-          renderFeedback();
+          renderFeedback(backScreen);
         });
         del.title = "Meldung entfernen";
         row.appendChild(del);
@@ -3992,10 +4057,15 @@
     // Uebermitteln (ehrlicher Hinweis: oeffentlich + Login, nichts automatisch)
     var sCard = el("section", "card");
     sCard.appendChild(el("div", "setting-label", "Übermitteln"));
-    sCard.appendChild(el("p", "setting-sub",
-      "Die App sendet nichts von selbst. „Auf GitHub übermitteln“ öffnet ein vorbefülltes, " +
-      "ÖFFENTLICHES GitHub-Issue (GitHub-Konto nötig). Ohne GitHub geht es per E-Mail. " +
+    // Betonung ueber <b> statt Grossbuchstaben (barrierefreier, ruhiger Ton).
+    var note = el("p", "setting-sub");
+    note.appendChild(document.createTextNode(
+      "Die App sendet nichts von selbst. „Auf GitHub übermitteln“ öffnet ein vorbefülltes, "));
+    note.appendChild(el("b", null, "öffentliches"));
+    note.appendChild(document.createTextNode(
+      " GitHub-Issue (GitHub-Konto nötig). Ohne GitHub geht es per E-Mail. " +
       "Deine Sammlung hier bleibt danach erhalten, löschen kannst du sie oben selbst."));
+    sCard.appendChild(note);
     var actions = el("div", "data-actions");
     actions.appendChild(btn("🐙 Auf GitHub übermitteln", "btn primary", function () {
       var r = feedbackIssueUrl();
@@ -4016,7 +4086,8 @@
 
   /** Statischer Info-Screen (Kontakt/Datenschutz): Titel + HTML-Body,
    *  Zurueck fuehrt ins Profil. Inhalte sind feste, vertrauenswuerdige Strings. */
-  function renderInfoScreen(titleText, bodyHtml) {
+  function renderInfoScreen(titleText, bodyHtml, backScreen) {
+    backScreen = backScreen || "profile";
     cleanupSession();
     document.body.classList.add("in-session");
     var app = $("#app");
@@ -4024,9 +4095,9 @@
     var head = el("div", "session-head");
     var back = btn("✕", "quit-btn", function () {
       document.body.classList.remove("in-session");
-      showScreen("profile");
+      showScreen(backScreen);
     });
-    back.title = "Zurück zum Profil";
+    back.title = "Zurück";
     head.appendChild(back);
     var mid = el("div", "session-info");
     mid.appendChild(el("div", "session-title", titleText));
@@ -4044,7 +4115,9 @@
     'Laien-Vorlage und keine Rechtsberatung. Vor einem Betrieb über den privaten Rahmen hinaus ' +
     'bitte fachlich prüfen lassen.</p></section>';
 
-  function renderContact() {
+  var LEGAL_STAND = '<p class="setting-sub legal-stand" style="margin-top:12px">Stand: Juli 2026</p>';
+
+  function renderContact(backScreen) {
     renderInfoScreen("📮 Kontakt / Impressum",
       '<section class="card">' +
       '<p>Tacheles ist ein privates, nicht-kommerzielles Lernprojekt, ohne Werbung, ' +
@@ -4054,10 +4127,11 @@
       '<p class="setting-sub" style="margin-top:10px">Als rein privates Angebot besteht keine ' +
       'Impressumspflicht mit ladungsfähiger Anschrift. Sollte Tacheles einmal kommerzielle Züge ' +
       'bekommen (Werbung, Spenden, Verkauf), wäre eine ladungsfähige Anschrift nachzurüsten.</p>' +
-      '</section>' + LEGAL_DISCLAIMER);
+      LEGAL_STAND +
+      '</section>' + LEGAL_DISCLAIMER, backScreen);
   }
 
-  function renderPrivacy() {
+  function renderPrivacy(backScreen) {
     renderInfoScreen("🔒 Datenschutz",
       '<section class="card">' +
       '<h3 class="legal-h">Verantwortlicher</h3>' +
@@ -4067,7 +4141,10 @@
       '<p>Wenn du Tacheles über das Internet aufrufst, wird die App von GitHub Pages ausgeliefert ' +
       '(GitHub Inc., ein Unternehmen von Microsoft, USA). Dabei verarbeitet GitHub technisch bedingt ' +
       'Verbindungsdaten, insbesondere deine IP-Adresse und Server-Logs. Darauf haben wir keinen ' +
-      'Einfluss. Es findet dabei eine Datenübermittlung in die USA statt (Drittland). Details: ' +
+      'Einfluss. Es findet dabei eine Datenübermittlung in die USA statt (Drittland). Rechtsgrundlage ' +
+      'ist unser berechtigtes Interesse an einer sicheren und effizienten Bereitstellung der App ' +
+      '(Art. 6 Abs. 1 lit. f DSGVO). GitHub ist nach eigenen Angaben unter dem EU-U.S. Data Privacy ' +
+      'Framework zertifiziert. Details: ' +
       '<a href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement" ' +
       'target="_blank" rel="noopener">Datenschutzerklärung von GitHub</a>.</p>' +
 
@@ -4084,7 +4161,9 @@
 
       '<h3 class="legal-h">Sprachausgabe</h3>' +
       '<p>Die vorproduzierten Audiodateien werden zusammen mit der App ausgeliefert. Zur Laufzeit ' +
-      'wird dafür nichts bei Dritten abgerufen.</p>' +
+      'wird dafür nichts bei Dritten abgerufen. Fehlt eine Audiodatei, nutzt Tacheles ersatzweise die ' +
+      'Sprachausgabe deines Browsers. Je nach Browser und Stimme kann dabei der vorzulesende Text an ' +
+      'einen Dienst des Browser-Herstellers übertragen werden.</p>' +
 
       '<h3 class="legal-h">Feedback</h3>' +
       '<p>„Übermitteln“ im Feedback-Bereich öffnet auf deinen Klick hin GitHub (öffentliches Issue, ' +
@@ -4094,9 +4173,11 @@
       '<h3 class="legal-h">Deine Rechte</h3>' +
       '<p>Auskunft, Berichtigung, Löschung und Co. laufen mangels serverseitiger Speicherung faktisch ' +
       'über dein Gerät: Im Profil kannst du alle Daten exportieren oder vollständig zurücksetzen; ' +
-      'zusätzlich löscht das Leeren der Browserdaten alles. Bei Fragen: ' +
+      'zusätzlich löscht das Leeren der Browserdaten alles. Außerdem hast du das Recht, dich bei einer ' +
+      'Datenschutz-Aufsichtsbehörde zu beschweren. Bei Fragen: ' +
       '<a href="mailto:tacheles@mahlberg.rocks">tacheles@mahlberg.rocks</a>.</p>' +
-      '</section>' + LEGAL_DISCLAIMER);
+      LEGAL_STAND +
+      '</section>' + LEGAL_DISCLAIMER, backScreen);
   }
 
   /* ---------- Onboarding (nur beim allerersten Start) ---------- */
@@ -4205,6 +4286,9 @@
     cleanupSession();
     document.body.classList.add("in-session");
     idx = idx || 0;
+    // Tour gilt beim START als gesehen (idempotent): wer neu ist und die Tour
+    // mittendrin verlaesst, bekommt spaeter NICHT den Bestandsnutzer-Hinweis.
+    if (!state.profile.tourSeen) { state.profile.tourSeen = true; saveState(); }
     var slide = TOUR_SLIDES[idx];
     if (!slide) return finishTour();
     var app = $("#app");
@@ -4475,8 +4559,13 @@
     var step = s.steps[s.stepIdx];
     if (!step) {
       // Modul komplett: Zaehler setzen, dann normaler Abschluss-Screen.
-      state.gamification.counters.modulesDone[s.module.id] = true;
-      saveState();
+      // Nur echte Module aus CONTENT.modules zaehlen — das zur Laufzeit gebaute
+      // "Lesen lernen" (synthetisch, nicht im Content) darf keinen Phantom-
+      // Zaehler schreiben.
+      if (moduleById(s.module.id)) {
+        state.gamification.counters.modulesDone[s.module.id] = true;
+        saveState();
+      }
       return endSession();
     }
     setOptKeys(null);
@@ -4529,21 +4618,59 @@
     moduleContinueBtn(body);
   }
 
+  /** Hebt die Vorkommen eines Buchstabens im .he-text von `wrap` hervor.
+   *  Trailing-Niqqud (U+0591–U+05C7) wird in die Markierung eingeschlossen,
+   *  damit der Grapheme-Cluster zusammenbleibt. */
+  function highlightLetterIn(wrap, letter) {
+    var heDiv = wrap.querySelector(".he-text");
+    if (!heDiv || !letter) return;
+    var text = heDiv.textContent;
+    if (!text || text.indexOf(letter) < 0) return;
+    heDiv.textContent = "";
+    var i = 0, idx;
+    while ((idx = text.indexOf(letter, i)) >= 0) {
+      if (idx > i) heDiv.appendChild(document.createTextNode(text.slice(i, idx)));
+      var end = idx + letter.length;
+      while (end < text.length) {
+        var cc = text.charCodeAt(end);
+        if (cc >= 0x0591 && cc <= 0x05C7) end++; else break;
+      }
+      var sp = el("span", "he-hl", text.slice(idx, end));
+      heDiv.appendChild(sp);
+      i = end;
+    }
+    if (i < text.length) heDiv.appendChild(document.createTextNode(text.slice(i)));
+  }
+
   function renderModuleTeach(step, title) {
     var item = itemById(step.itemId);
     if (!item) return moduleStepNext();
-    // Erstkontakt-Merker (1.1), siehe renderIntro.
-    if (session) {
+    // Erstkontakt-Merker (1.1), siehe renderIntro: NUR fuer wirklich neue Items,
+    // sonst wuerde ein erneut gelehrtes, laengst bekanntes Wort faelschlich
+    // "neutralisiert" (erster Abruf zaehlt dann nicht).
+    if (session && isNew(item.id)) {
       if (!session.introducedThisSession) session.introducedThisSession = {};
       session.introducedThisSession[item.id] = true;
     }
     var body = sessionShell(title, session.stepIdx / session.steps.length);
     // Vorstellungs-Schritt vergibt keine XP: "⭐"-Zaehler leer lassen (erst ab Quiz).
     var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
-    body.appendChild(el("div", "intro-tag", INTRO_TAGS[item.type] || INTRO_TAGS.word));
+    if (step.hlLetter) {
+      // "Lesen lernen": zeigen, welcher Buchstabe im Wort steckt.
+      var tag = el("div", "intro-tag");
+      tag.appendChild(document.createTextNode("Hier steckt dein Buchstabe drin: "));
+      var lsp = el("span", "hl-letter", step.hlLetter);
+      lsp.dir = "rtl"; lsp.lang = "he";
+      tag.appendChild(lsp);
+      body.appendChild(tag);
+    } else {
+      body.appendChild(el("div", "intro-tag", INTRO_TAGS[item.type] || INTRO_TAGS.word));
+    }
     var card = el("div", "card learn-card intro-card");
     if (item.emoji) card.appendChild(el("div", "intro-emoji", item.emoji));
-    card.appendChild(heEl(item, { big: true, tapReveal: false }));
+    var heWrap = heEl(item, { big: true, tapReveal: false });
+    if (step.hlLetter) highlightLetterIn(heWrap, step.hlLetter);
+    card.appendChild(heWrap);
     if (item.type === "sign") card.appendChild(el("div", "translit", item.translit));
     card.appendChild(el("div", "de-prompt", item.de));
     if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
@@ -5057,6 +5184,7 @@
     },
     feedbackIssueUrl: function () { return feedbackIssueUrl(); },
     feedbackMailtoUrl: function () { return feedbackMailtoUrl(); },
+    capUrl: function (base, body, max) { return capUrl(base, body, max); },
     // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
     currentTaskItem: function () {
       if (!session || !session.tasks) return null;
