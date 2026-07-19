@@ -604,6 +604,17 @@ body.in-session .bottom-nav { display: none; }
 .feedback-note { text-align: center; font-size: .92rem; color: var(--muted); }
 .listen-reveal { text-align: center; }
 
+/* ---------- Lese-Drills (Silben-Trainer) ---------- */
+
+.syl-card { display: flex; align-items: center; justify-content: center; min-height: 96px; }
+.syl-he { font-size: 64px; font-family: var(--font-he); line-height: 1.2; }
+.blend-row { display: flex; flex-direction: row-reverse; justify-content: center; gap: 4px; font-family: var(--font-he); font-size: 44px; }
+.blend-syl.hidden { visibility: hidden; }
+.blend-syl.current { outline: 2px dashed var(--accent); border-radius: 8px; padding: 0 4px; }
+.blend-syl.read { opacity: .7; }
+.speed-flash { font-size: 44px; font-family: var(--font-he); transition: opacity .3s ease; }
+.speed-flash.gone { opacity: 0; }
+
 /* ---------- Matching ---------- */
 
 .match-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

@@ -1840,6 +1840,20 @@
       startSession("module", { moduleObj: buildReadingModule() });
     });
     $("#btn-alefbet").addEventListener("click", function () { renderAlefbetChart("grammar"); });
+    // T6: Silben-Trainer-Drills als Zeilen in #drill-list.
+    var dl = $("#drill-list");
+    if (dl && READING && READING.drills.length) {
+      dl.innerHTML = '<div class="setting-label" style="margin-top:12px">🔡 Silben-Trainer</div>' +
+        READING.drills.map(function (d) {
+          var lvl = d.level === 1 ? "Silben" : (d.level === 2 ? "Wörter" : "Tempo");
+          return '<div class="setting-row"><div><div class="setting-label">' + esc(d.title) + '</div>' +
+            '<div class="setting-sub">Stufe ' + d.level + ' · ' + lvl + '</div></div>' +
+            '<button class="btn" data-drill="' + esc(d.id) + '">Üben</button></div>';
+        }).join("");
+      dl.querySelectorAll("[data-drill]").forEach(function (b) {
+        b.addEventListener("click", function () { startSession("reading", { drillId: b.dataset.drill }); });
+      });
+    }
     wireModuleTiles(app);
     wireFooterLinks(app);
   }
@@ -2138,7 +2152,7 @@
     smart: "Smart-Session", flash: "Karten", mc: "Multiple Choice", match: "Paare",
     swipe: "Wisch", reels: "Reels", signs: "Schilder lesen", listen: "Hören", speak: "Sprechen",
     dialog: "Dialog", build: "Satzbau", image: "Bilder", blitz: "Blitz", audio: "Audio-Kurs",
-    module: "Modul", mastercheck: "Mastery-Check"
+    module: "Modul", mastercheck: "Mastery-Check", reading: "Lesen üben"
   };
 
   function startSession(modeId, opts) {
@@ -2250,6 +2264,16 @@
       session.i = 0;
       session.masteryCheck = true;
       session.label = "🏅 Mastery-Check";
+    } else if (modeId === "reading") {
+      // Lese-Drill: feste Aufgabenliste aus der Drill-Definition (reading.js).
+      var drill = null;
+      if (READING) READING.drills.forEach(function (d) { if (d.id === opts.drillId) drill = d; });
+      if (!drill) { session = null; toast("Übung nicht gefunden."); return; }
+      session.drill = drill;
+      session.drillTasks = buildDrillTasks(drill);
+      session.i = 0;
+      session.label = "👓 " + (drill.title || "Lesen üben");
+      if (!session.drillTasks.length) { session = null; toast("Übung ist leer."); return; }
     } else {
       // Schilder-Modus: nur Schilder. Sprechen: keine Einzelbuchstaben. Satzbau: nur Saetze.
       // Bilder: nur Items mit Emoji. Blitz: schnelle MC-Runde gegen die Uhr.
@@ -2390,6 +2414,7 @@
     if (m === "dialog") return renderDialog();
     if (m === "audio") return renderAudio();
     if (m === "module") return renderModuleStep();
+    if (m === "reading") return renderDrillTask();
     return renderTask();
   }
 
@@ -3224,6 +3249,188 @@
       if (!correct) feedback.textContent = "Das Schild heißt: " + item.de;
     }, task);
     body.appendChild(feedback);
+  }
+
+  /* ---------- 11h. Lese-Drills (hearPick/readPick/blend/speed) ---------- */
+
+  /** Aufgabenliste eines Drills (auch vom Lektions-Player genutzt, T8). */
+  function buildDrillTasks(drill) {
+    var tasks = [];
+    var types = drill.types || [];
+    if (!READING) return tasks;
+    if (drill.level === 1) {
+      (drill.syllables || []).forEach(function (he, i) {
+        var syl = null;
+        READING.syllables.forEach(function (s) { if (s.he === he) syl = s; });
+        if (!syl) return; // Silbe nicht im Inventar -> ueberspringen (defensiv)
+        // Typen abwechseln: hoeren->waehlen und sehen->lesen im Wechsel.
+        var kind = types[i % types.length] || "hearPick";
+        tasks.push({ kind: kind, syl: syl });
+      });
+    } else {
+      (drill.wordIds || []).forEach(function (id, i) {
+        var item = itemById(id);
+        if (!item || !item.niqqud) return;
+        var parts = READING.syllabify(item.niqqud);
+        if (!parts) return; // nicht sicher zerlegbar -> ueberspringen (nie crashen)
+        var kind = types[i % types.length] || (drill.level === 3 ? "speed" : "blend");
+        tasks.push({ kind: kind, item: item, parts: parts });
+      });
+    }
+    return tasks;
+  }
+
+  /** Distraktor-Silben: gleicher Buchstabe ODER gleicher Vokal zuerst (verwechselbar). */
+  function pickSylDistractors(syl, n) {
+    var close = READING.syllables.filter(function (s) {
+      return s.he !== syl.he && (s.letter === syl.letter || s.vowel === syl.vowel) && s.translit !== syl.translit;
+    });
+    var rest = READING.syllables.filter(function (s) {
+      return s.he !== syl.he && s.translit !== syl.translit && close.indexOf(s) < 0;
+    });
+    return shuffle(close.slice()).concat(shuffle(rest.slice())).slice(0, n);
+  }
+
+  /** Gemeinsames Options-UI der Drills; correctIdx per data-correct-opt markiert (Testhook). */
+  function drillOptions(body, labels, correctIdx, isHe, onAnswer) {
+    var list = el("div", "opt-list");
+    var done = false;
+    labels.forEach(function (label, i) {
+      var b = el("button", "opt" + (isHe ? " he-opt" : ""), label);
+      if (isHe) { b.dir = "rtl"; b.lang = "he"; }
+      if (i === correctIdx) b.dataset.correctOpt = "1";
+      b.addEventListener("click", function () {
+        if (done) return;
+        done = true;
+        var correct = i === correctIdx;
+        list.querySelectorAll(".opt").forEach(function (ob) { ob.disabled = true; ob.classList.add("dim"); });
+        b.classList.remove("dim");
+        b.classList.add(correct ? "correct" : "wrong");
+        if (!correct) list.querySelectorAll(".opt")[correctIdx].classList.add("correct");
+        onAnswer(correct);
+      });
+      list.appendChild(b);
+    });
+    body.appendChild(list);
+    setOptKeys(function (e) {
+      if (!session) return;
+      if (e.key >= "1" && e.key <= "4") {
+        var btns = list.querySelectorAll(".opt");
+        var t = btns[+e.key - 1];
+        if (t && !t.disabled) { e.preventDefault(); t.click(); }
+      } else if (e.key === "Enter" || e.key === " ") {
+        var cont = body.querySelector('[data-k="cont"]');
+        if (cont) { e.preventDefault(); cont.click(); }
+      }
+    });
+    return list;
+  }
+
+  /** Nach einer Antwort: richtig -> automatisch weiter, falsch -> "Weiter"-Button. */
+  function drillNext(body, correct) {
+    if (correct) { later(function () { session.i++; renderSession(); }, 900); }
+    else {
+      var cont = btn("Weiter", "btn primary big", function () { session.i++; renderSession(); });
+      cont.dataset.k = "cont";
+      body.appendChild(cont);
+      cont.focus();
+    }
+  }
+
+  function renderDrillTask() {
+    var s = session;
+    var task = s.drillTasks[s.i];
+    if (!task) return endSession();
+    setOptKeys(null);
+    var title = s.label + " · " + (s.i + 1) + "/" + s.drillTasks.length;
+    var body = sessionShell(title, s.i / s.drillTasks.length);
+    if (task.kind === "hearPick") {
+      // Silbe hoeren -> geschriebene Silbe waehlen. Kein Item -> recordFreeAnswer.
+      body.appendChild(el("div", "task-question", "Welche Silbe hörst du?"));
+      var card = el("div", "card learn-card syl-card");
+      var play = btn("🔊", "icon-btn large", function () { sayText(task.syl.he); });
+      card.appendChild(play);
+      body.appendChild(card);
+      sayText(task.syl.he);
+      var opts = shuffle([task.syl].concat(pickSylDistractors(task.syl, 3)));
+      drillOptions(body, opts.map(function (o) { return o.he; }), opts.indexOf(task.syl), true, function (correct) {
+        recordFreeAnswer("mc", correct);
+        drillNext(body, correct);
+      });
+    } else if (task.kind === "readPick") {
+      // Silbe sehen -> Umschrift waehlen.
+      body.appendChild(el("div", "task-question", "Wie liest man das?"));
+      var card2 = el("div", "card learn-card syl-card");
+      var he = el("div", "syl-he", task.syl.he);
+      he.dir = "rtl"; he.lang = "he";
+      card2.appendChild(he);
+      body.appendChild(card2);
+      var opts2 = shuffle([task.syl].concat(pickSylDistractors(task.syl, 3)));
+      drillOptions(body, opts2.map(function (o) { return o.translit; }), opts2.indexOf(task.syl), false, function (correct) {
+        recordFreeAnswer("mc", correct);
+        if (correct) sayText(task.syl.he);
+        drillNext(body, correct);
+      });
+    } else if (task.kind === "blend") {
+      renderBlendTask(task, body);
+    } else { // speed
+      renderSpeedTask(task, body);
+    }
+  }
+
+  /** Wort zusammenlesen: Silbe fuer Silbe aufdecken, pro Silbe die Lesung waehlen,
+   *  am Ende Ganzwort-Audio + eine SRS-Verbuchung (Erkennen he->de). */
+  function renderBlendTask(task, body) {
+    var item = task.item, parts = task.parts;
+    var pos = task.pos || 0;
+    body.appendChild(el("div", "task-question", "Lies das Wort Silbe für Silbe:"));
+    var card = el("div", "card learn-card syl-card");
+    var row = el("div", "blend-row");
+    row.dir = "rtl"; row.lang = "he";
+    parts.forEach(function (p, i) {
+      row.appendChild(el("span", "blend-syl" + (i < pos ? " read" : (i === pos ? " current" : " hidden")), p.he));
+    });
+    card.appendChild(row);
+    body.appendChild(card);
+    var cur = parts[pos];
+    var distr = shuffle(parts.filter(function (p) { return p.translit !== cur.translit; })
+      .concat(pickSylDistractors({ he: cur.he, letter: cur.he.charAt(0), vowel: "", translit: cur.translit }, 3))).slice(0, 3);
+    var opts = shuffle([cur].concat(distr));
+    drillOptions(body, opts.map(function (o) { return o.translit; }), opts.indexOf(cur), false, function (correct) {
+      if (correct) sayText(cur.he);
+      task.errs = (task.errs || 0) + (correct ? 0 : 1);
+      if (pos + 1 < parts.length) {
+        task.pos = pos + 1;
+        later(renderSession, correct ? 700 : 1600); // gleiche Aufgabe, naechste Silbe
+      } else {
+        // Ganzwort: vorlesen + verbuchen (Lesen = Erkennen, deckelt bei 2).
+        say(item);
+        recordAnswer(item.id, "mc", task.errs ? "again" : "good", "he2de");
+        var reveal = el("div", "listen-reveal");
+        reveal.appendChild(el("div", "de-prompt", item.translit + " · " + item.de));
+        body.appendChild(reveal);
+        drillNext(body, !task.errs);
+      }
+    });
+  }
+
+  /** Tempo-Lesen: Wort kurz zeigen, dann Bedeutung waehlen. */
+  function renderSpeedTask(task, body) {
+    var item = task.item;
+    body.appendChild(el("div", "task-question", "Schnell lesen – was heißt das?"));
+    var card = el("div", "card learn-card syl-card");
+    var flash = el("div", "speed-flash", item.niqqud || item.he);
+    flash.dir = "rtl"; flash.lang = "he";
+    card.appendChild(flash);
+    body.appendChild(card);
+    setTimeout(function () { flash.classList.add("gone"); }, 1600); // CSS blendet aus
+    var distr = pickDistractors(item, 3);
+    var opts = shuffle([item].concat(distr));
+    drillOptions(body, opts.map(function (o) { return o.de; }), opts.indexOf(item), false, function (correct) {
+      recordAnswer(item.id, "mc", correct ? "good" : "again", "he2de");
+      flash.classList.remove("gone"); // Aufloesung wieder zeigen
+      drillNext(body, correct);
+    });
   }
 
   /* ==========================================================
@@ -5412,7 +5619,13 @@
       };
     },
     lessonStateOf: function (id) { return lessonState(id); },
-    syllabify: function (s) { return READING ? READING.syllabify(s) : null; }
+    syllabify: function (s) { return READING ? READING.syllabify(s) : null; },
+    // Lese-Drill: aktueller Drill + Position + Aufgabentyp (fuer die Regression).
+    readingInfo: function () {
+      if (!session || session.mode !== "reading") return null;
+      var t = session.drillTasks[session.i];
+      return { drillId: session.drill.id, i: session.i, total: session.drillTasks.length, kind: t ? t.kind : null };
+    }
   };
 
   if (document.readyState === "loading") {

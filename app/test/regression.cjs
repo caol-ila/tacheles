@@ -1199,6 +1199,47 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(250);
 
+  // --- 14g2. Lese-Trainer: Drill spielbar, Silbifizierer, Audio-Keys ---
+  const rdAvail = await page.evaluate(() => {
+    const R = window.TACHELES_READING;
+    return { drills: R ? R.drills.length : 0, syl: R ? R.syllables.length : 0,
+      sylOk: window.TACHELES_DEBUG.syllabify("שָׁלוֹם") !== null };
+  });
+  check("Lese-Trainer: Daten geladen, syllabify(שָׁלוֹם) liefert Silben",
+    rdAvail.drills >= 8 && rdAvail.syl >= 120 && rdAvail.sylOk, JSON.stringify(rdAvail));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "grammar"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  check("Lese-Trainer: Drill-Liste im Grammatik-Tab",
+    await page.evaluate(() => document.querySelectorAll("[data-drill]").length >= 8));
+  const answersBeforeDrill = await page.evaluate(() => JSON.parse(localStorage.getItem("tacheles_state_v1")).gamification.answersTotal || 0);
+  await page.evaluate(() => { const b = document.querySelector("[data-drill]"); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  let drillDone = false;
+  for (let i = 0; i < 30; i++) {
+    const st = await page.evaluate(() => ({
+      done: !!document.querySelector(".done-screen"),
+      info: window.TACHELES_DEBUG.readingInfo(),
+      correctText: (document.querySelector("[data-correct-opt]") || {}).textContent || null,
+      hasWeiter: !![...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim()))
+    }));
+    if (st.done) { drillDone = true; break; }
+    if (st.hasWeiter) {
+      await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+    } else {
+      await page.evaluate(() => {
+        const right = document.querySelector("[data-correct-opt]");
+        const any = document.querySelector(".opt:not(:disabled)");
+        (right || any) && (right || any).click();
+      });
+    }
+    await page.waitForTimeout(700);
+  }
+  check("Lese-Trainer: Level-1-Drill bis zum Abschluss spielbar", drillDone);
+  const answersAfterDrill = await page.evaluate(() => JSON.parse(localStorage.getItem("tacheles_state_v1")).gamification.answersTotal || 0);
+  check("Lese-Trainer: Antworten verbucht", answersAfterDrill > answersBeforeDrill, answersBeforeDrill + "->" + answersAfterDrill);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
   // --- 14h. Vokabel-Browser: Band-Waehler, Zeile, Demote, Aussprache-Toggle ---
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
