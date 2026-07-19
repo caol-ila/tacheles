@@ -387,6 +387,13 @@ body.in-session .bottom-nav { display: none; }
 .path-row.next .path-status { background: var(--primary); color: #fff; }
 .path-row.next { border: 2px solid var(--primary); }
 .path-row.todo { opacity: .8; }
+
+/* Kurs-Tab (T7): Lektionszeilen-Zustaende, Einstiegs-Marker, Vorschau-Overlay. */
+.lesson-row.done .path-status { color: var(--good); }
+.lesson-row.locked { opacity: .55; }
+.lesson-row.next { border-color: var(--accent); }
+.entry-tag { font-size: 11px; color: var(--accent); }
+.lesson-preview { max-height: 80vh; overflow-y: auto; }
 .path-next-tag {
   font-size: .68rem; font-weight: 700; color: #fff;
   background: var(--primary); border-radius: 999px; padding: 2px 8px;

@@ -124,6 +124,46 @@ function check(name, ok, detail) {
   check("BANDS-Liste laenge 7 (A0..C2)", c.bandsLen === 7, c.bandsLen);
   check("C1/C2-Themen beim Default-Level gesperrt", c.unlockedHigh === 0, c.unlockedHigh + "/" + c.highThemes + " offen");
 
+  // --- 1d. Kurs-Integritaet (Vertrag C1, In-Page-Spiegel des Validators) ---
+  const course = await page.evaluate(() => {
+    const C = window.TACHELES_CONTENT, K = window.TACHELES_COURSE, G = window.TACHELES_GRAMMAR;
+    const R = window.TACHELES_READING;
+    const itemIds = {}; C.items.forEach(i => itemIds[i.id] = 1);
+    const dlg = {}; (C.dialogues || []).forEach(d => dlg[d.id] = 1);
+    const gmods = {}; G.modules.forEach(m => gmods[m.id] = m);
+    const drills = {}; (R ? R.drills : []).forEach(d => drills[d.id] = 1);
+    const assigned = {}; let dup = 0, unknown = 0, badSize = 0, badRef = 0;
+    const gramUsed = {};
+    K.lessons.forEach(l => {
+      const n = (l.newItemIds || []).length;
+      if (n < 5 || n > 8) badSize++;
+      (l.newItemIds || []).forEach(id => {
+        if (!itemIds[id]) { unknown++; return; }
+        if (assigned[id]) dup++; assigned[id] = 1;
+      });
+      if (l.scene && l.scene.dialogueId && !dlg[l.scene.dialogueId]) badRef++;
+      if (l.grammar && l.grammar.moduleId) {
+        if (!gmods[l.grammar.moduleId]) badRef++;
+        else { gramUsed[l.grammar.moduleId] = 1;
+          (l.grammar.steps || []).forEach(ix => { if (!(ix >= 0 && ix < gmods[l.grammar.moduleId].steps.length)) badRef++; }); }
+      }
+      if (l.reading && !drills[l.reading.drill]) badRef++;
+    });
+    return {
+      lessons: K.lessons.length, sections: K.sections.length,
+      covered: Object.keys(assigned).length, total: C.items.length,
+      dup, unknown, badSize, badRef, gramUsed: Object.keys(gramUsed).length, gmods: G.modules.length
+    };
+  });
+  check("Kurs: >= 95 Lektionen, 16-20 Sektionen", course.lessons >= 95 && course.sections >= 16 && course.sections <= 20,
+    course.lessons + "/" + course.sections);
+  check("Kurs: Abdeckung vollstaendig + eindeutig (jedes Item genau einmal)",
+    course.covered === course.total && course.dup === 0 && course.unknown === 0,
+    course.covered + "/" + course.total + " dup=" + course.dup);
+  check("Kurs: 5-8 Items pro Lektion, alle Referenzen gueltig", course.badSize === 0 && course.badRef === 0,
+    "size=" + course.badSize + " ref=" + course.badRef);
+  check("Kurs: alle Grammatik-Module referenziert", course.gramUsed === course.gmods, course.gramUsed + "/" + course.gmods);
+
   // --- 2. Onboarding E2E (frischer State) ---
   check("Onboarding erscheint beim Erststart", await page.evaluate(() => !!document.querySelector(".onb")));
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /los geht/i.test(x.textContent)); if (b) b.click(); });
@@ -896,6 +936,73 @@ function check(name, ok, detail) {
   check("merge: course done OR / step max / entry gesetzt / snacksSeen vereinigt",
     courseMerge.l1.done === true && courseMerge.l2.done === true && courseMerge.l2.step === 4 &&
     courseMerge.entry === "l2" && courseMerge.seen === "s1,s2", JSON.stringify(courseMerge));
+
+  // --- Kurs-Tab (T7): frischer Kurs-Zustand, Sektionen, Lektions-Zustaende, Vorschau ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.profile.onboarded = true; s.profile.tourSeen = true; s.profile.autoplay = false; s.profile.micHintDismissed = true;
+    s.srs = {};
+    s.course = { lessons: {}, entry: null, snacksSeen: {} };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "course"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const courseUi = await page.evaluate(() => ({
+    rows: document.querySelectorAll("[data-lesson]").length,
+    next: document.querySelectorAll(".lesson-row.next").length,
+    locked: document.querySelectorAll(".lesson-row.locked").length > 0,
+    sections: document.querySelectorAll(".course-section-h").length
+  }));
+  check("Kurs-Tab: alle Lektionen gelistet, genau eine 'dran', Gesperrte vorhanden",
+    courseUi.rows >= 95 && courseUi.next === 1 && courseUi.locked && courseUi.sections >= 16,
+    JSON.stringify(courseUi));
+  await page.evaluate(() => { const r = document.querySelector(".lesson-row.next"); if (r) r.click(); });
+  await page.waitForTimeout(350);
+  check("Kurs-Tab: Vorschau-Overlay mit Wortliste + Start",
+    await page.evaluate(() =>
+      !!document.querySelector(".lesson-preview") && !!document.querySelector("#btn-lesson-start") &&
+      document.querySelectorAll(".lesson-preview .done-review-row").length >= 5));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".overlay-actions .btn, .lesson-preview .btn")].find(x => /abbrechen|schließen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
+  // --- Quereinstieg: Empfehlung aus Mastery, Bestaetigen markiert fruehere als erledigt ---
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.course = { lessons: {}, entry: null, snacksSeen: {} };
+    s.srs = {};
+    // Items der ersten 3 Lektionen auf mastery 2 -> Lektionen 1-3 ueberspringbar.
+    const K = window.TACHELES_COURSE;
+    K.lessons.slice(0, 3).forEach(l => l.newItemIds.forEach(id => {
+      s.srs[id] = { ease: 2.5, intervalDays: 5, dueTs: Date.now() + 86400000, reps: 3, lapses: 0, mastery: 2, lastReviewTs: Date.now() };
+    }));
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const entryRec = await page.evaluate(() => ({
+    rec: window.TACHELES_DEBUG.recommendedEntry(),
+    fourth: window.TACHELES_COURSE.lessons[3].id,
+    skip1: window.TACHELES_DEBUG.lessonSkippable(window.TACHELES_COURSE.lessons[0].id),
+    skip4: window.TACHELES_DEBUG.lessonSkippable(window.TACHELES_COURSE.lessons[3].id)
+  }));
+  check("Quereinstieg: >= 60 % Mastery-2 macht ueberspringbar, Empfehlung = erste nicht-ueberspringbare",
+    entryRec.skip1 === true && entryRec.skip4 === false && entryRec.rec === entryRec.fourth, JSON.stringify(entryRec));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "course"); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  check("Quereinstieg: Overlay beim ersten Kurs-Besuch", await page.evaluate(() =>
+    !!document.querySelector("#btn-entry-ok") && !!document.querySelector("#btn-entry-first")));
+  await page.evaluate(() => { const b = document.querySelector("#btn-entry-ok"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const entryDone = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const K = window.TACHELES_COURSE;
+    return { entry: s.course.entry,
+      earlierDone: K.lessons.slice(0, 3).every(l => s.course.lessons[l.id] && s.course.lessons[l.id].done),
+      fourthDone: !!(s.course.lessons[K.lessons[3].id] || {}).done };
+  });
+  check("Quereinstieg: Bestaetigen setzt entry + markiert fruehere als erledigt",
+    entryDone.entry === entryRec.fourth && entryDone.earlierDone && entryDone.fourthDone === false,
+    JSON.stringify(entryDone));
 
   // Zustand fuer nachfolgende Sektionen neutral hinterlassen (onboarded, tour gesehen).
   await page.evaluate(() => {

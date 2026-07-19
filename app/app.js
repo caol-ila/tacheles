@@ -454,6 +454,54 @@
     saveState();
   }
 
+  /** Ueberspringbar (Quereinstieg): >= 60 % der newItemIds mit Mastery >= 2. */
+  function lessonSkippable(lesson) {
+    var ids = lesson.newItemIds || [];
+    if (!ids.length) return false;
+    var known = 0;
+    ids.forEach(function (id) { if (getMastery(id) >= 2) known++; });
+    return known / ids.length >= 0.6;
+  }
+
+  /** Empfohlener Einstieg: erste NICHT ueberspringbare Lektion (sonst die letzte). */
+  function recommendedEntryLesson() {
+    if (!courseAvailable()) return null;
+    for (var i = 0; i < COURSE.lessons.length; i++) {
+      if (!lessonSkippable(COURSE.lessons[i])) return COURSE.lessons[i];
+    }
+    return COURSE.lessons[COURSE.lessons.length - 1];
+  }
+
+  /** Linear frei: Lektion 0, alles Erledigte, und die Lektion NACH einer erledigten. */
+  function lessonUnlocked(i) {
+    if (!courseAvailable() || i < 0 || i >= COURSE.lessons.length) return false;
+    if (i === 0) return true;
+    if (lessonState(COURSE.lessons[i].id).done) return true;
+    return lessonState(COURSE.lessons[i - 1].id).done;
+  }
+
+  /** "Deine Lektion": erste offene, nicht erledigte (Weiterlernen-Ziel). */
+  function nextLesson() {
+    if (!courseAvailable()) return null;
+    for (var i = 0; i < COURSE.lessons.length; i++) {
+      if (lessonUnlocked(i) && !lessonState(COURSE.lessons[i].id).done) return COURSE.lessons[i];
+    }
+    return null;
+  }
+
+  /** Quereinstieg bestaetigen: alle Lektionen VOR entry als erledigt markieren. */
+  function confirmEntry(lessonId) {
+    var idx = lessonIndex(lessonId);
+    if (idx < 0) return;
+    for (var i = 0; i < idx; i++) {
+      var e = state.course.lessons[COURSE.lessons[i].id] ||
+        (state.course.lessons[COURSE.lessons[i].id] = { done: false, step: 0 });
+      e.done = true;
+    }
+    state.course.entry = lessonId;
+    saveState();
+  }
+
   /* ==========================================================
    * 4. Tageslog, Tagesziel, Streak
    * ========================================================== */
@@ -1728,21 +1776,142 @@
 
   /** Lernen-Tab (interim, T7 ersetzt das durch die Kurs-UI): Pfad + Smart-CTA.
    *  Module und "Alle Modi" sind in T5 in die Grammatik-/Vokabeln-Tabs gewandert. */
+  /** Kurs-Tab (WS-B): Lektionspfad in Sektionen, Zustaende, Vorschau, Quereinstieg. */
   function renderCourse() {
     var app = $("#app");
-    var next = recommendedTheme();
-    app.innerHTML =
-      '<header class="brand"><div class="brand-title">Lernen</div>' +
-      '<div class="brand-sub">dein Pfad: ein Thema nach dem anderen</div></header>' +
-      '<section class="card"><button class="btn primary big" id="cta-start">▶ Smart-Session starten</button>' +
-      '<p class="setting-sub" style="margin:10px 0 0">Mischt fällige Wiederholungen und neue Wörter im passenden Modus-Mix.</p></section>' +
-      '<h2 class="h2">Dein Pfad <span class="h2-sub">· ✓ sitzt · ▶ dran · antippen zum Üben</span></h2>' +
-      '<div class="theme-list path-list">' +
-      CONTENT.themes.map(function (t) { return pathRowHtml(t, next && t.id === next.id); }).join("") +
-      '</div>' + footerLinksHtml();
-    $("#cta-start").addEventListener("click", function () { startSession("smart"); });
-    wireThemeRows(app);
+    if (!courseAvailable()) {
+      // Defensiv: ohne course.js bleibt der Tab nutzbar (Hinweis + Ausweich-CTA).
+      app.innerHTML = '<header class="brand"><div class="brand-title">Lernen</div></header>' +
+        '<section class="card"><p>Der Kurs ist in dieser Installation nicht geladen.</p>' +
+        '<button class="btn primary big" id="cta-fallback">▶ Smart-Session</button></section>' + footerLinksHtml();
+      $("#cta-fallback").addEventListener("click", function () { startSession("smart"); });
+      wireFooterLinks(app);
+      return;
+    }
+    var next = nextLesson();
+    var html = '<header class="brand"><div class="brand-title">Lernen</div>' +
+      '<div class="brand-sub">dein Kurs: eine Lektion nach der anderen</div></header>';
+    if (next) {
+      html += '<section class="card goal-card"><div class="setting-label">🎓 Deine Lektion</div>' +
+        '<div class="setting-sub">' + esc(next.emoji + " " + next.title) + ' · ' + esc(next.band) + '</div>' +
+        '<button class="btn primary big" id="cta-lesson-go">▶ Weiterlernen</button></section>';
+    } else {
+      html += '<section class="card goal-card"><div class="setting-label">🎉 Kurs komplett!</div>' +
+        '<div class="setting-sub">Alle Lektionen erledigt – im Vokabeln-Tab bleibt es frisch.</div></section>';
+    }
+    COURSE.sections.forEach(function (sec) {
+      var lessons = COURSE.lessons.filter(function (l) { return l.section === sec.id; });
+      if (!lessons.length) return;
+      var done = lessons.filter(function (l) { return lessonState(l.id).done; }).length;
+      html += '<h2 class="h2 course-section-h">' + esc(sec.emoji) + ' ' + esc(sec.title) +
+        ' <span class="h2-sub">· ' + esc(sec.band) + ' · ' + done + '/' + lessons.length + '</span></h2>' +
+        '<div class="theme-list">' +
+        lessons.map(function (l) {
+          var i = lessonIndex(l.id);
+          var st = lessonState(l.id);
+          var isNext = next && l.id === next.id;
+          var locked = !lessonUnlocked(i);
+          var cls = st.done ? "done" : (isNext ? "next" : (locked ? "locked" : "open"));
+          var mark = st.done ? "✓" : (isNext ? "▶" : (locked ? "🔒" : ""));
+          var resume = !st.done && st.step > 0 ? ' · fortsetzen ab Schritt ' + (st.step + 1) : '';
+          var entryTag = state.course.entry === l.id ? ' <span class="entry-tag">dein Einstieg</span>' : '';
+          return '<div class="theme-row lesson-row ' + cls + '" role="button" tabindex="0" data-lesson="' + esc(l.id) + '"' +
+            (locked ? ' aria-disabled="true"' : '') + '>' +
+            '<span class="path-status">' + mark + '</span>' +
+            '<span class="theme-emoji">' + esc(l.emoji) + '</span>' +
+            '<div class="theme-info"><div class="theme-title">' + esc(l.title) + entryTag + '</div>' +
+            '<div class="setting-sub">' + l.newItemIds.length + ' neue Wörter' + resume + '</div></div>' +
+            '</div>';
+        }).join("") + '</div>';
+    });
+    app.innerHTML = html + footerLinksHtml();
+    var go = $("#cta-lesson-go");
+    if (go && next) go.addEventListener("click", function () { startSession("lesson", { lessonId: next.id }); });
+    app.querySelectorAll("[data-lesson]").forEach(function (row) {
+      var act = function () {
+        var l = lessonById(row.dataset.lesson);
+        if (!l) return;
+        if (!lessonUnlocked(lessonIndex(l.id))) {
+          toast("🔒 Erst die Lektion davor abschließen – der Kurs ist ein Pfad.");
+          return;
+        }
+        showLessonPreview(l);
+      };
+      row.addEventListener("click", act);
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); }
+      });
+    });
     wireFooterLinks(app);
+    maybeOfferEntry();
+  }
+
+  /** Vorschau-Overlay: Woerter der Lektion + Grammatikpunkt + Start. */
+  function showLessonPreview(lesson) {
+    var o = buildOverlay(lesson.emoji + " " + lesson.title);
+    o.box.classList.add("lesson-preview");
+    var st = lessonState(lesson.id);
+    var list = el("div", "done-review");
+    lesson.newItemIds.forEach(function (id) {
+      var item = itemById(id);
+      if (!item) return;
+      var row = el("div", "done-review-row");
+      var he = el("span", "done-review-he", item.he);
+      he.dir = "rtl"; he.lang = "he";
+      row.appendChild(he);
+      row.appendChild(el("span", "done-review-de", item.de));
+      var p = btn("🔊", "icon-btn small-btn", function () { say(item); });
+      row.appendChild(p);
+      list.appendChild(row);
+    });
+    o.box.appendChild(list);
+    if (lesson.grammar && lesson.grammar.moduleId) {
+      var gm = moduleById(lesson.grammar.moduleId);
+      if (gm) o.box.appendChild(el("div", "setting-sub", "🧠 Grammatik: " + gm.title));
+    }
+    if (st.done) o.box.appendChild(el("div", "setting-sub", "✓ Schon erledigt – nochmal spielen setzt nichts zurück."));
+    var actions = el("div", "overlay-actions");
+    var startBtn = btn(st.step > 0 && !st.done ? "▶ Fortsetzen" : "▶ Lektion starten", "btn primary big", function () {
+      o.close();
+      startSession("lesson", { lessonId: lesson.id });
+    });
+    startBtn.id = "btn-lesson-start";
+    actions.appendChild(startBtn);
+    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
+  }
+
+  /** Quereinstieg (WS-B): beim ersten Kurs-Besuch mit Vorkenntnissen anbieten. */
+  function maybeOfferEntry() {
+    if (!courseAvailable() || state.course.entry) return;
+    var anyDone = Object.keys(state.course.lessons).some(function (id) { return state.course.lessons[id].done; });
+    if (anyDone) return;
+    var rec = recommendedEntryLesson();
+    if (!rec || lessonIndex(rec.id) === 0) return; // Anfaenger: kein Overlay noetig
+    var o = buildOverlay("🎯 Wo steigst du ein?");
+    o.box.appendChild(el("div", "overlay-text",
+      "Du kannst schon einiges! Die ersten " + lessonIndex(rec.id) + " Lektionen sitzen bei dir zu großen Teilen. " +
+      "Empfehlung: starte bei „" + rec.emoji + " " + rec.title + "“. Übersprungene Lektionen werden als erledigt " +
+      "markiert – du kannst sie jederzeit nachholen."));
+    var actions = el("div", "overlay-actions");
+    var ok = btn("Ab „" + rec.title + "“ starten", "btn primary big", function () {
+      confirmEntry(rec.id);
+      o.close();
+      renderCourse();
+      toast("🎯 Einstieg gesetzt. Frühere Lektionen gelten als erledigt.");
+    });
+    ok.id = "btn-entry-ok";
+    var first = btn("Ganz vorn anfangen", "btn ghost big", function () {
+      state.course.entry = COURSE.lessons[0].id; // Entscheidung merken: kein erneutes Overlay
+      saveState();
+      o.close();
+    });
+    first.id = "btn-entry-first";
+    actions.appendChild(ok);
+    actions.appendChild(first);
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
   }
 
   /** Vokabeln-Tab (WS-E): starkes freies Training auf erster Ebene. */
@@ -2158,6 +2327,11 @@
   function startSession(modeId, opts) {
     opts = opts || {};
     cleanupSession();
+    if (modeId === "lesson") {
+      // Lektions-Player folgt in T8; bis dahin freundlicher Hinweis statt Rate-Fallback.
+      toast("🎓 Der Lektions-Player ist gleich fertig – schau in Kürze nochmal rein.");
+      return;
+    }
     var size = opts.size ? clamp(opts.size, 1, 20) : sessionSize();
     session = {
       mode: modeId, answered: 0, correct: 0, wrong: 0, xp: 0, mastered: 0,
@@ -5619,6 +5793,9 @@
       };
     },
     lessonStateOf: function (id) { return lessonState(id); },
+    // Quereinstieg (T7): Ueberspringbarkeit + empfohlener Einstieg fuer die Regression.
+    lessonSkippable: function (id) { var l = lessonById(id); return l ? lessonSkippable(l) : null; },
+    recommendedEntry: function () { var l = recommendedEntryLesson(); return l ? l.id : null; },
     syllabify: function (s) { return READING ? READING.syllabify(s) : null; },
     // Lese-Drill: aktueller Drill + Position + Aufgabentyp (fuer die Regression).
     readingInfo: function () {
