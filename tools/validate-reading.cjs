@@ -39,7 +39,11 @@ Object.keys(R.exceptions || {}).forEach(w => roundTrip(w, "exception " + w));
 // und ersetzt fehlende durch reale (die Round-Trip-Regel selbst ist fix).
 const SAMPLE_IDS = ["shalom", "toda", "bevakasha", "ken", "lo", "slicha", "boker_tov",
   "laila_tov", "beseder", "efshar", "toda_raba", "erev_tov", "lehitraot", "bay",
-  "naim_meod", "ma_shlomcha", "ma_shlomech"]; // T4: auf >= 25 existierende IDs erweitern
+  "naim_meod", "ma_shlomcha", "ma_shlomech",
+  // T4: auf >= 25 existierende IDs erweitert (alle gegen content.js verifiziert
+  // und heuristisch nicht-null; Ich&Du, Fragewoerter, Cafe & Schilder).
+  "ani", "ata", "at", "hu", "hi", "shem", "eifo", "ma", "mi", "matai", "kama",
+  "mayim", "kafe", "te", "lechem", "knisa", "sagur", "karov", "rachok"];
 const found = SAMPLE_IDS.filter(id => items[id]);
 if (found.length < 25) err("R2: Sample-Liste hat nur " + found.length + " existierende IDs (soll >= 25) - T4 muss sie erweitern");
 found.forEach(id => roundTrip(items[id].niqqud, id + " (" + items[id].niqqud + ")"));
