@@ -799,10 +799,14 @@ function check(name, ok, detail) {
       syl: typeof D.syllabify === "function" ? D.syllabify("שָׁלוֹם") : "MISSING"
     };
   });
-  check("Kurs: Globals geladen (course/snacks/reading) + Debug-Hooks + null-safe syllabify",
+  // Mit ECHTEM Content: >= 95 Lektionen, syllabify liefert einen gueltigen
+  // Round-Trip-Split (Konkatenation der Silben == Eingabewort).
+  check("Kurs: Globals geladen (course/snacks/reading) + Debug-Hooks + syllabify-Round-Trip",
     courseGlobals.course && courseGlobals.snacks && courseGlobals.reading && courseGlobals.hooks &&
-    courseGlobals.info && courseGlobals.info.lessons === 0 && courseGlobals.info.entry === null &&
-    courseGlobals.syl === null, JSON.stringify(courseGlobals));
+    courseGlobals.info && courseGlobals.info.lessons >= 95 && courseGlobals.info.entry === null &&
+    Array.isArray(courseGlobals.syl) && courseGlobals.syl.length >= 2 &&
+    courseGlobals.syl.map(s => s.he).join("") === "שָׁלוֹם",
+    JSON.stringify(courseGlobals));
 
   // Kurs-State (Kurs-Runde): Allowlist + Merge.
   const courseSchema = await page.evaluate(() => {
