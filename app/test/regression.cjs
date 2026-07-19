@@ -136,7 +136,13 @@ function check(name, ok, detail) {
   await page.waitForTimeout(300);
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /und los/i.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(500);
-  check("Onboarding fuehrt zu Home", await page.evaluate(() => !!document.querySelector("#cta-start")));
+  check("Onboarding fuehrt zur Tour (Folie 1)", await page.evaluate(() =>
+    /Einführung · 1\//i.test(document.body.innerText)));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  check("Tour ueberspringen fuehrt zu Home, tourSeen gesetzt", await page.evaluate(() =>
+    !!document.querySelector("#cta-start") &&
+    JSON.parse(localStorage.getItem("tacheles_state_v1")).profile.tourSeen === true));
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
     s.profile.autoplay = false; s.profile.micHintDismissed = true;
@@ -549,7 +555,7 @@ function check(name, ok, detail) {
   await page.evaluate(() => {
     localStorage.setItem("tacheles_state_v1", JSON.stringify({
       version: 1,
-      profile: { onboarded: true, autoplay: false, micHintDismissed: true, sttNoticeConfirmed: true },
+      profile: { onboarded: true, autoplay: false, micHintDismissed: true, sttNoticeConfirmed: true, tourSeen: true },
       gamification: { xpTotal: -500, answersTotal: -3, counters: { bestBlitz: -1 } },
       srs: { shalom: 5, w_valid: { ease: 2.5, intervalDays: 2, dueTs: 0, reps: 2, lapses: 0, mastery: 9, lastReviewTs: 100 } },
       log: { "2026-01-01": 3, "2026-01-02": { answers: -5, correct: 2, xp: -1, goalMet: true } }
@@ -676,6 +682,26 @@ function check(name, ok, detail) {
   check("Alt-State: neue Felder mit Defaults, kein Re-Onboarding, A0+A1 offen (20 Themen)",
     legacy.defaults && legacy.noOnb && legacy.home && legacy.themeRows === 20,
     "defaults=" + legacy.defaults + " themen=" + legacy.themeRows);
+
+  // Bestandsnutzer-Hinweis (WS5): Alt-State (onboarded, tourSeen fehlt) sieht
+  // EINMALIG den Einfuehrungs-Hinweis; Ueberspringen setzt tourSeen.
+  const notice = await page.evaluate(() => ({
+    shown: !!document.querySelector(".overlay") && /kurze Einführung/i.test(document.body.innerText),
+    hasBtns: [...document.querySelectorAll(".overlay-actions .btn")].some(b => /ansehen/i.test(b.textContent)) &&
+             [...document.querySelectorAll(".overlay-actions .btn")].some(b => /überspringen/i.test(b.textContent))
+  }));
+  check("Alt-State: einmaliger Tour-Hinweis mit Ansehen/Ueberspringen", notice.shown && notice.hasBtns,
+    JSON.stringify(notice));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".overlay-actions .btn")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const noticeGone = await page.evaluate(() => ({
+    overlay: !!document.querySelector(".overlay"),
+    tourSeen: JSON.parse(localStorage.getItem("tacheles_state_v1")).profile.tourSeen
+  }));
+  check("Alt-State: Ueberspringen schliesst Hinweis und setzt tourSeen",
+    noticeGone.overlay === false && noticeGone.tourSeen === true, JSON.stringify(noticeGone));
+  await page.reload(); await page.waitForTimeout(500);
+  check("Alt-State: Hinweis kommt nur EINMAL", await page.evaluate(() => !document.querySelector(".overlay")));
 
   // --- 14. Audio-Schicht: Manifest konsistent + URL-Mapping ---
   // Frisch laden (der Alt-State oben hat autoplay=false, gut fuer diesen Check).
@@ -1228,6 +1254,20 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(300);
   check("Recht: Zurueck fuehrt ins Profil", await page.evaluate(() => !!document.querySelector("#btn-privacy")));
+
+  // --- 14k. Tour: aus dem Profil neustartbar, Folien blaetterbar, skippbar ---
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Tour: Profil-Eintrag 'Einführung ansehen'", await page.evaluate(() => !!document.querySelector("#btn-tour")));
+  await page.evaluate(() => { const b = document.querySelector("#btn-tour"); if (b) b.click(); });
+  await page.waitForTimeout(350);
+  check("Tour: Folie 1 sichtbar", await page.evaluate(() => /Einführung · 1\/5/i.test(document.body.innerText)));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test(x.textContent.trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Tour: Weiter blaettert zu Folie 2", await page.evaluate(() => /Einführung · 2\/5/i.test(document.body.innerText)));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  check("Tour: Ueberspringen fuehrt zu Home", await page.evaluate(() => !!document.querySelector("#cta-start")));
 
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));

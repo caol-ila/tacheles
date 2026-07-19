@@ -1846,6 +1846,9 @@
       '<div class="setting-row"><div><div class="setting-label">🔒 Datenschutz</div>' +
       '<div class="setting-sub">Was mit deinen Daten passiert (kurz: sie bleiben bei dir)</div></div>' +
       '<button class="btn" id="btn-privacy">Öffnen</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">✨ Einführung ansehen</div>' +
+      '<div class="setting-sub">Die kurze Tour durch die App, jederzeit erneut</div></div>' +
+      '<button class="btn" id="btn-tour">Starten</button></div>' +
       '</section>' +
       '<h2 class="h2">Daten</h2>' +
       '<section class="card">' +
@@ -1894,6 +1897,7 @@
     $("#btn-feedback").addEventListener("click", renderFeedback);
     $("#btn-contact").addEventListener("click", renderContact);
     $("#btn-privacy").addEventListener("click", renderPrivacy);
+    $("#btn-tour").addEventListener("click", function () { renderTour(0); });
     $("#btn-export").addEventListener("click", exportState);
     $("#btn-import").addEventListener("click", importState);
     $("#btn-reset").addEventListener("click", resetProgress);
@@ -4167,13 +4171,82 @@
       wrap.appendChild(btn("Und los! 🚀", "btn primary big", function () {
         state.profile.onboarded = true;
         saveState();
-        document.body.classList.remove("in-session");
-        showScreen("home");
         toast("Schalom! Schön, dass du da bist. 🕊️");
+        // Frisch onboarded: die Tour einmal automatisch (skippbar, WS5).
+        renderTour(0);
       }));
     }
     app.appendChild(wrap);
     window.scrollTo(0, 0);
+  }
+
+  /* ---------- App-Tour (WS5): skippbare Erklaer-Slideshow ---------- */
+
+  var TOUR_SLIDES = [
+    { emoji: "🏠", title: "Home & Heute",
+      text: "Auf Home siehst du dein Tagesziel und den „Heute“-Block: Buchstabe und Wort des Tages " +
+        "und das Häppchen, eine Mini-Runde für zwischendurch." },
+    { emoji: "🎓", title: "Lernen: Pfad, Module & Level",
+      text: "Im Lernen-Tab wartet dein Pfad, Thema für Thema, dazu geführte Module und Grammatik. " +
+        "Neue Level (A0 bis C2) schalten sich mit deinem Fortschritt frei." },
+    { emoji: "📈", title: "Fortschritt, ehrlich gemessen",
+      text: "„Gemeistert“ heißt: aktiv abgerufen, nicht nur wiedererkannt. Mit dem Mastery-Check " +
+        "prüfst du regelmäßig, ob alles noch sitzt, und nimmst Wörter bei Bedarf zurück." },
+    { emoji: "⚙️", title: "Profil & deine Daten",
+      text: "Alles bleibt auf deinem Gerät. Im Profil stellst du Tagesziel und Level ein und nimmst " +
+        "deinen Fortschritt per Export oder Sync-Code mit aufs nächste Gerät." },
+    { emoji: "🔊", title: "Audio & Aussprache",
+      text: "Jedes Wort hat eine vorproduzierte Stimme. Klingt etwas falsch? Markiere es in der " +
+        "Vokabelliste mit „Aussprache falsch“ und schick es als Feedback." }
+  ];
+
+  /** Tour-Folie idx rendern; nach der letzten (oder per Ueberspringen) fertig. */
+  function renderTour(idx) {
+    cleanupSession();
+    document.body.classList.add("in-session");
+    idx = idx || 0;
+    var slide = TOUR_SLIDES[idx];
+    if (!slide) return finishTour();
+    var app = $("#app");
+    app.innerHTML = "";
+    var wrap = el("div", "onb tour");
+    wrap.appendChild(el("div", "onb-step", "Einführung · " + (idx + 1) + "/" + TOUR_SLIDES.length));
+    wrap.appendChild(el("div", "onb-logo", slide.emoji));
+    wrap.appendChild(el("div", "onb-title small", slide.title));
+    wrap.appendChild(el("div", "onb-sub", slide.text));
+    wrap.appendChild(btn(idx + 1 < TOUR_SLIDES.length ? "Weiter →" : "Los geht’s 🚀", "btn primary big",
+      function () { renderTour(idx + 1); }));
+    wrap.appendChild(btn("Überspringen", "btn ghost", finishTour));
+    app.appendChild(wrap);
+    window.scrollTo(0, 0);
+  }
+
+  function finishTour() {
+    state.profile.tourSeen = true;
+    saveState();
+    document.body.classList.remove("in-session");
+    showScreen("home");
+  }
+
+  /** Einmaliger Hinweis fuer Bestandsnutzer (onboarded && !tourSeen).
+   *  tourSeen wird schon beim ANZEIGEN gesetzt: der Hinweis kommt garantiert
+   *  nur einmal, egal wie das Overlay geschlossen wird. */
+  function showTourNotice() {
+    state.profile.tourSeen = true;
+    saveState();
+    var o = buildOverlay("✨ Neu: kurze Einführung");
+    o.box.appendChild(el("div", "overlay-text",
+      "Tacheles hat einiges dazugelernt: Heute-Häppchen, ehrlichere Mastery, Vokabelliste, " +
+      "Feedback und mehr. Eine kurze Einführung zeigt dir alles. Du findest sie jederzeit " +
+      "im Profil unter „Einführung ansehen“."));
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn("Ansehen", "btn primary big", function () {
+      o.close();
+      renderTour(0);
+    }));
+    actions.appendChild(btn("Überspringen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
   }
 
   /* ==========================================================
@@ -4949,8 +5022,13 @@
       b.addEventListener("click", function () { showScreen(b.dataset.screen); });
     });
     // Erster Start: kurze Willkommens-Tour statt Home.
-    if (state.profile.onboarded) showScreen("home");
-    else renderOnboarding(1);
+    if (state.profile.onboarded) {
+      showScreen("home");
+      // Bestandsnutzer: einmaliger Hinweis auf die neue Einfuehrung (WS5).
+      if (!state.profile.tourSeen) showTourNotice();
+    } else {
+      renderOnboarding(1);
+    }
   }
 
   // Kleine, lesbare Debug-Oberflaeche fuer den Regressionstest.
