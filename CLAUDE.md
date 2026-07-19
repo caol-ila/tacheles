@@ -19,7 +19,7 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
   content.js → grammar.js → app.js. `content.js` bleibt reiner Wortschatz.
 - **Module haben `group`:** ohne `group` = Sektion „📚 Module"; `group === "grammar"` = Sektion
   „🧠 Grammatik" auf dem Lernen-Screen (beide band-gated, gleiche Kachel-UI).
-- 13 Modi + Survival-Check + geführte Module + Einstufungstest; Modul-Schritte:
+- 13 Modi + Survival-Check + geführte Module + Einstufungstest + Mastery-Check + Tour; Modul-Schritte:
   `explain`/`teach`/`quiz`/`pairquiz` plus `cloze` (Lückensatz) und `form` (deutsche Aufgabe →
   he-Form) für Grammatik. SRS (SM-2-artig) mit Niqqud-/Umschrift-Fade; alle Modi schreiben in
   EINEN Zustand pro Item.
@@ -38,13 +38,18 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
   nachgenerieren mit `tools/check-audio.cjs [--fill]`. SW hat eigenen `AUDIO_CACHE` (cache-first,
   überlebt Code-Releases), Prefetch aktuelles + nächstes Band. `app/audio/`-Dateien unter eigener
   Lizenz (CC-BY-NC + kein KI-Training), Code bleibt offen. Konzept: docs/13.
+- **Neu (dieser Release):** „Heute"-Block (Buchstabe/Wort des Tages per Datums-Hash `dayHash`,
+  Häppchen-Session `size:5`), „Lesen lernen" (synthetisches Modul via `buildReadingModule`),
+  ehrliche Mastery (`isProduction`, Erkennen deckelt bei 2, `demoteMastery`-Veto, Mastery-Check),
+  Vokabel-Browser, Feedback-Hub (`feedback` im State, GitHub-Prefill/mailto), Kontakt/Impressum-
+  und Datenschutz-Screens (In-App, Laien-Vorlage), App-Tour (`profile.tourSeen`).
 
 ## Tests
 
 ```
 cd app && node test/regression.cjs
 ```
-85 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
+134 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
 Default `c:/Source/SofaSuche/node_modules/playwright-core`). Nach JEDER Änderung laufen lassen;
 zusätzlich `node --check app.js content.js grammar.js`.
 
@@ -58,10 +63,11 @@ zusätzlich `node --check app.js content.js grammar.js`.
   `toISOString()` fürs Tagesdatum verwenden.
 - **MC-Falschantwort erzeugt einen „Weiter"-Button** — Test-Loops müssen erst `/^weiter$/i`
   klicken, dann `.opt`.
-- In Tests Onboarding überspringen: `profile.onboarded=true`, `autoplay=false`,
-  `micHintDismissed=true` in localStorage seeden, dann reload.
+- In Tests Onboarding überspringen: `profile.onboarded=true`, `profile.tourSeen=true`,
+  `autoplay=false`, `micHintDismissed=true` in localStorage seeden, dann reload (sonst
+  erscheint der einmalige Tour-Hinweis).
 - **Service Worker:** bei Content-/Code-Release `CACHE_NAME` in `sw.js` hochzählen
-  (aktuell v12) und `grammar.js`/`audio/manifest.js` in `ASSETS` halten, sonst bekommen
+  (aktuell v13) und `grammar.js`/`audio/manifest.js` in `ASSETS` halten, sonst bekommen
   localhost-Nutzer alten Cache. Audio-Clips liegen im separaten `AUDIO_CACHE` (cache-first).
 - Hebräisch immer RTL (`dir="rtl"`, `lang="he"`); zentrale Anzeige via `heEl()` (respektiert
   Fade + Prüfungsmodus). TTS über `spoken(item)` (Buchstaben haben `speak` = Namen).
