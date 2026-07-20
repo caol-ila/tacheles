@@ -953,6 +953,17 @@ body.in-session .bottom-nav { display: none; }
   resize: vertical; background: var(--bg); color: var(--ink);
 }
 
+/* ---------- Interaktive Tour (Spotlight) ---------- */
+
+.tour-dim { position: fixed; inset: 0; z-index: 60; background: rgba(10, 25, 30, .55); }
+.tour-spot { position: absolute; border-radius: 14px; background: transparent;
+  box-shadow: 0 0 0 9999px rgba(10, 25, 30, .55); }
+.tour-dim:has(.tour-spot) { background: transparent; } /* Cutout: Spot dunkelt, Dim nicht doppelt */
+.tour-card { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 61;
+  background: var(--card, #fff); border-radius: 16px; padding: 16px; max-height: 70vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.tour-card.centered { top: 50%; bottom: auto; transform: translateY(-50%); }
+
 /* ---------- Reduzierte Bewegung ---------- */
 
 @media (prefers-reduced-motion: reduce) {

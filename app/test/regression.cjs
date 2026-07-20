@@ -176,12 +176,12 @@ function check(name, ok, detail) {
   await page.waitForTimeout(300);
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /und los/i.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(500);
-  check("Onboarding fuehrt zur Tour (Folie 1)", await page.evaluate(() =>
-    /Einführung · 1\//i.test(document.body.innerText)));
-  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  check("Onboarding fuehrt zur interaktiven Tour (Spotlight-Karte, 1/...)", await page.evaluate(() =>
+    !!document.querySelector(".tour-card") && /Einführung · 1\//i.test(document.body.innerText)));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".tour-card button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(400);
   check("Tour ueberspringen fuehrt zu Home, tourSeen gesetzt", await page.evaluate(() =>
-    !!document.querySelector("#stats-row") &&
+    !!document.querySelector("#stats-row") && !document.querySelector(".tour-card") &&
     JSON.parse(localStorage.getItem("tacheles_state_v1")).profile.tourSeen === true));
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
@@ -1851,19 +1851,50 @@ function check(name, ok, detail) {
   await page.waitForTimeout(300);
   check("Recht: Zurueck fuehrt ins Profil", await page.evaluate(() => !!document.querySelector("#btn-privacy")));
 
-  // --- 14k. Tour: aus dem Profil neustartbar, Folien blaetterbar, skippbar ---
+  // --- 14k. Interaktive Tour: Spotlight, Demo schreibt nichts, Neustart, Skip ---
   await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
   await page.waitForTimeout(300);
   check("Tour: Profil-Eintrag 'Einführung ansehen'", await page.evaluate(() => !!document.querySelector("#btn-tour")));
+  const beforeTour = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { xp: s.gamification.xpTotal, answers: s.gamification.answersTotal, srsN: Object.keys(s.srs).length };
+  });
   await page.evaluate(() => { const b = document.querySelector("#btn-tour"); if (b) b.click(); });
-  await page.waitForTimeout(350);
-  check("Tour: Folie 1 sichtbar", await page.evaluate(() => /Einführung · 1\/5/i.test(document.body.innerText)));
-  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test(x.textContent.trim())); if (b) b.click(); });
-  await page.waitForTimeout(300);
-  check("Tour: Weiter blaettert zu Folie 2", await page.evaluate(() => /Einführung · 2\/5/i.test(document.body.innerText)));
-  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(450);
+  check("Tour: startet mit Spotlight/Karte + Schrittzaehler", await page.evaluate(() =>
+    (!!document.querySelector(".tour-spot") || !!document.querySelector(".tour-card")) &&
+    /Einführung · 1\//i.test(document.body.innerText) && window.TACHELES_DEBUG.tourActive() === true));
+  // Bis zum Demo-Schritt weiterklicken und die Demo-Frage RICHTIG beantworten.
+  let demoSeen = false;
+  for (let i = 0; i < 12; i++) {
+    const hasDemo = await page.evaluate(() => !!document.querySelector(".tour-card [data-correct-opt]"));
+    if (hasDemo) {
+      demoSeen = true;
+      await page.evaluate(() => { document.querySelector(".tour-card [data-correct-opt]").click(); });
+      await page.waitForTimeout(500);
+      break;
+    }
+    const advanced = await page.evaluate(() => {
+      const w = [...document.querySelectorAll(".tour-card button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
+      if (w) { w.click(); return true; }
+      return false;
+    });
+    if (!advanced) break;
+    await page.waitForTimeout(450);
+  }
+  check("Tour: Demo-Schritt mit echter Antwort erreicht", demoSeen);
+  const afterDemo = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { xp: s.gamification.xpTotal, answers: s.gamification.answersTotal, srsN: Object.keys(s.srs).length };
+  });
+  check("Tour: Demo-Antwort schreibt NICHTS (kein XP/SRS/Log)",
+    afterDemo.xp === beforeTour.xp && afterDemo.answers === beforeTour.answers && afterDemo.srsN === beforeTour.srsN,
+    JSON.stringify({ beforeTour, afterDemo }));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".tour-card button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(400);
-  check("Tour: Ueberspringen fuehrt zu Home", await page.evaluate(() => !!document.querySelector("#stats-row")));
+  check("Tour: Ueberspringen beendet die Tour (Home)", await page.evaluate(() =>
+    !document.querySelector(".tour-card") && !!document.querySelector("#stats-row") &&
+    window.TACHELES_DEBUG.tourActive() === false));
 
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));

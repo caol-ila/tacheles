@@ -858,6 +858,8 @@
    * SRS-Update, XP, Tageslog, Tagesziel/Streak, Session-Statistik, Auto-Save.
    */
   function recordAnswer(itemId, mode, grade, dir) {
+    // Tour-Demo (WS-F): echte Bedienung, aber NICHTS verbuchen (kein SRS/XP/Log).
+    if (tourDemo) return { correct: grade !== "again", xp: 0 };
     // "Richtig" = gewusst. Auch "Schwer" ist gewusst (nur muehsam) — als falsch
     // zaehlt NUR "Nochmal" (= wusste ich nicht). Sonst drueckt ehrliches
     // Selbstbewerten die Trefferquote strukturell Richtung 50 %.
@@ -942,6 +944,8 @@
   /** Wie recordAnswer, aber ohne SRS-Item (z. B. Dialogzeilen ohne Vokabel-Bezug):
    *  zaehlt XP, Tagesziel und Session-Statistik. */
   function recordFreeAnswer(mode, correct) {
+    // Tour-Demo (WS-F): echte Bedienung, aber NICHTS verbuchen (kein SRS/XP/Log).
+    if (tourDemo) return { correct: correct, xp: 0 };
     var xp = Math.max(1, Math.round((XP_BASE[mode] || 5) * (correct ? 1 : 0.3)));
     state.gamification.xpTotal += xp;
     state.gamification.lastActiveDay = todayStr();
@@ -2341,6 +2345,7 @@
 
   function startSession(modeId, opts) {
     opts = opts || {};
+    tourDemo = false; // defensiv: eine echte Session verbucht immer normal
     cleanupSession();
     var size = opts.size ? clamp(opts.size, 1, 20) : sessionSize();
     session = {
@@ -4875,53 +4880,135 @@
     window.scrollTo(0, 0);
   }
 
-  /* ---------- App-Tour (WS5): skippbare Erklaer-Slideshow ---------- */
+  /* ---------- Interaktive Tour (WS-F): Spotlight auf ECHTE Bedienung ---------- */
 
-  var TOUR_SLIDES = [
-    { emoji: "🏠", title: "Home & Heute",
-      text: "Auf Home siehst du dein Tagesziel und den „Heute“-Block: Buchstabe und Wort des Tages " +
-        "und das Häppchen, eine Mini-Runde für zwischendurch." },
-    { emoji: "🎓", title: "Lernen: Pfad, Module & Level",
-      text: "Im Lernen-Tab wartet dein Pfad, Thema für Thema, dazu geführte Module und Grammatik. " +
-        "Neue Level (A0 bis C2) schalten sich mit deinem Fortschritt frei." },
-    { emoji: "📈", title: "Fortschritt, ehrlich gemessen",
-      text: "„Gemeistert“ heißt: aktiv abgerufen, nicht nur wiedererkannt. Mit dem Mastery-Check " +
-        "prüfst du regelmäßig, ob alles noch sitzt, und nimmst Wörter bei Bedarf zurück." },
-    { emoji: "⚙️", title: "Profil & deine Daten",
-      text: "Alles bleibt auf deinem Gerät. Im Profil stellst du Tagesziel und Level ein und nimmst " +
-        "deinen Fortschritt per Export oder Sync-Code mit aufs nächste Gerät." },
-    { emoji: "🔊", title: "Audio & Aussprache",
-      text: "Jedes Wort hat eine vorproduzierte Stimme. Klingt etwas falsch? Markiere es in der " +
-        "Vokabelliste mit „Aussprache falsch“ und schick es als Feedback." }
+  var tourDemo = false;      // Demo-Modus: recordAnswer verbucht NICHTS (WS-F)
+  var tourKeyHandler = null; // Escape beendet die Tour (immer entkommbar)
+
+  function setTourKeys() {
+    clearTourKeys();
+    tourKeyHandler = function (e) {
+      if (e.key === "Escape") { e.preventDefault(); finishTour(); }
+    };
+    document.addEventListener("keydown", tourKeyHandler);
+  }
+  function clearTourKeys() {
+    if (tourKeyHandler) { document.removeEventListener("keydown", tourKeyHandler); tourKeyHandler = null; }
+  }
+
+  /** Schritte: screen = vorher rendern; sel = Spotlight-Ziel (fehlt/null -> zentrierte Karte);
+   *  demo = eine echte Beispiel-Frage in der Karte. */
+  var TOUR_STEPS = [
+    { screen: "home", sel: "#btn-snack", title: "Dein Häppchen",
+      text: "Jeden Tag ein kleines Wissens-Häppchen: zwei Minuten, ein Aha. Hier startest du es." },
+    { screen: "home", sel: null, demo: true, title: "So fühlt sich Lernen an",
+      text: "Probier eine echte Frage – die Antwort zählt in der Tour noch nicht." },
+    { screen: "home", sel: "#cta-lesson", title: "Dein Kurs",
+      text: "Der Kurs führt dich Lektion für Lektion von Schalom bis zu echten Gesprächen. Weiterlernen ist immer der schnellste Weg." },
+    { screen: "course", sel: ".lesson-row.next", title: "Dein Pfad",
+      text: "Jede Lektion: Szene, neue Wörter, ein Grammatik-Punkt, Hören, Quiz. Erledigtes bleibt spielbar." },
+    { screen: "vocab", sel: "#cta-power", title: "Freies Training",
+      text: "So viel du willst: Power-Training, 13 Modi, Themen, Blitz. Alles zahlt auf dein SRS ein." },
+    { screen: "grammar", sel: "#reading-block", title: "Grammatik & Lesen",
+      text: "Regeln verstehen und Silben zu Wörtern verschmelzen – hier wird aus Erkennen echtes Lesen." },
+    { screen: "home", sel: "#stats-row", title: "Ehrlicher Fortschritt",
+      text: "Tippe auf deine Statistik für den vollen Fortschritt. „Gemeistert“ heißt: aktiv abgerufen – und du kannst jederzeit dein Veto einlegen." }
   ];
 
-  /** Tour-Folie idx rendern; nach der letzten (oder per Ueberspringen) fertig. */
+  /** Tour-Schritt idx rendern: echten Screen zeigen, Spotlight aufs Ziel-Element
+   *  (fehlt es, zentrierte Karte). Immer skippbar (Button + Escape). */
   function renderTour(idx) {
     cleanupSession();
-    document.body.classList.add("in-session");
     idx = idx || 0;
+    // Defensiv: kein zweites Overlay stapeln.
+    var oldDim = document.querySelector(".tour-dim");
+    if (oldDim) oldDim.remove();
     // Tour gilt beim START als gesehen (idempotent): wer neu ist und die Tour
     // mittendrin verlaesst, bekommt spaeter NICHT den Bestandsnutzer-Hinweis.
     if (!state.profile.tourSeen) { state.profile.tourSeen = true; saveState(); }
-    var slide = TOUR_SLIDES[idx];
-    if (!slide) return finishTour();
-    var app = $("#app");
-    app.innerHTML = "";
-    var wrap = el("div", "onb tour");
-    wrap.appendChild(el("div", "onb-step", "Einführung · " + (idx + 1) + "/" + TOUR_SLIDES.length));
-    wrap.appendChild(el("div", "onb-logo", slide.emoji));
-    wrap.appendChild(el("div", "onb-title small", slide.title));
-    wrap.appendChild(el("div", "onb-sub", slide.text));
-    wrap.appendChild(btn(idx + 1 < TOUR_SLIDES.length ? "Weiter →" : "Los geht’s 🚀", "btn primary big",
-      function () { renderTour(idx + 1); }));
-    wrap.appendChild(btn("Überspringen", "btn ghost", finishTour));
-    app.appendChild(wrap);
+    var step = TOUR_STEPS[idx];
+    if (!step) return finishTour();
+    tourDemo = true;
+    showScreen(step.screen); // echten Screen rendern (Nav bleibt sichtbar)
+    setTourKeys();
+    // Overlay nach dem Rendern aufsetzen (Ziel-Element messen).
+    var target = step.sel ? document.querySelector(step.sel) : null;
+    var dim = el("div", "tour-dim");
+    if (target) {
+      var r = target.getBoundingClientRect();
+      var spot = el("div", "tour-spot");
+      spot.style.top = (r.top - 6) + "px";
+      spot.style.left = (r.left - 6) + "px";
+      spot.style.width = (r.width + 12) + "px";
+      spot.style.height = (r.height + 12) + "px";
+      dim.appendChild(spot);
+    }
+    var card = el("div", "tour-card" + (target ? "" : " centered"));
+    card.appendChild(el("div", "onb-step", "Einführung · " + (idx + 1) + "/" + TOUR_STEPS.length));
+    card.appendChild(el("div", "onb-title small", step.title));
+    card.appendChild(el("div", "onb-sub", step.text));
+    if (step.demo) buildTourDemo(card);
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn(idx + 1 < TOUR_STEPS.length ? "Weiter →" : "Los geht’s 🚀", "btn primary big", function () {
+      dim.remove();
+      renderTour(idx + 1);
+    }));
+    actions.appendChild(btn("Überspringen", "btn ghost big", function () {
+      dim.remove();
+      finishTour();
+    }));
+    card.appendChild(actions);
+    dim.appendChild(card);
+    if (target && card.classList.contains("centered") === false) {
+      // Karte unter/ueber dem Spot positionieren (einfach: unteres Drittel vs. oberes).
+      var below = (target.getBoundingClientRect().top < window.innerHeight / 2);
+      card.style.top = below ? "auto" : "12px";
+      card.style.bottom = below ? "12px" : "auto";
+    }
+    document.body.appendChild(dim);
     window.scrollTo(0, 0);
   }
 
+  /** Demo-Frage: echte MC-Bedienung, verbucht via tourDemo-Flag nichts. */
+  function buildTourDemo(card) {
+    var item = itemById("shalom") || CONTENT.items[0];
+    var q = el("div", "card learn-card");
+    var he = el("div", "he-text big", item.niqqud || item.he);
+    he.dir = "rtl"; he.lang = "he";
+    q.appendChild(he);
+    card.appendChild(q);
+    var opts = shuffle([item].concat(pickDistractors(item, 3)));
+    var list = el("div", "opt-list");
+    var done = false;
+    opts.forEach(function (o) {
+      var b = el("button", "opt", o.de);
+      if (o.id === item.id) b.dataset.correctOpt = "1";
+      b.addEventListener("click", function () {
+        if (done) return;
+        done = true;
+        var correct = o.id === item.id;
+        list.querySelectorAll(".opt").forEach(function (x) { x.disabled = true; x.classList.add("dim"); });
+        b.classList.remove("dim");
+        b.classList.add(correct ? "correct" : "wrong");
+        recordAnswer(item.id, "mc", correct ? "good" : "again", "he2de"); // no-op im Demo-Modus
+        say(item);
+        // Gold-Moment inkl. Veto ZEIGEN (nur Demo-Toast, kein State):
+        toast("🏅 So sieht’s aus, wenn ein Wort sitzt · tippen wäre dein Veto", "gold", function () {
+          toast("Genau so nimmst du ein Wort zurück. 💪");
+        });
+      });
+      list.appendChild(b);
+    });
+    card.appendChild(list);
+  }
+
   function finishTour() {
+    tourDemo = false;
+    clearTourKeys();
     state.profile.tourSeen = true;
     saveState();
+    var dim = document.querySelector(".tour-dim");
+    if (dim) dim.remove();
     document.body.classList.remove("in-session");
     showScreen("home");
   }
@@ -4934,9 +5021,9 @@
     saveState();
     var o = buildOverlay("✨ Neu: kurze Einführung");
     o.box.appendChild(el("div", "overlay-text",
-      "Tacheles hat einiges dazugelernt: Heute-Häppchen, ehrlichere Mastery, Vokabelliste, " +
-      "Feedback und mehr. Eine kurze Einführung zeigt dir alles. Du findest sie jederzeit " +
-      "im Profil unter „Einführung ansehen“."));
+      "Tacheles hat jetzt einen richtigen Kurs, Wissens-Häppchen und einen Lese-Trainer. " +
+      "Eine kurze interaktive Tour zeigt dir alles an Ort und Stelle. Du findest sie " +
+      "jederzeit im Profil unter „Einführung ansehen“."));
     var actions = el("div", "overlay-actions");
     actions.appendChild(btn("Ansehen", "btn primary big", function () {
       o.close();
@@ -6197,7 +6284,9 @@
       if (!session || session.mode !== "reading") return null;
       var t = session.drillTasks[session.i];
       return { drillId: session.drill.id, i: session.i, total: session.drillTasks.length, kind: t ? t.kind : null };
-    }
+    },
+    // Interaktive Tour (T10): laeuft gerade ein Spotlight-Overlay?
+    tourActive: function () { return !!document.querySelector(".tour-dim"); }
   };
 
   if (document.readyState === "loading") {
