@@ -116,6 +116,24 @@
 
   var CONTENT = window.TACHELES_CONTENT || null;
 
+  // Neue Content-Globals (Kurs-Runde). Alle optional: fehlt eines, blendet sich
+  // das zugehoerige Feature aus (defensiv wie TACHELES_GRAMMAR).
+  var COURSE = (window.TACHELES_COURSE && Array.isArray(window.TACHELES_COURSE.lessons)) ? window.TACHELES_COURSE : null;
+  var SNACKS = (window.TACHELES_SNACKS && Array.isArray(window.TACHELES_SNACKS.snacks)) ? window.TACHELES_SNACKS : null;
+  var READING = (window.TACHELES_READING && typeof window.TACHELES_READING.syllabify === "function") ? window.TACHELES_READING : null;
+
+  function courseAvailable() { return !!(COURSE && COURSE.lessons.length); }
+  function lessonById(id) {
+    if (!COURSE) return null;
+    for (var i = 0; i < COURSE.lessons.length; i++) if (COURSE.lessons[i].id === id) return COURSE.lessons[i];
+    return null;
+  }
+  function lessonIndex(id) {
+    if (!COURSE) return -1;
+    for (var i = 0; i < COURSE.lessons.length; i++) if (COURSE.lessons[i].id === id) return i;
+    return -1;
+  }
+
   function itemById(id) {
     if (!CONTENT) return null;
     for (var i = 0; i < CONTENT.items.length; i++) {
@@ -185,7 +203,8 @@
         levelCap: "auto",       // 'auto' | 'A0'..'C2' — manuelle Level-Grenze
         unlockedBand: "A1",     // hoechstes ERREICHTES Band (Default A1 = A0+A1 offen)
         placementDone: false,   // Einstufungstest schon einmal gemacht?
-        tourSeen: false         // App-Tour (Erklaer-Slideshow) gesehen/uebersprungen?
+        tourSeen: false,        // App-Tour (Erklaer-Slideshow) gesehen/uebersprungen?
+        snackVocab: true        // Heute-Haeppchen: 2-3 faellige Vokabeln anhaengen
       },
       gamification: {
         xpTotal: 0,
@@ -208,6 +227,12 @@
       feedback: {
         notes: [],       // [{ ts, text }]
         pronIssues: {}   // { itemId: true }
+      },
+      // Kurs-Fortschritt: orchestriert das SRS, ersetzt es nicht.
+      course: {
+        lessons: {},   // { lessonId: { done: bool, step: int } }
+        entry: null,   // bestaetigter Quereinstieg (Lektions-ID)
+        snacksSeen: {} // { snackId: true } fuer die Heute-Rotation
       },
       // pro Item: { ease, intervalDays, dueTs, reps, lapses, mastery, lastReviewTs }
       srs: {},
@@ -232,6 +257,7 @@
       if (BANDS.indexOf(raw.profile.unlockedBand) >= 0) s.profile.unlockedBand = raw.profile.unlockedBand;
       if (typeof raw.profile.placementDone === "boolean") s.profile.placementDone = raw.profile.placementDone;
       if (typeof raw.profile.tourSeen === "boolean") s.profile.tourSeen = raw.profile.tourSeen;
+      if (typeof raw.profile.snackVocab === "boolean") s.profile.snackVocab = raw.profile.snackVocab;
     }
     // Migration: wer schon Lernfortschritt hat (State von vor dem Onboarding-
     // Feature), soll die Willkommens-Tour nicht erneut durchlaufen.
@@ -314,6 +340,26 @@
         Object.keys(rp).forEach(function (id) { if (rp[id]) s.feedback.pronIssues[id] = true; });
       }
     }
+    // course (Allowlist): lessons nur als Objekt sauberer {done,step}-Eintraege,
+    // entry nur als String, snacksSeen nur Objekt-nicht-Array mit true-Werten.
+    if (raw.course && typeof raw.course === "object" && !Array.isArray(raw.course)) {
+      var rl = raw.course.lessons;
+      if (rl && typeof rl === "object" && !Array.isArray(rl)) {
+        Object.keys(rl).forEach(function (id) {
+          var e = rl[id];
+          if (!e || typeof e !== "object" || Array.isArray(e)) return;
+          s.course.lessons[id] = {
+            done: !!e.done,
+            step: Math.max(0, Math.round(Number(e.step) || 0))
+          };
+        });
+      }
+      if (typeof raw.course.entry === "string" && raw.course.entry) s.course.entry = raw.course.entry;
+      var rsn = raw.course.snacksSeen;
+      if (rsn && typeof rsn === "object" && !Array.isArray(rsn)) {
+        Object.keys(rsn).forEach(function (id) { if (rsn[id]) s.course.snacksSeen[id] = true; });
+      }
+    }
     return s;
   }
 
@@ -386,6 +432,74 @@
     saveState();
     renderOnboarding(1); // frischer Start = wieder Willkommens-Tour
     toast("Fortschritt zurückgesetzt.");
+  }
+
+  /* 3b. Kurs-Zustand */
+
+  /** Kurs-Fortschritt eines einzelnen Eintrags (immer ein frisches Default-Objekt). */
+  function lessonState(id) {
+    var e = state.course.lessons[id];
+    if (!e || typeof e !== "object") return { done: false, step: 0 };
+    return { done: !!e.done, step: e.step || 0 };
+  }
+  function setLessonStep(id, step) {
+    var e = state.course.lessons[id] || (state.course.lessons[id] = { done: false, step: 0 });
+    e.step = Math.max(0, step | 0);
+    saveState();
+  }
+  function markLessonDone(id) {
+    var e = state.course.lessons[id] || (state.course.lessons[id] = { done: false, step: 0 });
+    e.done = true;
+    e.step = 0; // erledigt: Resume-Zeiger zuruecksetzen (erneut spielen startet vorn)
+    saveState();
+  }
+
+  /** Ueberspringbar (Quereinstieg): >= 60 % der newItemIds mit Mastery >= 2. */
+  function lessonSkippable(lesson) {
+    var ids = lesson.newItemIds || [];
+    if (!ids.length) return false;
+    var known = 0;
+    ids.forEach(function (id) { if (getMastery(id) >= 2) known++; });
+    return known / ids.length >= 0.6;
+  }
+
+  /** Empfohlener Einstieg: erste NICHT ueberspringbare Lektion (sonst die letzte). */
+  function recommendedEntryLesson() {
+    if (!courseAvailable()) return null;
+    for (var i = 0; i < COURSE.lessons.length; i++) {
+      if (!lessonSkippable(COURSE.lessons[i])) return COURSE.lessons[i];
+    }
+    return COURSE.lessons[COURSE.lessons.length - 1];
+  }
+
+  /** Linear frei: Lektion 0, alles Erledigte, und die Lektion NACH einer erledigten. */
+  function lessonUnlocked(i) {
+    if (!courseAvailable() || i < 0 || i >= COURSE.lessons.length) return false;
+    if (i === 0) return true;
+    if (lessonState(COURSE.lessons[i].id).done) return true;
+    return lessonState(COURSE.lessons[i - 1].id).done;
+  }
+
+  /** "Deine Lektion": erste offene, nicht erledigte (Weiterlernen-Ziel). */
+  function nextLesson() {
+    if (!courseAvailable()) return null;
+    for (var i = 0; i < COURSE.lessons.length; i++) {
+      if (lessonUnlocked(i) && !lessonState(COURSE.lessons[i].id).done) return COURSE.lessons[i];
+    }
+    return null;
+  }
+
+  /** Quereinstieg bestaetigen: alle Lektionen VOR entry als erledigt markieren. */
+  function confirmEntry(lessonId) {
+    var idx = lessonIndex(lessonId);
+    if (idx < 0) return;
+    for (var i = 0; i < idx; i++) {
+      var e = state.course.lessons[COURSE.lessons[i].id] ||
+        (state.course.lessons[COURSE.lessons[i].id] = { done: false, step: 0 });
+      e.done = true;
+    }
+    state.course.entry = lessonId;
+    saveState();
   }
 
   /* ==========================================================
@@ -627,6 +741,28 @@
     return { letter: letter, word: word };
   }
 
+  /* ---------- Wissens-Haeppchen (WS-D): Snack des Tages ---------- */
+
+  /**
+   * Snack des Tages: deterministisch ueber den Datums-Hash, Ungesehenes zuerst,
+   * band-gated (bevorzugt freigeschaltete Baender). Kein Math.random, damit die
+   * Wahl ueber einen Tag stabil bleibt. Defensiv: ohne Snacks -> null.
+   */
+  function dailySnack() {
+    if (!SNACKS || !SNACKS.snacks.length) return null;
+    var pool = SNACKS.snacks.filter(function (s) { return bandUnlocked(s.band || "A0"); });
+    if (!pool.length) pool = SNACKS.snacks;
+    var unseen = pool.filter(function (s) { return !state.course.snacksSeen[s.id]; });
+    var pick = unseen.length ? unseen : pool; // alles gesehen: von vorn rotieren
+    return pick[dayHash(todayStr() + "|snack") % pick.length];
+  }
+
+  function snackById(id) {
+    if (!SNACKS) return null;
+    for (var i = 0; i < SNACKS.snacks.length; i++) if (SNACKS.snacks[i].id === id) return SNACKS.snacks[i];
+    return null;
+  }
+
   /* ==========================================================
    * 6. XP & zentrale Antwort-Verbuchung
    * XP nur fuer echten Abruf, gewichtet nach Lerntiefe
@@ -722,6 +858,8 @@
    * SRS-Update, XP, Tageslog, Tagesziel/Streak, Session-Statistik, Auto-Save.
    */
   function recordAnswer(itemId, mode, grade, dir) {
+    // Tour-Demo (WS-F): echte Bedienung, aber NICHTS verbuchen (kein SRS/XP/Log).
+    if (tourDemo) return { correct: grade !== "again", xp: 0 };
     // "Richtig" = gewusst. Auch "Schwer" ist gewusst (nur muehsam) — als falsch
     // zaehlt NUR "Nochmal" (= wusste ich nicht). Sonst drueckt ehrliches
     // Selbstbewerten die Trefferquote strukturell Richtung 50 %.
@@ -806,6 +944,8 @@
   /** Wie recordAnswer, aber ohne SRS-Item (z. B. Dialogzeilen ohne Vokabel-Bezug):
    *  zaehlt XP, Tagesziel und Session-Statistik. */
   function recordFreeAnswer(mode, correct) {
+    // Tour-Demo (WS-F): echte Bedienung, aber NICHTS verbuchen (kein SRS/XP/Log).
+    if (tourDemo) return { correct: correct, xp: 0 };
     var xp = Math.max(1, Math.round((XP_BASE[mode] || 5) * (correct ? 1 : 0.3)));
     state.gamification.xpTotal += xp;
     state.gamification.lastActiveDay = todayStr();
@@ -1003,6 +1143,21 @@
   }
   function audioUrl(item) { return item ? clipUrl(item.id) : null; } // fuer Debug/Regression
 
+  /** Einmal pro Sitzung sichtbar machen, wenn Clips existieren, aber die
+   *  Wiedergabe scheitert (z. B. Autoplay-Richtlinie, eingebettete Webviews
+   *  wie die VS-Code-Vorschau). Sonst ist der TTS-Fallback unsichtbar und
+   *  schwer zu diagnostizieren. */
+  var audioFallbackWarned = false;
+  function warnAudioFallback(why) {
+    if (audioFallbackWarned) return;
+    audioFallbackWarned = true;
+    try {
+      console.info("Tacheles: echte Sprach-Samples vorhanden, aber Wiedergabe fehlgeschlagen (" +
+        why + ") – nutze Browser-TTS als Ersatz. In eingebetteten Vorschauen " +
+        "(z. B. VS Code) ist Audio oft blockiert; im normalen Browser testen.");
+    } catch (e) { /* egal */ }
+  }
+
   /**
    * Spielt den Clip zu KEY ab; ohne Clip (oder bei Ladefehler, z. B. offline und
    * noch nicht gecacht) ruft es fallback() (Browser-TTS) und geht weiter.
@@ -1016,12 +1171,35 @@
       var a = new Audio(url);
       audioPlayer = a;
       var fell = false;
-      var fb = function () { if (fell) return; fell = true; fallback(); if (onDone) onDone(); };
+      var fb = function (why) { if (fell) return; fell = true; warnAudioFallback(why || "Ladefehler"); fallback(); if (onDone) onDone(); };
+      a.onended = function () { if (onDone) onDone(); };
+      a.onerror = function () { fb("Medienfehler " + (a.error && a.error.code)); };
+      var p = a.play();
+      if (p && p.catch) p.catch(function (e) { fb(e && e.name); });
+    } catch (e) { warnAudioFallback("Exception"); fallback(); if (onDone) onDone(); }
+  }
+
+  /**
+   * Sequenziertes Vorlesen fuers Hands-free (Audio-Kurs): spielt das echte
+   * Sample und ruft onDone erst NACH dem Abspielende; ohne Clip (oder bei
+   * Fehler) uebernimmt TTS.speakSeq, dessen Callback-Garantie erhalten bleibt.
+   * (say() taugt hier nicht: dessen TTS-Fallback feuert onDone sofort.)
+   */
+  function saySeq(item, onDone) {
+    var url = clipUrl(item.id);
+    if (!url) { TTS.speakSeq(spoken(item), "he", onDone); return; }
+    try {
+      try { if (STT && STT.abort) STT.abort(); } catch (e) { /* egal */ }
+      if (audioPlayer) { try { audioPlayer.pause(); } catch (e) { /* egal */ } }
+      var a = new Audio(url);
+      audioPlayer = a;
+      var fell = false;
+      var fb = function () { if (fell) return; fell = true; TTS.speakSeq(spoken(item), "he", onDone); };
       a.onended = function () { if (onDone) onDone(); };
       a.onerror = fb;
       var p = a.play();
       if (p && p.catch) p.catch(fb);
-    } catch (e) { fallback(); if (onDone) onDone(); }
+    } catch (e) { TTS.speakSeq(spoken(item), "he", onDone); }
   }
 
   /** Item vorlesen (Key = item.id). Ersetzt direkte TTS.speak(spoken(item))-Aufrufe. */
@@ -1031,6 +1209,11 @@
   /** Freien he-Text vorlesen (Dialog/Grammatik, Key = "h_"+hash). Fallback: TTS. */
   function sayText(text, onDone) {
     playByKey("h_" + audioHash(text), function () { TTS.speak(text); }, onDone);
+  }
+  /** Silbe vorlesen: Clip-Key bleibt Hash(syl.he), TTS-Fallback = syl.speak || syl.he
+   *  (manche nackten Silben synthetisiert die Browser-Stimme nur mit Lautersatz). */
+  function saySyl(syl, onDone) {
+    playByKey("h_" + audioHash(syl.he), function () { TTS.speak(syl.speak || syl.he); }, onDone);
   }
 
   /**
@@ -1163,7 +1346,8 @@
       s.title = "Langsam anhören";
       row.appendChild(s);
     }
-    if (!TTS.available || !TTS.hasHebrew()) {
+    // Hinweis nur, wenn es WEDER ein echtes Sample NOCH eine he-Stimme gibt.
+    if (!audioUrl(item) && (!TTS.available || !TTS.hasHebrew())) {
       row.appendChild(el("span", "tts-hint", "Hebräische Stimme im Browser nicht verfügbar"));
     }
     return row;
@@ -1247,7 +1431,8 @@
     // Saetze: bevorzugt zusammenbauen (Produktion), sonst erkennen.
     if (item.type === "sentence") return Math.random() < 0.6 ? "build" : "mc";
     var pool = ["mc", "mc", "flash", "flash"];
-    if (TTS.available && TTS.hasHebrew()) pool.push("listen");
+    // Hoeren geht mit echtem Sample ODER Browser-Stimme.
+    if (audioUrl(item) || (TTS.available && TTS.hasHebrew())) pool.push("listen");
     if (getMastery(item.id) >= 2 && item.type !== "letter") pool.push("speak");
     if (item.emoji) pool.push("image");
     return pool[randInt(pool.length)];
@@ -1328,8 +1513,10 @@
       b.classList.toggle("active", b.dataset.screen === name);
     });
     if (name === "home") renderHome();
-    else if (name === "modes") renderModes();
-    else if (name === "progress") renderProgress();
+    else if (name === "course") renderCourse();
+    else if (name === "vocab") renderVocab();
+    else if (name === "grammar") renderGrammar();
+    else if (name === "progress") renderProgress(); // kein Tab mehr: via Statistik-Tipp
     else if (name === "profile") renderProfile();
     window.scrollTo(0, 0);
   }
@@ -1412,20 +1599,20 @@
         .sort(function (a, b) { return bandIndex(a) - bandIndex(b); })[0];
       html += '<div class="theme-row locked-summary" role="button" tabindex="0" data-locked-summary="1" ' +
         'aria-label="' + locked.length + ' weitere Themen ab Level ' + esc(firstBand) +
-        ', im Lernen-Tab freischalten">' +
+        ', im Vokabeln-Tab freischalten">' +
         '<span class="theme-emoji">🔒</span>' +
         '<div class="theme-info"><div class="theme-title">' + locked.length +
         ' weitere Themen ab Level ' + esc(firstBand) + '</div>' +
-        '<div class="setting-sub">dein Pfad im Lernen-Tab schaltet sie frei</div></div>' +
+        '<div class="setting-sub">dein Training im Vokabeln-Tab schaltet sie frei</div></div>' +
         '<span class="next-go">▶</span></div>';
     }
     return html;
   }
 
-  /** Sammelzeile der gesperrten Themen: fuehrt in den Lernen-Tab (voller Pfad). */
+  /** Sammelzeile der gesperrten Themen: fuehrt in den Vokabeln-Tab (volles Training). */
   function wireLockedSummary(root) {
     root.querySelectorAll("[data-locked-summary]").forEach(function (row) {
-      var go = function () { showScreen("modes"); };
+      var go = function () { showScreen("vocab"); };
       row.addEventListener("click", go);
       row.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
@@ -1534,43 +1721,47 @@
     var today = todayLog();
     var goal = goalItems();
     var pct = Math.min(100, Math.round(today.answers / goal * 100));
+    var snack = dailySnack();
+    var lesson = nextLesson();
+    var picks = dailyPicks();
+    var tile = function (item, label) {
+      if (!item) return "";
+      return '<div class="today-tile" role="button" tabindex="0" data-today="' + esc(item.id) + '">' +
+        '<div class="today-label">' + label + '</div>' +
+        '<div class="today-he" dir="rtl" lang="he">' + esc(item.niqqud || item.he) + '</div>' +
+        '<div class="today-meta">' + esc(item.translit || "") + ' · ' + esc(item.de) + '</div>' +
+        '<button class="icon-btn small-btn" data-say="' + esc(item.id) + '" title="Anhören">🔊</button></div>';
+    };
     app.innerHTML =
-      '<header class="brand">' +
-      '<div class="brand-title">🕊️ Tacheles</div>' +
-      '<div class="brand-sub">dein Schalömchen</div>' +
-      '</header>' +
-      '<section class="stats-row">' +
+      '<header class="brand"><div class="brand-title">🕊️ Tacheles</div>' +
+      '<div class="brand-sub">dein Schalömchen</div></header>' +
+      '<section class="stats-row tappable" id="stats-row" role="button" tabindex="0" title="Fortschritt ansehen">' +
       '<div class="stat" title="Streak-Freezes retten verpasste Tage"><div class="stat-num">🔥 ' + g.streakDays +
       (g.streakDays > 0 && freezesAvailable() > 0 ? ' <span class="freeze-mini">❄️' + freezesAvailable() + '</span>' : '') +
       '</div><div class="stat-label">Streak</div></div>' +
       '<div class="stat"><div class="stat-num">⭐ ' + g.xpTotal + '</div><div class="stat-label">XP</div></div>' +
       '<div class="stat"><div class="stat-num">🏅 ' + g.masteredCount + '</div><div class="stat-label">gemeistert</div></div>' +
       '</section>' +
-      (function () {
-        // "Heute"-Block (1.3): Tages-Haeppchen + Buchstabe/Wort des Tages.
-        var picks = dailyPicks();
-        var tile = function (kind, item, label) {
-          if (!item) return "";
-          return '<div class="today-tile" role="button" tabindex="0" data-today="' + esc(item.id) + '">' +
-            '<div class="today-label">' + label + '</div>' +
-            '<div class="today-he" dir="rtl" lang="he">' + esc(item.niqqud || item.he) + '</div>' +
-            '<div class="today-meta">' + esc(item.translit || "") + ' · ' + esc(item.de) + '</div>' +
-            '<button class="icon-btn small-btn" data-say="' + esc(item.id) + '" title="Anhören">🔊</button>' +
-            '</div>';
-        };
-        return '<section class="card today-card">' +
-          '<div class="setting-label">🌅 Heute</div>' +
-          '<div class="today-tiles">' +
-          tile("letter", picks.letter, "Buchstabe des Tages") +
-          tile("word", picks.word, "Wort des Tages") +
-          '</div>' +
-          '<div class="today-actions">' +
-          '<button class="btn primary" id="btn-snack">🥨 Häppchen · kurze Runde</button>' +
-          (countMastered(function (it) { return it.theme === "alefbet"; }) < 8 ?
-            '<button class="btn" id="btn-reading">👓 Lesen lernen</button>' : '') +
-          '</div>' +
-          '</section>';
-      })() +
+      // Kurs-Karte: DER primaere CTA (WS-A).
+      (lesson ?
+        '<section class="card goal-card"><div class="setting-label">🎓 Deine Lektion</div>' +
+        '<div class="setting-sub">' + esc(lesson.emoji + " " + lesson.title) + ' · ' + esc(lesson.band) +
+        (lessonState(lesson.id).step > 0 ? ' · angefangen' : '') + '</div>' +
+        '<button class="btn primary big" id="cta-lesson">▶ Weiterlernen</button></section>' :
+        (courseAvailable() ?
+          '<section class="card goal-card"><div class="setting-label">🎉 Kurs komplett!</div>' +
+          '<button class="btn primary big" id="cta-lesson-vocab">▶ Vokabeln trainieren</button></section>' :
+          '<section class="card goal-card"><button class="btn primary big" id="cta-lesson-vocab">▶ Los geht’s</button></section>')) +
+      // Heute-Block (WS-D): Snack des Tages + Buchstabe/Wort des Tages.
+      '<section class="card today-card"><div class="setting-label">🌅 Heute</div>' +
+      (snack ?
+        '<div class="snack-card"><span class="tile-emoji">' + esc(snack.emoji) + '</span>' +
+        '<div class="theme-info"><div class="theme-title">' + esc(snack.title) + '</div>' +
+        '<div class="setting-sub">Häppchen des Tages · 2 Minuten' +
+        (state.profile.snackVocab ? ' · + fällige Vokabeln' : '') + '</div></div>' +
+        '<button class="btn primary" id="btn-snack">▶</button></div>' : '') +
+      '<div class="today-tiles">' + tile(picks.letter, "Buchstabe des Tages") + tile(picks.word, "Wort des Tages") + '</div>' +
+      '</section>' +
       '<section class="card goal-card">' +
       '<div class="goal-line"><span>Heute fällig: <b>' + dueCount() + '</b> · Neu: <b>' + newCount() + '</b></span>' +
       '<span>' + today.answers + ' / ' + goal + '</span></div>' +
@@ -1580,35 +1771,27 @@
         Math.round((today.correct || 0) / today.answers * 100) + ' % richtig' +
         ((today.mastered || 0) > 0 ? ' · 🏅 ' + today.mastered + ' neu gemeistert' : '') + '</div>' : "") +
       (today.goalMet ? '<div class="goal-done">Tagesziel erreicht – schön! 🎉</div>' : "") +
-      '<button class="btn primary big" id="cta-start">▶ Los geht’s</button>' +
       '</section>' +
-      (function () {
-        // "Weiter lernen": empfohlenes Thema mit einem Tipp erreichbar
-        var next = recommendedTheme();
-        if (!next) return "";
-        var s = themeStats(next);
-        return '<div class="next-card" role="button" tabindex="0" data-theme="' + esc(next.id) + '">' +
-          '<span class="next-emoji">' + esc(next.emoji) + '</span>' +
-          '<div class="theme-info"><div class="next-label">Weiter lernen</div>' +
-          '<div class="theme-title">' + esc(next.title) + '</div>' +
-          '<div class="bar mini"><div class="bar-fill" style="width:' + s.pct + '%"></div></div></div>' +
-          '<span class="next-go">▶</span></div>';
-      })() +
-      '<h2 class="h2">Modi</h2>' + modeTilesHtml(false) +
-      '<h2 class="h2">Themen <span class="h2-sub">· antippen zum gezielten Üben</span></h2>' +
-      '<div class="theme-list">' + themeListHtml() + '</div>' +
       '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>' + footerLinksHtml();
-    $("#cta-start").addEventListener("click", function () { startSession("smart"); });
-    var snack = $("#btn-snack");
-    if (snack) snack.addEventListener("click", function () { startSession("smart", { size: 5 }); });
-    var reading = $("#btn-reading");
-    if (reading) reading.addEventListener("click", function () {
-      startSession("module", { moduleObj: buildReadingModule() });
+    // Verdrahtung: stats-Tipp, Kurs-CTA, Snack, Tages-Kacheln, Footer.
+    var stats = $("#stats-row");
+    if (stats) {
+      var goProg = function () { showScreen("progress"); };
+      stats.addEventListener("click", goProg);
+      stats.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goProg(); }
+      });
+    }
+    var cta = $("#cta-lesson");
+    if (cta && lesson) cta.addEventListener("click", function () { startSession("lesson", { lessonId: lesson.id }); });
+    var ctaV = $("#cta-lesson-vocab");
+    if (ctaV) ctaV.addEventListener("click", function () { startSession("smart"); });
+    var sn = $("#btn-snack");
+    if (sn && snack) sn.addEventListener("click", function () {
+      startSession("snack", { snackId: snack.id, withVocab: state.profile.snackVocab });
     });
     app.querySelectorAll("[data-today]").forEach(function (row) {
-      var go = function () {
-        startSession("smart", { itemIds: [row.dataset.today], size: 3, label: "🌅 Heute" });
-      };
+      var go = function () { startSession("smart", { itemIds: [row.dataset.today], size: 3, label: "🌅 Heute" }); };
       row.addEventListener("click", go);
       row.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
@@ -1621,9 +1804,6 @@
         if (it) say(it);
       });
     });
-    wireModeTiles(app);
-    wireThemeRows(app);
-    wireLockedSummary(app);
     wireFooterLinks(app);
   }
 
@@ -1650,24 +1830,262 @@
       '</div>';
   }
 
-  function renderModes() {
+  /** Lernen-Tab (interim, T7 ersetzt das durch die Kurs-UI): Pfad + Smart-CTA.
+   *  Module und "Alle Modi" sind in T5 in die Grammatik-/Vokabeln-Tabs gewandert. */
+  /** Kurs-Tab (WS-B): Lektionspfad in Sektionen, Zustaende, Vorschau, Quereinstieg. */
+  function renderCourse() {
+    var app = $("#app");
+    if (!courseAvailable()) {
+      // Defensiv: ohne course.js bleibt der Tab nutzbar (Hinweis + Ausweich-CTA).
+      app.innerHTML = '<header class="brand"><div class="brand-title">Lernen</div></header>' +
+        '<section class="card"><p>Der Kurs ist in dieser Installation nicht geladen.</p>' +
+        '<button class="btn primary big" id="cta-fallback">▶ Smart-Session</button></section>' + footerLinksHtml();
+      $("#cta-fallback").addEventListener("click", function () { startSession("smart"); });
+      wireFooterLinks(app);
+      return;
+    }
+    var next = nextLesson();
+    var html = '<header class="brand"><div class="brand-title">Lernen</div>' +
+      '<div class="brand-sub">dein Kurs: eine Lektion nach der anderen</div></header>';
+    if (next) {
+      html += '<section class="card goal-card"><div class="setting-label">🎓 Deine Lektion</div>' +
+        '<div class="setting-sub">' + esc(next.emoji + " " + next.title) + ' · ' + esc(next.band) + '</div>' +
+        '<button class="btn primary big" id="cta-lesson-go">▶ Weiterlernen</button></section>';
+    } else {
+      html += '<section class="card goal-card"><div class="setting-label">🎉 Kurs komplett!</div>' +
+        '<div class="setting-sub">Alle Lektionen erledigt – im Vokabeln-Tab bleibt es frisch.</div></section>';
+    }
+    COURSE.sections.forEach(function (sec) {
+      var lessons = COURSE.lessons.filter(function (l) { return l.section === sec.id; });
+      if (!lessons.length) return;
+      var done = lessons.filter(function (l) { return lessonState(l.id).done; }).length;
+      html += '<h2 class="h2 course-section-h">' + esc(sec.emoji) + ' ' + esc(sec.title) +
+        ' <span class="h2-sub">· ' + esc(sec.band) + ' · ' + done + '/' + lessons.length + '</span></h2>' +
+        '<div class="theme-list">' +
+        lessons.map(function (l) {
+          var i = lessonIndex(l.id);
+          var st = lessonState(l.id);
+          var isNext = next && l.id === next.id;
+          var locked = !lessonUnlocked(i);
+          var cls = st.done ? "done" : (isNext ? "next" : (locked ? "locked" : "open"));
+          var mark = st.done ? "✓" : (isNext ? "▶" : (locked ? "🔒" : ""));
+          var resume = !st.done && st.step > 0 ? ' · fortsetzen ab Schritt ' + (st.step + 1) : '';
+          var entryTag = state.course.entry === l.id ? ' <span class="entry-tag">dein Einstieg</span>' : '';
+          // Buchstaben-Lektionen zaehlen Buchstaben, nicht Woerter (Mehrheit entscheidet).
+          var letters = l.newItemIds.filter(function (id) { var it = itemById(id); return it && it.type === "letter"; }).length;
+          var noun = letters * 2 > l.newItemIds.length ? ' neue Buchstaben' : ' neue Wörter';
+          return '<div class="theme-row lesson-row ' + cls + '" role="button" tabindex="0" data-lesson="' + esc(l.id) + '"' +
+            (locked ? ' aria-disabled="true"' : '') + '>' +
+            '<span class="path-status">' + mark + '</span>' +
+            '<span class="theme-emoji">' + esc(l.emoji) + '</span>' +
+            '<div class="theme-info"><div class="theme-title">' + esc(l.title) + entryTag + '</div>' +
+            '<div class="setting-sub">' + l.newItemIds.length + noun + resume + '</div></div>' +
+            '</div>';
+        }).join("") + '</div>';
+    });
+    app.innerHTML = html + footerLinksHtml();
+    var go = $("#cta-lesson-go");
+    if (go && next) go.addEventListener("click", function () { startSession("lesson", { lessonId: next.id }); });
+    app.querySelectorAll("[data-lesson]").forEach(function (row) {
+      var act = function () {
+        var l = lessonById(row.dataset.lesson);
+        if (!l) return;
+        if (!lessonUnlocked(lessonIndex(l.id))) {
+          toast("🔒 Erst die Lektion davor abschließen – der Kurs ist ein Pfad.");
+          return;
+        }
+        showLessonPreview(l);
+      };
+      row.addEventListener("click", act);
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); }
+      });
+    });
+    wireFooterLinks(app);
+    // Waehrend der Tour (Spotlight-Overlay/Demo) kein Einstiegs-Overlay stapeln;
+    // der Quereinstieg wird beim naechsten natuerlichen Kurs-Besuch angeboten.
+    if (!tourDemo && !document.querySelector(".tour-dim")) maybeOfferEntry();
+  }
+
+  /** Vorschau-Overlay: Woerter der Lektion + Grammatikpunkt + Start. */
+  function showLessonPreview(lesson) {
+    var o = buildOverlay(lesson.emoji + " " + lesson.title);
+    o.box.classList.add("lesson-preview");
+    var st = lessonState(lesson.id);
+    var list = el("div", "done-review");
+    lesson.newItemIds.forEach(function (id) {
+      var item = itemById(id);
+      if (!item) return;
+      var row = el("div", "done-review-row");
+      var he = el("span", "done-review-he", item.he);
+      he.dir = "rtl"; he.lang = "he";
+      row.appendChild(he);
+      if (item.translit) row.appendChild(el("span", "done-review-tr", item.translit));
+      row.appendChild(el("span", "done-review-de", item.de));
+      var p = btn("🔊", "icon-btn small-btn", function () { say(item); });
+      row.appendChild(p);
+      list.appendChild(row);
+    });
+    o.box.appendChild(list);
+    if (lesson.grammar && lesson.grammar.moduleId) {
+      var gm = moduleById(lesson.grammar.moduleId);
+      if (gm) o.box.appendChild(el("div", "setting-sub", "🧠 Grammatik: " + gm.title));
+    }
+    if (st.done) o.box.appendChild(el("div", "setting-sub", "✓ Schon erledigt – nochmal spielen setzt nichts zurück."));
+    var actions = el("div", "overlay-actions");
+    var startBtn = btn(st.step > 0 && !st.done ? "▶ Fortsetzen" : "▶ Lektion starten", "btn primary big", function () {
+      o.close();
+      startSession("lesson", { lessonId: lesson.id });
+    });
+    startBtn.id = "btn-lesson-start";
+    actions.appendChild(startBtn);
+    actions.appendChild(btn("Abbrechen", "btn ghost big", function () { o.close(); }));
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
+  }
+
+  /** Quereinstieg (WS-B): beim ersten Kurs-Besuch mit Vorkenntnissen anbieten. */
+  function maybeOfferEntry() {
+    if (!courseAvailable() || state.course.entry) return;
+    var anyDone = Object.keys(state.course.lessons).some(function (id) { return state.course.lessons[id].done; });
+    if (anyDone) return;
+    var rec = recommendedEntryLesson();
+    if (!rec || lessonIndex(rec.id) === 0) return; // Anfaenger: kein Overlay noetig
+    var o = buildOverlay("🎯 Wo steigst du ein?");
+    o.box.appendChild(el("div", "overlay-text",
+      "Du kannst schon einiges! Die ersten " + lessonIndex(rec.id) + " Lektionen sitzen bei dir zu großen Teilen. " +
+      "Empfehlung: starte bei „" + rec.emoji + " " + rec.title + "“. Übersprungene Lektionen werden als erledigt " +
+      "markiert – du kannst sie jederzeit nachholen."));
+    var actions = el("div", "overlay-actions");
+    var ok = btn("Ab „" + rec.title + "“ starten", "btn primary big", function () {
+      confirmEntry(rec.id);
+      o.close();
+      renderCourse();
+      toast("🎯 Einstieg gesetzt. Frühere Lektionen gelten als erledigt.");
+    });
+    ok.id = "btn-entry-ok";
+    var first = btn("Ganz vorn anfangen", "btn ghost big", function () {
+      state.course.entry = COURSE.lessons[0].id; // Entscheidung merken: kein erneutes Overlay
+      saveState();
+      o.close();
+    });
+    first.id = "btn-entry-first";
+    actions.appendChild(ok);
+    actions.appendChild(first);
+    o.box.appendChild(actions);
+    document.body.appendChild(o.ov);
+  }
+
+  /** Vokabeln-Tab (WS-E): starkes freies Training auf erster Ebene. */
+  function renderVocab() {
     var app = $("#app");
     var next = recommendedTheme();
     app.innerHTML =
-      '<header class="brand"><div class="brand-title">Lernen</div>' +
-      '<div class="brand-sub">dein Pfad: ein Thema nach dem anderen</div></header>' +
-      '<section class="card"><button class="btn primary big" id="cta-start">▶ Smart-Session starten</button>' +
-      '<p class="setting-sub" style="margin:10px 0 0">Mischt fällige Wiederholungen und neue Wörter im passenden Modus-Mix.</p></section>' +
-      moduleTilesHtml() +
-      '<h2 class="h2">Dein Pfad <span class="h2-sub">· ✓ sitzt · ▶ dran · antippen zum Üben</span></h2>' +
+      '<header class="brand"><div class="brand-title">Vokabeln</div>' +
+      '<div class="brand-sub">dein freies Training – so viel du willst</div></header>' +
+      '<section class="card power-card">' +
+      '<div class="setting-label">⚡ Power-Training</div>' +
+      '<div class="setting-sub">Fälliges + Neues im smarten Mix. Wie lang?</div>' +
+      '<div class="data-actions" style="margin-top:10px">' +
+      '<button class="btn" data-power="5">5 Aufgaben</button>' +
+      '<button class="btn primary" id="cta-power" data-power="10">10 Aufgaben</button>' +
+      '<button class="btn" data-power="20">20 Aufgaben</button>' +
+      '</div></section>' +
+      '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true) +
+      '<section class="card exam-card">' +
+      '<div><div class="setting-label">🏅 Mastery-Check</div>' +
+      '<div class="setting-sub">' + esc(MASTERY_RULE_TEXT) + '</div></div>' +
+      '<button class="btn" id="btn-mastercheck">Start</button></section>' +
+      '<section class="card exam-card">' +
+      '<div><div class="setting-label">💪 Knacknüsse</div>' +
+      '<div class="setting-sub">Deine am häufigsten vergessenen Wörter gezielt üben.</div></div>' +
+      '<button class="btn" id="btn-hard">Start</button></section>' +
+      '<section class="card exam-card">' +
+      '<div><div class="setting-label">📖 Vokabelliste</div>' +
+      '<div class="setting-sub">Alle Wörter nach Level durchsehen und anhören.</div></div>' +
+      '<button class="btn" id="btn-vocab">Öffnen</button></section>' +
+      '<h2 class="h2">Themen-Training <span class="h2-sub">· ✓ sitzt · ▶ dran · antippen zum Üben</span></h2>' +
       '<div class="theme-list path-list">' +
-      CONTENT.themes.map(function (t) { return pathRowHtml(t, next && t.id === next.id); }).join("") +
-      '</div>' +
-      '<h2 class="h2">Alle Modi</h2>' + modeTilesHtml(true) + footerLinksHtml();
-    $("#cta-start").addEventListener("click", function () { startSession("smart"); });
+      CONTENT.themes.map(function (t) {
+        return pathRowHtml(t, next && t.id === next.id);
+      }).join("") + '</div>' + footerLinksHtml();
+    app.querySelectorAll("[data-power]").forEach(function (b) {
+      b.addEventListener("click", function () { startSession("smart", { size: parseInt(b.dataset.power, 10) || 10 }); });
+    });
+    var mch = $("#btn-mastercheck");
+    if (mch) mch.addEventListener("click", function () { startSession("mastercheck"); });
+    $("#btn-hard").addEventListener("click", function () {
+      var hard = CONTENT.items.filter(function (it) {
+        var e = state.srs[it.id]; return e && (e.lapses || 0) >= 2;
+      }).sort(function (a, b) { return state.srs[b.id].lapses - state.srs[a.id].lapses; }).slice(0, 5);
+      if (!hard.length) { toast("🕊️ Keine Knacknüsse – alles im Griff!"); return; }
+      startSession("smart", { itemIds: hard.map(function (it) { return it.id; }) });
+    });
+    $("#btn-vocab").addEventListener("click", function () { renderVocabBrowser(effectiveBand(), false, "vocab"); });
     wireModeTiles(app);
-    wireModuleTiles(app);
     wireThemeRows(app);
+    wireFooterLinks(app);
+  }
+
+  /** Grammatik-Tab (WS-A): Module nach Level + Empfehlung + Lesen-Block. */
+  function renderGrammar() {
+    var app = $("#app");
+    var mods = (CONTENT && CONTENT.modules) || [];
+    var done = state.gamification.counters.modulesDone || {};
+    var grammar = mods.filter(function (m) { return m.group === "grammar"; });
+    var basic = mods.filter(function (m) { return m.group !== "grammar"; });
+    // "empfohlen fuer dich": erstes offene, noch nicht erledigte Grammatik-Modul.
+    var rec = null;
+    for (var i = 0; i < grammar.length; i++) {
+      var b = (BANDS.indexOf(grammar[i].band) >= 0) ? grammar[i].band : "A0";
+      if (bandUnlocked(b) && !done[grammar[i].id]) { rec = grammar[i].id; break; }
+    }
+    var byBand = BANDS.map(function (band) {
+      var list = grammar.filter(function (m) { return (m.band || "A0") === band; });
+      if (!list.length) return "";
+      return '<h2 class="h2 gram-band-h">🧠 ' + band + '</h2><div class="module-list">' +
+        list.map(function (m) {
+          var tile = moduleTileHtml(m, done);
+          if (m.id === rec) tile = tile.replace('class="module-tile', 'class="module-tile recommended');
+          return tile;
+        }).join("") + '</div>';
+    }).join("");
+    app.innerHTML =
+      '<header class="brand"><div class="brand-title">Grammatik</div>' +
+      '<div class="brand-sub">Regeln verstehen &amp; üben – plus Lesen lernen</div></header>' +
+      (rec ? '<div class="setting-sub rec-tag">▶ empfohlen für dich ist markiert</div>' : '') +
+      byBand +
+      '<h2 class="h2">👓 Lesen</h2>' +
+      '<section class="card" id="reading-block">' +
+      '<div class="setting-row"><div><div class="setting-label">👓 Lesen lernen</div>' +
+      '<div class="setting-sub">Buchstabe für Buchstabe zum ersten Wort</div></div>' +
+      '<button class="btn" id="btn-reading-path">Start</button></div>' +
+      '<div class="setting-row"><div><div class="setting-label">🔤 Alef-Bet-Tafel</div>' +
+      '<div class="setting-sub">Alle 27 Buchstaben mit deinem Lernstand</div></div>' +
+      '<button class="btn" id="btn-alefbet">Ansehen</button></div>' +
+      '<div id="drill-list"></div>' + // T6 fuellt die Silben-Drills hier ein
+      '</section>' +
+      moduleSectionHtml('📚 Module <span class="h2-sub">· geführte Mini-Lektionen</span>', basic, done) +
+      footerLinksHtml();
+    $("#btn-reading-path").addEventListener("click", function () {
+      startSession("module", { moduleObj: buildReadingModule() });
+    });
+    $("#btn-alefbet").addEventListener("click", function () { renderAlefbetChart("grammar"); });
+    // T6: Silben-Trainer-Drills als Zeilen in #drill-list.
+    var dl = $("#drill-list");
+    if (dl && READING && READING.drills.length) {
+      dl.innerHTML = '<div class="setting-label" style="margin-top:12px">🔡 Silben-Trainer</div>' +
+        READING.drills.map(function (d) {
+          var lvl = d.level === 1 ? "Silben" : (d.level === 2 ? "Wörter" : "Tempo");
+          return '<div class="setting-row"><div><div class="setting-label">' + esc(d.title) + '</div>' +
+            '<div class="setting-sub">Stufe ' + d.level + ' · ' + lvl + '</div></div>' +
+            '<button class="btn" data-drill="' + esc(d.id) + '">Üben</button></div>';
+        }).join("");
+      dl.querySelectorAll("[data-drill]").forEach(function (b) {
+        b.addEventListener("click", function () { startSession("reading", { drillId: b.dataset.drill }); });
+      });
+    }
+    wireModuleTiles(app);
     wireFooterLinks(app);
   }
 
@@ -1850,6 +2268,9 @@
       '<div class="setting-row"><div><div class="setting-label">Audio-Autoplay</div>' +
       '<div class="setting-sub">Aussprache automatisch abspielen</div></div>' +
       '<input type="checkbox" id="autoplay-chk"' + (p.autoplay ? " checked" : "") + '></div>' +
+      '<div class="setting-row"><div><div class="setting-label">Häppchen mit Vokabeln</div>' +
+      '<div class="setting-sub">hängt dem Tages-Häppchen 2-3 fällige Wörter an</div></div>' +
+      '<input type="checkbox" id="snackvocab-chk"' + (p.snackVocab ? " checked" : "") + '></div>' +
       '</section>' +
       '<h2 class="h2">Inhalt &amp; Level</h2>' +
       '<section class="card">' +
@@ -1868,8 +2289,13 @@
       '<button class="btn" id="btn-placement">Starten</button></div>' +
       '</section>' +
       '<section class="card">' +
-      '<div class="kv-row"><span>Hebräische Stimme (Vorlesen)</span><b>' +
-      (TTS.available ? (TTS.hasHebrew() ? "✓ gefunden" : "keine gefunden") : "nicht verfügbar") + '</b></div>' +
+      // Vorlesen kommt aus den mitgelieferten Samples; die Browser-Stimme ist
+      // nur noch Rueckfall (MC-Optionen/Cloze, offline vor dem ersten Cache).
+      '<div class="kv-row"><span>Vorlesen (Aussprache)</span><b>' +
+      (AUDIO ? "✓ echte Sprach-Samples" :
+        (TTS.available && TTS.hasHebrew() ? "Browser-Stimme" : "nicht verfügbar")) + '</b></div>' +
+      (AUDIO && !(TTS.available && TTS.hasHebrew()) ?
+        '<div class="setting-sub" style="margin:-6px 0 8px">Hinweis: ohne hebräische Browser-Stimme bleiben einzelne Übungsformen (z. B. Antwort-Optionen) stumm.</div>' : '') +
       '<div class="kv-row"><span>Spracherkennung (Sprechen)</span><b>' +
       (STT.available() ? "✓ verfügbar" : "nicht verfügbar") + '</b></div>' +
       '</section>' +
@@ -1936,6 +2362,10 @@
       state.profile.autoplay = !!e.target.checked;
       saveState();
     });
+    $("#snackvocab-chk").addEventListener("change", function (e) {
+      state.profile.snackVocab = !!e.target.checked;
+      saveState();
+    });
     $("#level-sel").addEventListener("change", function (e) {
       state.profile.levelCap = LEVEL_CAPS.indexOf(e.target.value) >= 0 ? e.target.value : "auto";
       saveState();
@@ -1965,11 +2395,13 @@
     smart: "Smart-Session", flash: "Karten", mc: "Multiple Choice", match: "Paare",
     swipe: "Wisch", reels: "Reels", signs: "Schilder lesen", listen: "Hören", speak: "Sprechen",
     dialog: "Dialog", build: "Satzbau", image: "Bilder", blitz: "Blitz", audio: "Audio-Kurs",
-    module: "Modul", mastercheck: "Mastery-Check"
+    module: "Modul", mastercheck: "Mastery-Check", reading: "Lesen üben",
+    lesson: "Lektion", snack: "Häppchen"
   };
 
   function startSession(modeId, opts) {
     opts = opts || {};
+    tourDemo = false; // defensiv: eine echte Session verbucht immer normal
     cleanupSession();
     var size = opts.size ? clamp(opts.size, 1, 20) : sessionSize();
     session = {
@@ -2077,6 +2509,42 @@
       session.i = 0;
       session.masteryCheck = true;
       session.label = "🏅 Mastery-Check";
+    } else if (modeId === "reading") {
+      // Lese-Drill: feste Aufgabenliste aus der Drill-Definition (reading.js).
+      var drill = null;
+      if (READING) READING.drills.forEach(function (d) { if (d.id === opts.drillId) drill = d; });
+      if (!drill) { session = null; toast("Übung nicht gefunden."); return; }
+      session.drill = drill;
+      session.drillTasks = buildDrillTasks(drill);
+      session.i = 0;
+      session.label = "👓 " + (drill.title || "Lesen üben");
+      if (!session.drillTasks.length) { session = null; toast("Übung ist leer."); return; }
+    } else if (modeId === "lesson") {
+      // Lektions-Player (T8): fester 8-Schritt-Bogen als flache Schrittliste.
+      // Resume: bei gespeichertem, nicht erledigtem Schritt dort fortsetzen.
+      var lesson = lessonById(opts.lessonId);
+      if (!lesson) { session = null; toast("Lektion nicht gefunden."); return; }
+      session.lesson = lesson;
+      session.steps = buildLessonSteps(lesson);
+      if (!session.steps.length) { session = null; toast("Diese Lektion ist noch leer."); return; }
+      var saved = lessonState(lesson.id);
+      session.stepIdx = (!saved.done && saved.step > 0 && saved.step < session.steps.length) ? saved.step : 0;
+      session.label = lesson.emoji + " " + lesson.title;
+    } else if (modeId === "snack") {
+      // Wissens-Haeppchen (WS-D): laeuft auf dem Modul-Runner (Schritte sind
+      // Modul-Schritte). Optionaler Vokabel-Anhang haengt 2-3 faellige Woerter an.
+      var snack = snackById(opts.snackId);
+      if (!snack) { session = null; toast("Häppchen nicht gefunden."); return; }
+      var ssteps = snack.steps.slice();
+      if (opts.withVocab) {
+        buildQueue(3, {}).filter(function (it) { return isDue(it.id, Date.now()); })
+          .slice(0, 3).forEach(function (it) { ssteps.push({ type: "quiz", itemId: it.id }); });
+      }
+      session.module = { id: snack.id, title: snack.title, emoji: snack.emoji, steps: ssteps };
+      session.steps = ssteps;
+      session.stepIdx = 0;
+      session.snackId = snack.id;
+      session.label = snack.emoji + " " + snack.title;
     } else {
       // Schilder-Modus: nur Schilder. Sprechen: keine Einzelbuchstaben. Satzbau: nur Saetze.
       // Bilder: nur Items mit Emoji. Blitz: schnelle MC-Runde gegen die Uhr.
@@ -2135,13 +2603,22 @@
       "Lern erst ein paar Wörter, dann macht das richtig Spaß."));
     var actions = el("div", "done-actions");
     actions.appendChild(btn("▶ Jetzt lernen", "btn primary", function () { startSession("smart"); }));
-    actions.appendChild(btn("Zum Pfad", "btn ghost", function () { showScreen("modes"); }));
+    actions.appendChild(btn("Zu den Vokabeln", "btn ghost", function () { showScreen("vocab"); }));
     wrap.appendChild(actions);
     app.appendChild(wrap);
   }
 
   /** Raeumt Timer/Listener/Audio einer laufenden Session auf. */
+  /** Auto-Weiter-Timer des Lektions-Rueckblicks (Lesson-Chaining). Liegt
+   *  ausserhalb der Session (der Rueckblick IST keine Session mehr) und wird
+   *  von showScreen/startSession/cleanupSession immer aufgeraeumt. */
+  var doneChainTimer = null;
+  function clearDoneChain() {
+    if (doneChainTimer) { clearInterval(doneChainTimer); doneChainTimer = null; }
+  }
+
   function cleanupSession() {
+    clearDoneChain();
     if (session) {
       clearTimeout(session.timer);
       if (session.tick) clearInterval(session.tick);
@@ -2188,6 +2665,7 @@
   function sessionShell(subtitle, progress, bodyClass) {
     var app = $("#app");
     app.innerHTML = "";
+    activeCorrectLabel = null; // pro Render zuruecksetzen; drillOptions setzt neu
     var head = el("div", "session-head");
     var quit = btn("✕", "quit-btn", quitSession);
     quit.title = "Session beenden";
@@ -2216,7 +2694,9 @@
     if (m === "reels") return renderReel();
     if (m === "dialog") return renderDialog();
     if (m === "audio") return renderAudio();
-    if (m === "module") return renderModuleStep();
+    if (m === "module" || m === "snack") return renderModuleStep();
+    if (m === "lesson") return renderLessonStep();
+    if (m === "reading") return renderDrillTask();
     return renderTask();
   }
 
@@ -2277,7 +2757,7 @@
     }
     body.appendChild(el("div", "tts-hint",
       (TTS.hasGerman() ? "" : "Keine deutsche Stimme gefunden – Frage wird nur angezeigt. ") +
-      (TTS.hasHebrew() ? "" : "Keine hebräische Stimme – Antwort wird nur angezeigt.")));
+      (audioUrl(item) || TTS.hasHebrew() ? "" : "Keine hebräische Stimme – Antwort wird nur angezeigt.")));
 
     // Automatik nur anstossen, wenn nicht pausiert und gerade frisch gerendert
     if (!s.paused && !s.audioRunning) audioStep();
@@ -2298,12 +2778,12 @@
       renderAudioShell();
       TTS.speakSeq("Neu: " + item.de + ". Auf Hebräisch:", "de", function () {
         if (!session || session !== s || s.paused) return;
-        TTS.speakSeq(spoken(item), "he", function () {
+        saySeq(item, function () {
           if (!session || session !== s || s.paused) return;
           // kurz wirken lassen, einmal wiederholen, dann weiter
           s.timer = setTimeout(function () {
             if (!session || session !== s || s.paused) return;
-            TTS.speakSeq(spoken(item), "he", function () {
+            saySeq(item, function () {
               if (!session || session !== s || s.paused) return;
               s.timer = setTimeout(function () {
                 if (!session || session !== s || s.paused) return;
@@ -2333,7 +2813,7 @@
       });
     } else if (s.audioPhase === "antwort") {
       renderAudioShell();
-      TTS.speakSeq(spoken(item), "he", function () {
+      saySeq(item, function () {
         if (!session || session !== s || s.paused) return;
         // kurze Nachwirkzeit, dann automatisch weiter
         s.timer = setTimeout(function () {
@@ -2823,7 +3303,7 @@
         task.dir = "he2de";
       } else {
         var dirs = ["he2de", "de2he"];
-        if (TTS.available && TTS.hasHebrew()) dirs.push("audio2de");
+        if (audioUrl(item) || (TTS.available && TTS.hasHebrew())) dirs.push("audio2de");
         task.dir = dirs[randInt(dirs.length)];
       }
     }
@@ -2869,7 +3349,7 @@
   function renderListen(task, title) {
     var body = sessionShell(title, session.i / session.tasks.length);
     var item = task.item;
-    var hasVoice = TTS.available && TTS.hasHebrew();
+    var hasVoice = !!audioUrl(item) || (TTS.available && TTS.hasHebrew());
 
     body.appendChild(el("div", "task-question", "Hör zu – was bedeutet das?"));
     var card = el("div", "card learn-card");
@@ -3051,6 +3531,199 @@
       if (!correct) feedback.textContent = "Das Schild heißt: " + item.de;
     }, task);
     body.appendChild(feedback);
+  }
+
+  /* ---------- 11h. Lese-Drills (hearPick/readPick/blend/speed) ---------- */
+
+  /** Aufgabenliste eines Drills (auch vom Lektions-Player genutzt, T8). */
+  function buildDrillTasks(drill) {
+    var tasks = [];
+    var types = drill.types || [];
+    if (!READING) return tasks;
+    if (drill.level === 1) {
+      (drill.syllables || []).forEach(function (he, i) {
+        var syl = null;
+        READING.syllables.forEach(function (s) { if (s.he === he) syl = s; });
+        if (!syl) return; // Silbe nicht im Inventar -> ueberspringen (defensiv)
+        // Typen abwechseln: hoeren->waehlen und sehen->lesen im Wechsel.
+        var kind = types[i % types.length] || "hearPick";
+        tasks.push({ kind: kind, syl: syl });
+      });
+    } else {
+      (drill.wordIds || []).forEach(function (id, i) {
+        var item = itemById(id);
+        if (!item || !item.niqqud) return;
+        var parts = READING.syllabify(item.niqqud);
+        if (!parts) return; // nicht sicher zerlegbar -> ueberspringen (nie crashen)
+        var kind = types[i % types.length] || (drill.level === 3 ? "speed" : "blend");
+        tasks.push({ kind: kind, item: item, parts: parts });
+      });
+    }
+    return tasks;
+  }
+
+  /** Distraktor-Silben: gleicher Buchstabe ODER gleicher Vokal zuerst (verwechselbar). */
+  function pickSylDistractors(syl, n) {
+    var close = READING.syllables.filter(function (s) {
+      return s.he !== syl.he && (s.letter === syl.letter || s.vowel === syl.vowel) && s.translit !== syl.translit;
+    });
+    var rest = READING.syllables.filter(function (s) {
+      return s.he !== syl.he && s.translit !== syl.translit && close.indexOf(s) < 0;
+    });
+    return shuffle(close.slice()).concat(shuffle(rest.slice())).slice(0, n);
+  }
+
+  // Label der aktuell korrekten Drill-/Szene-/Demo-Option. Nur ein Debug-/Testhook:
+  // die Korrektheit selbst bleibt in der Closure (kein data-correct-opt im DOM).
+  var activeCorrectLabel = null;
+
+  /** Gemeinsames Options-UI der Drills; correctIdx bleibt in der Closure. */
+  function drillOptions(body, labels, correctIdx, isHe, onAnswer) {
+    var list = el("div", "opt-list");
+    var done = false;
+    activeCorrectLabel = labels[correctIdx];
+    labels.forEach(function (label, i) {
+      var b = el("button", "opt" + (isHe ? " he-opt" : ""), label);
+      if (isHe) { b.dir = "rtl"; b.lang = "he"; }
+      b.addEventListener("click", function () {
+        if (done) return;
+        done = true;
+        var correct = i === correctIdx;
+        list.querySelectorAll(".opt").forEach(function (ob) { ob.disabled = true; ob.classList.add("dim"); });
+        b.classList.remove("dim");
+        b.classList.add(correct ? "correct" : "wrong");
+        if (!correct) list.querySelectorAll(".opt")[correctIdx].classList.add("correct");
+        onAnswer(correct);
+      });
+      list.appendChild(b);
+    });
+    body.appendChild(list);
+    setOptKeys(function (e) {
+      if (!session) return;
+      if (e.key >= "1" && e.key <= "4") {
+        var btns = list.querySelectorAll(".opt");
+        var t = btns[+e.key - 1];
+        if (t && !t.disabled) { e.preventDefault(); t.click(); }
+      } else if (e.key === "Enter" || e.key === " ") {
+        var cont = body.querySelector('[data-k="cont"]');
+        if (cont) { e.preventDefault(); cont.click(); }
+      }
+    });
+    return list;
+  }
+
+  function renderDrillTask() {
+    var s = session;
+    var task = s.drillTasks[s.i];
+    if (!task) return endSession();
+    setOptKeys(null);
+    var title = s.label + " · " + (s.i + 1) + "/" + s.drillTasks.length;
+    var body = sessionShell(title, s.i / s.drillTasks.length);
+    renderDrillTaskInto(task, body, function () { s.i++; renderSession(); });
+  }
+
+  /** Gemeinsamer Drill-Renderer (T6/T8): rendert EINEN Task in `body`.
+   *  `onDone` = "weiter zum naechsten Task" (Reading: session.i++;
+   *  Lektion: moduleStepNext). Mehrschritt-Tasks (blend) rendern denselben Task
+   *  ueber renderSession neu, bis sie fertig sind, und rufen dann onDone. */
+  function renderDrillTaskInto(task, body, onDone) {
+    // Nach einer Antwort: richtig -> automatisch weiter, falsch -> "Weiter"-Button.
+    var next = function (correct) {
+      if (correct) { later(onDone, 900); }
+      else {
+        var cont = btn("Weiter", "btn primary big", onDone);
+        cont.dataset.k = "cont";
+        body.appendChild(cont);
+        cont.focus();
+      }
+    };
+    if (task.kind === "hearPick") {
+      // Silbe hoeren -> geschriebene Silbe waehlen. Kein Item -> recordFreeAnswer.
+      body.appendChild(el("div", "task-question", "Welche Silbe hörst du?"));
+      var card = el("div", "card learn-card syl-card");
+      var play = btn("🔊", "icon-btn large", function () { saySyl(task.syl); });
+      card.appendChild(play);
+      body.appendChild(card);
+      saySyl(task.syl);
+      var opts = shuffle([task.syl].concat(pickSylDistractors(task.syl, 3)));
+      drillOptions(body, opts.map(function (o) { return o.he; }), opts.indexOf(task.syl), true, function (correct) {
+        recordFreeAnswer("mc", correct);
+        next(correct);
+      });
+    } else if (task.kind === "readPick") {
+      // Silbe sehen -> Umschrift waehlen.
+      body.appendChild(el("div", "task-question", "Wie liest man das?"));
+      var card2 = el("div", "card learn-card syl-card");
+      var he = el("div", "syl-he", task.syl.he);
+      he.dir = "rtl"; he.lang = "he";
+      card2.appendChild(he);
+      body.appendChild(card2);
+      var opts2 = shuffle([task.syl].concat(pickSylDistractors(task.syl, 3)));
+      drillOptions(body, opts2.map(function (o) { return o.translit; }), opts2.indexOf(task.syl), false, function (correct) {
+        recordFreeAnswer("mc", correct);
+        if (correct) saySyl(task.syl);
+        next(correct);
+      });
+    } else if (task.kind === "blend") {
+      renderBlendTask(task, body, next);
+    } else { // speed
+      renderSpeedTask(task, body, next);
+    }
+  }
+
+  /** Wort zusammenlesen: Silbe fuer Silbe aufdecken, pro Silbe die Lesung waehlen,
+   *  am Ende Ganzwort-Audio + eine SRS-Verbuchung (Erkennen he->de). */
+  function renderBlendTask(task, body, next) {
+    var item = task.item, parts = task.parts;
+    var pos = task.pos || 0;
+    body.appendChild(el("div", "task-question", "Lies das Wort Silbe für Silbe:"));
+    var card = el("div", "card learn-card syl-card");
+    var row = el("div", "blend-row");
+    row.dir = "rtl"; row.lang = "he";
+    parts.forEach(function (p, i) {
+      row.appendChild(el("span", "blend-syl" + (i < pos ? " read" : (i === pos ? " current" : " hidden")), p.he));
+    });
+    card.appendChild(row);
+    body.appendChild(card);
+    var cur = parts[pos];
+    var distr = shuffle(parts.filter(function (p) { return p.translit !== cur.translit; })
+      .concat(pickSylDistractors({ he: cur.he, letter: cur.he.charAt(0), vowel: "", translit: cur.translit }, 3))).slice(0, 3);
+    var opts = shuffle([cur].concat(distr));
+    drillOptions(body, opts.map(function (o) { return o.translit; }), opts.indexOf(cur), false, function (correct) {
+      if (correct) saySyl(cur);
+      task.errs = (task.errs || 0) + (correct ? 0 : 1);
+      if (pos + 1 < parts.length) {
+        task.pos = pos + 1;
+        later(renderSession, correct ? 700 : 1600); // gleiche Aufgabe, naechste Silbe
+      } else {
+        // Ganzwort: vorlesen + verbuchen (Lesen = Erkennen, deckelt bei 2).
+        say(item);
+        recordAnswer(item.id, "mc", task.errs ? "again" : "good", "he2de");
+        var reveal = el("div", "listen-reveal");
+        reveal.appendChild(el("div", "de-prompt", item.translit + " · " + item.de));
+        body.appendChild(reveal);
+        next(!task.errs);
+      }
+    });
+  }
+
+  /** Tempo-Lesen: Wort kurz zeigen, dann Bedeutung waehlen. */
+  function renderSpeedTask(task, body, next) {
+    var item = task.item;
+    body.appendChild(el("div", "task-question", "Schnell lesen – was heißt das?"));
+    var card = el("div", "card learn-card syl-card");
+    var flash = el("div", "speed-flash", item.niqqud || item.he);
+    flash.dir = "rtl"; flash.lang = "he";
+    card.appendChild(flash);
+    body.appendChild(card);
+    setTimeout(function () { flash.classList.add("gone"); }, 1600); // CSS blendet aus
+    var distr = pickDistractors(item, 3);
+    var opts = shuffle([item].concat(distr));
+    drillOptions(body, opts.map(function (o) { return o.de; }), opts.indexOf(item), false, function (correct) {
+      recordAnswer(item.id, "mc", correct ? "good" : "again", "he2de");
+      flash.classList.remove("gone"); // Aufloesung wieder zeigen
+      next(correct);
+    });
   }
 
   /* ==========================================================
@@ -3339,7 +4012,7 @@
       var play = btn("🔊", "icon-btn", function () { say(item); });
       play.title = "Nochmal anhören";
       mid.appendChild(play);
-      if (!TTS.available || !TTS.hasHebrew()) {
+      if (!audioUrl(item) && (!TTS.available || !TTS.hasHebrew())) {
         mid.appendChild(el("div", "tts-hint", "Hebräische Stimme im Browser nicht verfügbar"));
       }
       body.appendChild(mid);
@@ -3511,6 +4184,8 @@
         return { id: id, ok: !!session.seenIds[id] };
       })
     };
+    // Lektions-Player (T8): Lektion fuer den Rueckblick + Naechste-Lektion-CTA merken.
+    if (session.lesson) stats.lesson = { id: session.lesson.id, title: session.lesson.title, emoji: session.lesson.emoji };
     // Modus-Zaehler fuer Abzeichen (nur bei ECHTEM Session-Ende, nicht bei Abbruch)
     var counters = state.gamification.counters;
     if (session.mode === "blitz" && session.correct > (counters.bestBlitz || 0)) {
@@ -3597,9 +4272,45 @@
       wrap.appendChild(review);
     }
 
-    // "Was jetzt?": ein klarer naechster Schritt statt Sackgasse
+    // Lektions-Rueckblick: nahtlos weiterlernen. Die naechste Lektion startet
+    // nach kurzem Countdown AUTOMATISCH (kein Umweg ueber den Lernen-Screen);
+    // jede andere Interaktion (Rueckblick anhoeren, "Fertig") stoppt den
+    // Countdown, der Knopf bleibt als manueller Weiter-Weg erhalten.
+    var lessonNext = null;
+    if (stats.lesson && courseAvailable()) lessonNext = nextLesson();
+    if (lessonNext) {
+      var nlLabel = "▶ Weiter: " + lessonNext.emoji + " " + lessonNext.title;
+      var nlBtn = btn(nlLabel, "btn primary big", function () {
+        clearDoneChain();
+        startSession("lesson", { lessonId: lessonNext.id });
+      });
+      nlBtn.id = "btn-next-lesson";
+      wrap.appendChild(nlBtn);
+      // Countdown (7s): sichtbar im Knopf; laeuft NICHT in Tests weiter, weil
+      // showScreen/startSession ihn immer aufraeumen.
+      var left = 7;
+      nlBtn.textContent = nlLabel + " · " + left;
+      doneChainTimer = setInterval(function () {
+        left--;
+        if (left <= 0) {
+          clearDoneChain();
+          startSession("lesson", { lessonId: lessonNext.id });
+          return;
+        }
+        nlBtn.textContent = nlLabel + " · " + left;
+      }, 1000);
+      // Erste anderweitige Interaktion stoppt den Auto-Start (z. B. Rueckblick anhoeren).
+      wrap.addEventListener("click", function (ev) {
+        if (doneChainTimer && !nlBtn.contains(ev.target)) {
+          clearDoneChain();
+          nlBtn.textContent = nlLabel;
+        }
+      });
+      setTimeout(function () { try { nlBtn.focus(); } catch (e) { /* egal */ } }, 50);
+    }
+    // "Was jetzt?": ein klarer naechster Schritt statt Sackgasse (nicht in Lektionen).
     var rec = recommendedTheme();
-    if (rec && !stats.exam) {
+    if (rec && !stats.exam && !stats.lesson) {
       var nextRow = el("div", "done-next", "Weiter geht’s: " + rec.emoji + " " + rec.title);
       nextRow.setAttribute("role", "button");
       nextRow.tabIndex = 0;
@@ -3609,7 +4320,8 @@
 
     var actions = el("div", "done-actions");
     actions.appendChild(btn("Nochmal", "btn ghost", function () { startSession(stats.mode, stats.startOpts); }));
-    actions.appendChild(btn("Fertig", "btn primary", function () {
+    // Bei Lektionen ist "Weiter" der Primaerweg (oben); Fertig wird zum Ausstieg.
+    actions.appendChild(btn(lessonNext ? "Fertig für heute" : "Fertig", lessonNext ? "btn ghost" : "btn primary", function () {
       document.body.classList.remove("in-session");
       showScreen("home");
     }));
@@ -3716,8 +4428,10 @@
     };
   }
 
-  function renderAlefbetChart() {
+  function renderAlefbetChart(backScreen) {
     cleanupSession();
+    // Default "progress"; als Event-Handler direkt verdrahtet -> Event ist kein String.
+    backScreen = (typeof backScreen === "string") ? backScreen : "progress";
     document.body.classList.add("in-session"); // voller Fokus, Nav aus
     var app = $("#app");
     app.innerHTML = "";
@@ -3725,7 +4439,7 @@
     var head = el("div", "session-head");
     var back = btn("✕", "quit-btn", function () {
       document.body.classList.remove("in-session");
-      showScreen("progress");
+      showScreen(backScreen);
     });
     back.title = "Zurück";
     head.appendChild(back);
@@ -4261,53 +4975,135 @@
     window.scrollTo(0, 0);
   }
 
-  /* ---------- App-Tour (WS5): skippbare Erklaer-Slideshow ---------- */
+  /* ---------- Interaktive Tour (WS-F): Spotlight auf ECHTE Bedienung ---------- */
 
-  var TOUR_SLIDES = [
-    { emoji: "🏠", title: "Home & Heute",
-      text: "Auf Home siehst du dein Tagesziel und den „Heute“-Block: Buchstabe und Wort des Tages " +
-        "und das Häppchen, eine Mini-Runde für zwischendurch." },
-    { emoji: "🎓", title: "Lernen: Pfad, Module & Level",
-      text: "Im Lernen-Tab wartet dein Pfad, Thema für Thema, dazu geführte Module und Grammatik. " +
-        "Neue Level (A0 bis C2) schalten sich mit deinem Fortschritt frei." },
-    { emoji: "📈", title: "Fortschritt, ehrlich gemessen",
-      text: "„Gemeistert“ heißt: aktiv abgerufen, nicht nur wiedererkannt. Mit dem Mastery-Check " +
-        "prüfst du regelmäßig, ob alles noch sitzt, und nimmst Wörter bei Bedarf zurück." },
-    { emoji: "⚙️", title: "Profil & deine Daten",
-      text: "Alles bleibt auf deinem Gerät. Im Profil stellst du Tagesziel und Level ein und nimmst " +
-        "deinen Fortschritt per Export oder Sync-Code mit aufs nächste Gerät." },
-    { emoji: "🔊", title: "Audio & Aussprache",
-      text: "Jedes Wort hat eine vorproduzierte Stimme. Klingt etwas falsch? Markiere es in der " +
-        "Vokabelliste mit „Aussprache falsch“ und schick es als Feedback." }
+  var tourDemo = false;      // Demo-Modus: recordAnswer verbucht NICHTS (WS-F)
+  var tourKeyHandler = null; // Escape beendet die Tour (immer entkommbar)
+
+  function setTourKeys() {
+    clearTourKeys();
+    tourKeyHandler = function (e) {
+      if (e.key === "Escape") { e.preventDefault(); finishTour(); }
+    };
+    document.addEventListener("keydown", tourKeyHandler);
+  }
+  function clearTourKeys() {
+    if (tourKeyHandler) { document.removeEventListener("keydown", tourKeyHandler); tourKeyHandler = null; }
+  }
+
+  /** Schritte: screen = vorher rendern; sel = Spotlight-Ziel (fehlt/null -> zentrierte Karte);
+   *  demo = eine echte Beispiel-Frage in der Karte. */
+  var TOUR_STEPS = [
+    { screen: "home", sel: "#btn-snack", title: "Dein Häppchen",
+      text: "Jeden Tag ein kleines Wissens-Häppchen: zwei Minuten, ein Aha. Hier startest du es." },
+    { screen: "home", sel: null, demo: true, title: "So fühlt sich Lernen an",
+      text: "Probier eine echte Frage – die Antwort zählt in der Tour noch nicht." },
+    { screen: "home", sel: "#cta-lesson", title: "Dein Kurs",
+      text: "Der Kurs führt dich Lektion für Lektion von Schalom bis zu echten Gesprächen. Weiterlernen ist immer der schnellste Weg." },
+    { screen: "course", sel: ".lesson-row.next", title: "Dein Pfad",
+      text: "Jede Lektion: Szene, neue Wörter, ein Grammatik-Punkt, Hören, Quiz. Erledigtes bleibt spielbar." },
+    { screen: "vocab", sel: "#cta-power", title: "Freies Training",
+      text: "So viel du willst: Power-Training, 13 Modi, Themen, Blitz. Alles zahlt auf dein SRS ein." },
+    { screen: "grammar", sel: "#reading-block", title: "Grammatik & Lesen",
+      text: "Regeln verstehen und Silben zu Wörtern verschmelzen – hier wird aus Erkennen echtes Lesen." },
+    { screen: "home", sel: "#stats-row", title: "Ehrlicher Fortschritt",
+      text: "Tippe auf deine Statistik für den vollen Fortschritt. „Gemeistert“ heißt: aktiv abgerufen – und du kannst jederzeit dein Veto einlegen." }
   ];
 
-  /** Tour-Folie idx rendern; nach der letzten (oder per Ueberspringen) fertig. */
+  /** Tour-Schritt idx rendern: echten Screen zeigen, Spotlight aufs Ziel-Element
+   *  (fehlt es, zentrierte Karte). Immer skippbar (Button + Escape). */
   function renderTour(idx) {
     cleanupSession();
-    document.body.classList.add("in-session");
     idx = idx || 0;
+    // Defensiv: kein zweites Overlay stapeln.
+    var oldDim = document.querySelector(".tour-dim");
+    if (oldDim) oldDim.remove();
     // Tour gilt beim START als gesehen (idempotent): wer neu ist und die Tour
     // mittendrin verlaesst, bekommt spaeter NICHT den Bestandsnutzer-Hinweis.
     if (!state.profile.tourSeen) { state.profile.tourSeen = true; saveState(); }
-    var slide = TOUR_SLIDES[idx];
-    if (!slide) return finishTour();
-    var app = $("#app");
-    app.innerHTML = "";
-    var wrap = el("div", "onb tour");
-    wrap.appendChild(el("div", "onb-step", "Einführung · " + (idx + 1) + "/" + TOUR_SLIDES.length));
-    wrap.appendChild(el("div", "onb-logo", slide.emoji));
-    wrap.appendChild(el("div", "onb-title small", slide.title));
-    wrap.appendChild(el("div", "onb-sub", slide.text));
-    wrap.appendChild(btn(idx + 1 < TOUR_SLIDES.length ? "Weiter →" : "Los geht’s 🚀", "btn primary big",
-      function () { renderTour(idx + 1); }));
-    wrap.appendChild(btn("Überspringen", "btn ghost", finishTour));
-    app.appendChild(wrap);
+    var step = TOUR_STEPS[idx];
+    if (!step) return finishTour();
+    tourDemo = true;
+    showScreen(step.screen); // echten Screen rendern (Nav bleibt sichtbar)
+    setTourKeys();
+    // Overlay nach dem Rendern aufsetzen (Ziel-Element messen).
+    var target = step.sel ? document.querySelector(step.sel) : null;
+    var dim = el("div", "tour-dim");
+    if (target) {
+      var r = target.getBoundingClientRect();
+      var spot = el("div", "tour-spot");
+      spot.style.top = (r.top - 6) + "px";
+      spot.style.left = (r.left - 6) + "px";
+      spot.style.width = (r.width + 12) + "px";
+      spot.style.height = (r.height + 12) + "px";
+      dim.appendChild(spot);
+    }
+    var card = el("div", "tour-card" + (target ? "" : " centered"));
+    card.appendChild(el("div", "onb-step", "Einführung · " + (idx + 1) + "/" + TOUR_STEPS.length));
+    card.appendChild(el("div", "onb-title small", step.title));
+    card.appendChild(el("div", "onb-sub", step.text));
+    if (step.demo) buildTourDemo(card);
+    var actions = el("div", "overlay-actions");
+    actions.appendChild(btn(idx + 1 < TOUR_STEPS.length ? "Weiter →" : "Los geht’s 🚀", "btn primary big", function () {
+      dim.remove();
+      renderTour(idx + 1);
+    }));
+    actions.appendChild(btn("Überspringen", "btn ghost big", function () {
+      dim.remove();
+      finishTour();
+    }));
+    card.appendChild(actions);
+    dim.appendChild(card);
+    if (target && card.classList.contains("centered") === false) {
+      // Karte unter/ueber dem Spot positionieren (einfach: unteres Drittel vs. oberes).
+      var below = (target.getBoundingClientRect().top < window.innerHeight / 2);
+      card.style.top = below ? "auto" : "12px";
+      card.style.bottom = below ? "12px" : "auto";
+    }
+    document.body.appendChild(dim);
     window.scrollTo(0, 0);
   }
 
+  /** Demo-Frage: echte MC-Bedienung, verbucht via tourDemo-Flag nichts. */
+  function buildTourDemo(card) {
+    var item = itemById("shalom") || CONTENT.items[0];
+    var q = el("div", "card learn-card");
+    var he = el("div", "he-text big", item.niqqud || item.he);
+    he.dir = "rtl"; he.lang = "he";
+    q.appendChild(he);
+    card.appendChild(q);
+    var opts = shuffle([item].concat(pickDistractors(item, 3)));
+    var list = el("div", "opt-list");
+    var done = false;
+    activeCorrectLabel = item.de;
+    opts.forEach(function (o) {
+      var b = el("button", "opt", o.de);
+      b.addEventListener("click", function () {
+        if (done) return;
+        done = true;
+        var correct = o.id === item.id;
+        list.querySelectorAll(".opt").forEach(function (x) { x.disabled = true; x.classList.add("dim"); });
+        b.classList.remove("dim");
+        b.classList.add(correct ? "correct" : "wrong");
+        recordAnswer(item.id, "mc", correct ? "good" : "again", "he2de"); // no-op im Demo-Modus
+        say(item);
+        // Gold-Moment inkl. Veto ZEIGEN (nur Demo-Toast, kein State):
+        toast("🏅 So sieht’s aus, wenn ein Wort sitzt · tippen wäre dein Veto", "gold", function () {
+          toast("Genau so nimmst du ein Wort zurück. 💪");
+        });
+      });
+      list.appendChild(b);
+    });
+    card.appendChild(list);
+  }
+
   function finishTour() {
+    tourDemo = false;
+    clearTourKeys();
     state.profile.tourSeen = true;
     saveState();
+    var dim = document.querySelector(".tour-dim");
+    if (dim) dim.remove();
     document.body.classList.remove("in-session");
     showScreen("home");
   }
@@ -4320,9 +5116,9 @@
     saveState();
     var o = buildOverlay("✨ Neu: kurze Einführung");
     o.box.appendChild(el("div", "overlay-text",
-      "Tacheles hat einiges dazugelernt: Heute-Häppchen, ehrlichere Mastery, Vokabelliste, " +
-      "Feedback und mehr. Eine kurze Einführung zeigt dir alles. Du findest sie jederzeit " +
-      "im Profil unter „Einführung ansehen“."));
+      "Tacheles hat jetzt einen richtigen Kurs, Wissens-Häppchen und einen Lese-Trainer. " +
+      "Eine kurze interaktive Tour zeigt dir alles an Ort und Stelle. Du findest sie " +
+      "jederzeit im Profil unter „Einführung ansehen“."));
     var actions = el("div", "overlay-actions");
     actions.appendChild(btn("Ansehen", "btn primary big", function () {
       o.close();
@@ -4550,7 +5346,9 @@
   function moduleStepNext() {
     if (!session) return;
     session.stepIdx++;
-    renderModuleStep();
+    // Lektions-Player: Resume-Zeiger nach jedem Schritt sichern.
+    if (session.mode === "lesson" && session.lesson) setLessonStep(session.lesson.id, session.stepIdx);
+    renderSession(); // verzweigt nach mode (module -> renderModuleStep, lesson -> renderLessonStep)
   }
 
   function renderModuleStep() {
@@ -4564,6 +5362,10 @@
       // Zaehler schreiben.
       if (moduleById(s.module.id)) {
         state.gamification.counters.modulesDone[s.module.id] = true;
+        saveState();
+      }
+      if (s.snackId) {
+        state.course.snacksSeen[s.snackId] = true; // Rotation: als gesehen markieren
         saveState();
       }
       return endSession();
@@ -4891,6 +5693,309 @@
   }
 
   /* ==========================================================
+   * 16b. Lektions-Player (Modus "lesson", 8-Schritt-Bogen, Resume)
+   *
+   * Der Kurs orchestriert die vorhandenen Aufgaben-Renderer: eine Lektion
+   * wird zu einer FLACHEN Schrittliste (Bogen) gebaut, jeder Schritt traegt
+   * `arc` (Index in LESSON_ARCS) fuer die sichtbare Phasen-Beschriftung.
+   * Fortschritt/Weiter laeuft ueber moduleStepNext (persistiert den Schritt).
+   * ========================================================== */
+
+  var LESSON_ARCS = ["Aufwärmen ↺", "Szene 🎬", "Neue Wörter ✨", "Grammatik 🧠", "Lesen 👓", "Hören 👂", "Quiz 🏁"];
+
+  /** Baut den Bogen einer Lektion als flache Schrittliste. Defensiv gegen
+   *  fehlende Refs: fehlt etwas, wird die Phase uebersprungen (nie crashen). */
+  function buildLessonSteps(lesson) {
+    var steps = [];
+    var idx = lessonIndex(lesson.id);
+    var now = Date.now();
+    // 1. Aufwaermen: 2-3 Abrufaufgaben aus FRUEHEREN Lektionen, faellige SRS zuerst.
+    //    Fuer die erste Lektion / ohne frueher Gelerntes: entfaellt.
+    if (COURSE && idx > 0) {
+      var earlier = [];
+      for (var i = 0; i < idx; i++) earlier = earlier.concat(COURSE.lessons[i].newItemIds || []);
+      var pool = earlier.map(itemById).filter(function (it) { return it && !isNew(it.id); });
+      var due = pool.filter(function (it) { return isDue(it.id, now); });
+      var rest = pool.filter(function (it) { return !isDue(it.id, now); });
+      var warm = shuffle(due.slice()).concat(shuffle(rest.slice())).slice(0, 3);
+      warm.forEach(function (it, w) {
+        steps.push({ arc: 0, type: "task", item: it, kind: "mc", dir: w % 2 === 0 ? "he2de" : "de2he" });
+      });
+    }
+    // 2. Szene: Dialog-/Inline-Zeilen mit Audio + 1 Verstaendnisfrage.
+    var lines = null;
+    if (lesson.scene && lesson.scene.dialogueId) {
+      var d = null;
+      (CONTENT.dialogues || []).forEach(function (x) { if (x.id === lesson.scene.dialogueId) d = x; });
+      if (d) lines = d.lines;
+    } else if (lesson.scene && lesson.scene.lines) {
+      lines = lesson.scene.lines;
+    }
+    if (lines && lines.length >= 2) {
+      steps.push({ arc: 1, type: "scene", lines: lines });
+      steps.push({ arc: 1, type: "sceneQuiz", lines: lines });
+    }
+    // 3. Neue Woerter: teach-Karten (markieren introducedThisSession -> Erstkontakt).
+    (lesson.newItemIds || []).forEach(function (id) {
+      if (itemById(id)) steps.push({ arc: 2, type: "teach", itemId: id });
+    });
+    // 4. Grammatik: referenzierte Modul-Schritte oder inline (grammar.js-Schema).
+    if (lesson.grammar) {
+      var gsteps = [];
+      if (lesson.grammar.moduleId) {
+        var gm = moduleById(lesson.grammar.moduleId);
+        if (gm) (lesson.grammar.steps || []).forEach(function (ix) { if (gm.steps[ix]) gsteps.push(gm.steps[ix]); });
+      } else if (lesson.grammar.inline) {
+        gsteps = lesson.grammar.inline;
+      }
+      gsteps.forEach(function (g) { if (g && g.type) steps.push({ arc: 3, type: g.type, gstep: g }); });
+    }
+    // 5. Lesen: Drill-Aufgaben inline (nur fruehe Lektionen).
+    if (lesson.reading && READING) {
+      var drill = null;
+      READING.drills.forEach(function (dd) { if (dd.id === lesson.reading.drill) drill = dd; });
+      if (drill) buildDrillTasks(drill).forEach(function (t) { steps.push({ arc: 4, type: "drill", task: t }); });
+    }
+    // 6. Hoeren: 2-3 audio2de ueber die Lektionswoerter (nur Ohr).
+    if (lesson.listening !== false) {
+      shuffle((lesson.newItemIds || []).slice()).slice(0, 3).forEach(function (id) {
+        var it = itemById(id);
+        if (it) steps.push({ arc: 5, type: "task", item: it, kind: "mc", dir: "audio2de" });
+      });
+    }
+    // 7. Quiz: dynamisch NUR ueber diese Lektion; Erkennen + Produzieren im Wechsel.
+    var quizItems = shuffle((lesson.newItemIds || []).map(itemById).filter(Boolean));
+    quizItems.forEach(function (it, q) {
+      var dir = ["he2de", "de2he"][q % 2];
+      if (it.type === "sentence" && it.tokens && it.tokens.length >= 2 && q % 3 === 2) {
+        steps.push({ arc: 6, type: "task", item: it, kind: "build", dir: null });
+      } else {
+        steps.push({ arc: 6, type: "task", item: it, kind: "mc", dir: dir });
+      }
+      // Jedes 3. Wort zusaetzlich hoeren; Sprechen nur, wenn Mikro da (ueberspringbar).
+      if (q % 3 === 0) steps.push({ arc: 6, type: "task", item: it, kind: "mc", dir: "audio2de" });
+      else if (STT.available() && q % 3 === 1 && it.type !== "letter") {
+        steps.push({ arc: 6, type: "task", item: it, kind: "speak", dir: null });
+      }
+    });
+    return steps;
+  }
+
+  function renderLessonStep() {
+    var s = session;
+    if (!s) return;
+    var step = s.steps[s.stepIdx];
+    if (!step) {
+      markLessonDone(s.lesson.id);
+      return endSession();
+    }
+    setOptKeys(null);
+    var arcLabel = LESSON_ARCS[step.arc] || "";
+    // Sichtbare Phasen-Beschriftung im Session-Titel (mit Lektion + Fortschritt).
+    var title = "🎓 Lektion · " + arcLabel + " · " + (s.stepIdx + 1) + "/" + s.steps.length;
+    // Grammatik-Schritte laufen durch die unveraenderten Modul-Renderer (gstep).
+    if (step.type === "teach") return renderModuleTeach({ type: "teach", itemId: step.itemId }, title);
+    if (step.type === "explain") return renderModuleExplain(step.gstep, title);
+    if (step.type === "cloze") return renderModuleCloze(step.gstep, title);
+    if (step.type === "form") return renderModuleForm(step.gstep, title);
+    if (step.type === "quiz") return renderModuleQuiz(step.gstep, title);
+    if (step.type === "pairquiz") return renderModulePairQuiz(step.gstep, title);
+    if (step.type === "scene") return renderLessonScene(step, title);
+    if (step.type === "sceneQuiz") return renderLessonSceneQuiz(step, title);
+    if (step.type === "drill") return renderLessonDrill(step, title);
+    return renderLessonTask(step, title); // type "task"
+  }
+
+  /** Weiter-Logik der Lesson-Zwischenschritte (wie drillNext, aber moduleStepNext). */
+  function drillNextLesson(body, correct) {
+    if (correct) { later(moduleStepNext, 900); }
+    else {
+      var cont = btn("Weiter", "btn primary big", moduleStepNext);
+      cont.dataset.k = "cont";
+      body.appendChild(cont);
+      cont.focus();
+    }
+  }
+
+  /** Szene 🎬: Zeilen als Chat mit Audio, Weiter-Knopf (kein Abruf, keine XP). */
+  function renderLessonScene(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
+    body.appendChild(el("div", "task-question", "Hör dir die Szene an:"));
+    var chat = el("div", "chat");
+    step.lines.forEach(function (l) { chat.appendChild(dialogueBubble(l)); });
+    body.appendChild(chat);
+    if (state.profile.autoplay && step.lines[0]) sayText(step.lines[0].he);
+    moduleContinueBtn(body);
+  }
+
+  /** Szene-Verstaendnisfrage: 1 MC ueber eine Zeile (deutsche Bedeutung). */
+  function renderLessonSceneQuiz(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    var lines = step.lines;
+    // Verstaendnisfrage nur auf inhaltstragende Zeilen stellen: sehr kurze
+    // Bestaetigungen (< 3 Woerter, z. B. "כן, נכון" / "באמת?") waeren trivial.
+    var meaty = lines.filter(function (l) { return l.he && l.he.trim().split(/\s+/).length >= 3; });
+    var pool = meaty.length ? meaty : lines;
+    var target = pool[dayHash(session.lesson.id + "|scene") % pool.length];
+    body.appendChild(el("div", "task-question", "Was bedeutet diese Zeile?"));
+    var card = el("div", "card learn-card");
+    var he = el("div", "he-text big", target.he);
+    he.dir = "rtl"; he.lang = "he";
+    card.appendChild(he);
+    card.appendChild(el("div", "translit", target.translit || ""));
+    card.appendChild(btn("🔊", "icon-btn", function () { sayText(target.he); }));
+    body.appendChild(card);
+    var distr = shuffle(lines.filter(function (l) { return l.de !== target.de; })).slice(0, 3);
+    var opts = shuffle([target].concat(distr));
+    drillOptions(body, opts.map(function (o) { return o.de; }), opts.indexOf(target), false, function (correct) {
+      // Dialog-Zeilen koennen ein Item referenzieren -> dann SRS, sonst frei.
+      if (target.itemId && itemById(target.itemId)) recordAnswer(target.itemId, "dialog", correct ? "good" : "again");
+      else recordFreeAnswer("dialog", correct);
+      drillNextLesson(body, correct);
+    });
+  }
+
+  /** Lesen 👓: ein Drill-Task im Bogen; delegiert an den gemeinsamen T6-Renderer. */
+  function renderLessonDrill(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    renderDrillTaskInto(step.task, body, function () { moduleStepNext(); });
+  }
+
+  /** Aufgaben-Schritt (mc/build/speak) auf einem Einzel-Item, Modul-Runner-Stil. */
+  function renderLessonTask(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    var item = step.item;
+    if (!item) return moduleStepNext();
+    if (step.kind === "build" && item.tokens && item.tokens.length >= 2) {
+      return renderLessonBuild(step, body);
+    }
+    if (step.kind === "speak") {
+      // Sprechen im Quiz: optional ueberspringbar (Selbstbewertung, kein Zwang).
+      body.appendChild(el("div", "task-question", "Sag das laut auf Hebräisch:"));
+      var scard = el("div", "card learn-card");
+      scard.appendChild(el("div", "de-prompt", item.de));
+      scard.appendChild(heEl(item, { big: true, showHint: true }));
+      scard.appendChild(speakRow(item, true));
+      body.appendChild(scard);
+      var self = el("div", "self-grade-row");
+      self.appendChild(btn("✓ Konnte ich", "btn", function () {
+        recordAnswer(item.id, "speak", "good");
+        later(moduleStepNext, 700);
+      }));
+      self.appendChild(btn("✗ Noch nicht", "btn ghost", function () {
+        recordAnswer(item.id, "speak", "again");
+        later(moduleStepNext, 500);
+      }));
+      self.appendChild(btn("⏭ Überspringen", "btn ghost", function () { moduleStepNext(); }));
+      body.appendChild(self);
+      return;
+    }
+    // mc (he2de | de2he | audio2de): Distraktoren bevorzugt aus der Lektion.
+    var seenDe = {}, seenHe = {}, distr = [];
+    seenDe[item.de] = true; seenHe[item.he] = true;
+    var lessonDistr = (session.lesson.newItemIds || []).map(itemById)
+      .filter(function (x) { return x && x.id !== item.id; });
+    shuffle(lessonDistr.slice()).forEach(function (x) {
+      if (distr.length >= 3 || seenDe[x.de] || seenHe[x.he]) return;
+      seenDe[x.de] = true; seenHe[x.he] = true; distr.push(x);
+    });
+    pickDistractors(item, 3).forEach(function (x) {
+      if (distr.length >= 3 || seenDe[x.de] || seenHe[x.he]) return;
+      seenDe[x.de] = true; seenHe[x.he] = true; distr.push(x);
+    });
+    var card = el("div", "card learn-card");
+    if (step.dir === "he2de") {
+      body.appendChild(el("div", "task-question", "Was bedeutet das?"));
+      card.appendChild(heEl(item, { big: true, showHint: true, quiz: true }));
+      card.appendChild(speakRow(item));
+    } else if (step.dir === "de2he") {
+      body.appendChild(el("div", "task-question", "Wie heißt das auf Hebräisch?"));
+      card.appendChild(el("div", "de-prompt", item.de));
+      if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
+    } else { // audio2de - nur Ohr
+      body.appendChild(el("div", "task-question", "Was hörst du?"));
+      card.appendChild(btn("🔊", "icon-btn large", function () { say(item); }));
+      say(item);
+    }
+    body.appendChild(card);
+    var isHe = step.dir === "de2he";
+    var opts = shuffle([item].concat(distr));
+    drillOptions(body,
+      opts.map(function (o) { return isHe ? heOptionText(o) : o.de; }),
+      opts.indexOf(item), isHe, function (correct) {
+        recordAnswer(item.id, "mc", correct ? "good" : "again", step.dir);
+        if (step.dir === "audio2de") {
+          var reveal = el("div", "listen-reveal");
+          reveal.appendChild(heEl(item, {}));
+          card.appendChild(reveal);
+        }
+        drillNextLesson(body, correct);
+      });
+  }
+
+  /** Satzbau-Schritt im Quiz: Token-Kacheln wie renderBuild, aber auf step.item
+   *  und mit moduleStepNext statt nextTask. */
+  function renderLessonBuild(step, body) {
+    var item = step.item;
+    body.appendChild(el("div", "task-question", "Baue den Satz:"));
+    var card = el("div", "card learn-card");
+    card.appendChild(el("div", "de-prompt", item.de));
+    if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
+    body.appendChild(card);
+    var answer = el("div", "build-answer");
+    answer.dir = "rtl";
+    body.appendChild(answer);
+    var order = shuffle(item.tokens.map(function (t, i) { return i; }));
+    if (order.length === 2 && order[0] === 0) order = [1, 0];
+    var bank = el("div", "build-bank");
+    bank.dir = "rtl";
+    body.appendChild(bank);
+    var picked = [];
+    var feedback = el("div", "feedback-note");
+    body.appendChild(feedback);
+    function finish() {
+      var built = picked.map(function (i) { return item.tokens[i].he; }).join(" ");
+      var target = item.tokens.map(function (t) { return t.he; }).join(" ");
+      var correct = built === target;
+      answer.classList.add(correct ? "ok" : "no");
+      if (correct) {
+        feedback.textContent = "Richtig! " + item.translit + " · " + item.de;
+        say(item);
+      } else {
+        feedback.textContent = "Richtige Reihenfolge: " + item.translit + " · " + item.de;
+        answer.innerHTML = "";
+        item.tokens.forEach(function (t) { answer.appendChild(el("span", "build-chip done", t.he)); });
+      }
+      recordAnswer(item.id, "build", correct ? "good" : "again");
+      later(moduleStepNext, correct ? 1200 : 2600);
+    }
+    order.forEach(function (tokenIdx) {
+      var t = item.tokens[tokenIdx];
+      var tile = el("button", "build-tile");
+      var he = el("div", "b-he", t.he); he.dir = "rtl"; he.lang = "he";
+      tile.appendChild(he);
+      tile.appendChild(el("div", "b-translit", t.translit));
+      tile.title = t.de;
+      tile.addEventListener("click", function () {
+        if (tile.disabled) return;
+        tile.disabled = true;
+        tile.classList.add("used");
+        picked.push(tokenIdx);
+        answer.appendChild(el("span", "build-chip", t.he));
+        if (picked.length === item.tokens.length) finish();
+      });
+      bank.appendChild(tile);
+    });
+    body.appendChild(btn("↺ Zurücksetzen", "btn ghost", function () {
+      picked = [];
+      answer.innerHTML = "";
+      answer.classList.remove("ok", "no");
+      bank.querySelectorAll(".build-tile").forEach(function (x) { x.disabled = false; x.classList.remove("used"); });
+    }));
+  }
+
+  /* ==========================================================
    * 17. Sync: Merge-Import, Sync-Code (Base64), Import-Overlay
    * ========================================================== */
 
@@ -4980,10 +6085,28 @@
     }).sort(function (x, y) { return x.ts - y.ts; });
     m.feedback.pronIssues = unionObj(a.feedback.pronIssues, b.feedback.pronIssues);
 
+    // course: done per ODER, step max, entry das weitere (Kurs-Reihenfolge),
+    // snacksSeen vereinigt. snackVocab ist Geraete-Einstellung -> lokal (unten).
+    var lids = {};
+    Object.keys(a.course.lessons).forEach(function (k) { lids[k] = 1; });
+    Object.keys(b.course.lessons).forEach(function (k) { lids[k] = 1; });
+    Object.keys(lids).forEach(function (id) {
+      var la = a.course.lessons[id], lb = b.course.lessons[id];
+      m.course.lessons[id] = {
+        done: !!((la && la.done) || (lb && lb.done)),
+        step: Math.max(la ? la.step : 0, lb ? lb.step : 0)
+      };
+    });
+    var ea = a.course.entry, eb = b.course.entry;
+    if (ea && eb) m.course.entry = lessonIndex(eb) > lessonIndex(ea) ? eb : ea;
+    else m.course.entry = ea || eb || null;
+    m.course.snacksSeen = unionObj(a.course.snacksSeen, b.course.snacksSeen);
+
     // profile: lokale Geraete-Einstellungen behalten, Fortschritts-Flags verschmelzen
     m.profile.dailyGoalMin = a.profile.dailyGoalMin;
     m.profile.fadeMode = a.profile.fadeMode;
     m.profile.autoplay = a.profile.autoplay;
+    m.profile.snackVocab = a.profile.snackVocab; // Geraete-Einstellung wie autoplay
     m.profile.micHintDismissed = a.profile.micHintDismissed;
     m.profile.levelCap = a.profile.levelCap;
     m.profile.sttNoticeConfirmed = !!(a.profile.sttNoticeConfirmed || b.profile.sttNoticeConfirmed);
@@ -5187,6 +6310,13 @@
     capUrl: function (base, body, max) { return capUrl(base, body, max); },
     // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
     currentTaskItem: function () {
+      if (session && session.mode === "lesson") {
+        var ls = session.steps[session.stepIdx];
+        if (!ls) return null;
+        if (ls.item) return ls.item.id;
+        if (ls.itemId) return ls.itemId;
+        return (ls.gstep && ls.gstep.itemId) ? ls.gstep.itemId : null;
+      }
       if (!session || !session.tasks) return null;
       var t = session.tasks[session.i];
       return t ? t.item.id : null;
@@ -5201,14 +6331,64 @@
     moduleCurrentCorrect: function () {
       if (!session || !session.steps) return null;
       var st = session.steps[session.stepIdx];
-      if (!st || !Array.isArray(st.options)) return null;
-      var c = st.options.filter(function (o) { return o && o.correct === true; })[0];
+      if (!st) return null;
+      // Lektions-Grammatik: Optionen liegen im gestellten gstep.
+      var opts = Array.isArray(st.options) ? st.options : (st.gstep && Array.isArray(st.gstep.options) ? st.gstep.options : null);
+      if (!opts) return null;
+      var c = opts.filter(function (o) { return o && o.correct === true; })[0];
       return c ? c.he : null;
     },
     // Audio-Schicht (fuer die Regression, ohne echte Dateien anzufassen).
     audioActive: function () { return !!AUDIO; },
     audioUrlFor: function (id) { return audioUrl(itemById(id)); },
-    reloadAudioManifest: function () { AUDIO = null; loadAudioManifest(); }
+    reloadAudioManifest: function () { AUDIO = null; loadAudioManifest(); },
+    // Kurs-Runde: Kurs-/Reading-Hooks fuer die Regression.
+    courseInfo: function () {
+      return {
+        available: courseAvailable(),
+        lessons: COURSE ? COURSE.lessons.length : 0,
+        sections: COURSE ? (COURSE.sections || []).length : 0,
+        entry: state.course.entry
+      };
+    },
+    lessonStateOf: function (id) { return lessonState(id); },
+    dailySnackId: function () { var s = dailySnack(); return s ? s.id : null; },
+    // Lektions-Player (T8): aktuelle Phasen-Beschriftung + Phasen-Komposition.
+    lessonStepLabel: function () {
+      if (!session || session.mode !== "lesson") return null;
+      var st = session.steps[session.stepIdx];
+      return st ? (LESSON_ARCS[st.arc] || "") : null;
+    },
+    lessonArcLabels: function (id) {
+      var l = lessonById(id);
+      if (!l) return null;
+      var seen = {}, out = [];
+      buildLessonSteps(l).forEach(function (s) {
+        var lab = LESSON_ARCS[s.arc];
+        if (lab && !seen[lab]) { seen[lab] = 1; out.push(lab); }
+      });
+      return out;
+    },
+    startLesson: function (id) { return startSession("lesson", { lessonId: id }); },
+    srsReps: function (id) { var e = state.srs[id]; return e ? (e.reps || 0) : 0; },
+    introducedCount: function () {
+      return (session && session.introducedThisSession) ? Object.keys(session.introducedThisSession).length : 0;
+    },
+    // Quereinstieg (T7): Ueberspringbarkeit + empfohlener Einstieg fuer die Regression.
+    lessonSkippable: function (id) { var l = lessonById(id); return l ? lessonSkippable(l) : null; },
+    recommendedEntry: function () { var l = recommendedEntryLesson(); return l ? l.id : null; },
+    syllabify: function (s) { return READING ? READING.syllabify(s) : null; },
+    // Lese-Drill: aktueller Drill + Position + Aufgabentyp (fuer die Regression).
+    readingInfo: function () {
+      if (!session || session.mode !== "reading") return null;
+      var t = session.drillTasks[session.i];
+      return { drillId: session.drill.id, i: session.i, total: session.drillTasks.length, kind: t ? t.kind : null };
+    },
+    // Interaktive Tour (T10): laeuft gerade ein Spotlight-Overlay?
+    tourActive: function () { return !!document.querySelector(".tour-dim"); },
+    // Label der aktuell korrekten Drill-/Szene-/Tour-Demo-Option (kein DOM-Leak,
+    // ersetzt den frueheren data-correct-opt-Testhook).
+    optCorrectLabel: function () { return activeCorrectLabel; }
   };
 
   if (document.readyState === "loading") {

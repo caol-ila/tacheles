@@ -32,6 +32,8 @@ var MIME = {
   ".svg":  "image/svg+xml",
   ".ico":  "image/x-icon",
   ".mp3":  "audio/mpeg",
+  ".opus": "audio/ogg",   // Opus im Ogg-Container (unsere Sprach-Samples)
+  ".m4a":  "audio/mp4",   // AAC-Variante der Samples
   ".md":   "text/plain; charset=utf-8",
   ".webmanifest": "application/manifest+json; charset=utf-8"
 };

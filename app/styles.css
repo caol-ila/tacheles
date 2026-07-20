@@ -71,15 +71,22 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; bo
 }
 .nav-btn {
   flex: 1;
+  min-width: 0;                 /* 5 Tabs muessen auch bei 430px passen */
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 10px 4px 12px;
-  font-size: .72rem;
+  padding: 10px 2px 12px;
+  font-size: .68rem;
   color: var(--muted);
 }
-.nav-ico { font-size: 1.3rem; }
+.nav-btn span:not(.nav-ico) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-ico { font-size: 1.25rem; }
 .nav-btn.active { color: var(--primary); font-weight: 600; }
 
 body.in-session .bottom-nav { display: none; }
@@ -155,6 +162,8 @@ body.in-session .bottom-nav { display: none; }
 .brand-sub { color: var(--muted); font-size: .95rem; margin-top: 2px; }
 
 .stats-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.stats-row.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.stats-row.tappable:active { transform: scale(.99); }
 .stat {
   flex: 1;
   background: var(--card);
@@ -321,6 +330,7 @@ body.in-session .bottom-nav { display: none; }
 .done-review-mark.ok { color: var(--good); }
 .done-review-mark.re { color: var(--accent); }
 .done-review-he { font-family: var(--font-he); font-size: 1.15rem; min-width: 72px; text-align: right; }
+.done-review-tr { font-size: .8rem; color: var(--muted); font-style: italic; min-width: 64px; }
 .done-review-de { flex: 1; font-size: .85rem; color: var(--muted); }
 .icon-btn.small-btn { width: 32px; height: 32px; font-size: .9rem; }
 .done-review-more { font-size: .78rem; color: var(--muted); margin-top: 6px; }
@@ -378,6 +388,13 @@ body.in-session .bottom-nav { display: none; }
 .path-row.next .path-status { background: var(--primary); color: #fff; }
 .path-row.next { border: 2px solid var(--primary); }
 .path-row.todo { opacity: .8; }
+
+/* Kurs-Tab (T7): Lektionszeilen-Zustaende, Einstiegs-Marker, Vorschau-Overlay. */
+.lesson-row.done .path-status { color: var(--good); }
+.lesson-row.locked { opacity: .55; }
+.lesson-row.next { border-color: var(--accent); }
+.entry-tag { font-size: 11px; color: var(--accent); }
+.lesson-preview { max-height: 80vh; overflow-y: auto; }
 .path-next-tag {
   font-size: .68rem; font-weight: 700; color: #fff;
   background: var(--primary); border-radius: 999px; padding: 2px 8px;
@@ -594,6 +611,17 @@ body.in-session .bottom-nav { display: none; }
 
 .feedback-note { text-align: center; font-size: .92rem; color: var(--muted); }
 .listen-reveal { text-align: center; }
+
+/* ---------- Lese-Drills (Silben-Trainer) ---------- */
+
+.syl-card { display: flex; align-items: center; justify-content: center; min-height: 96px; }
+.syl-he { font-size: 64px; font-family: var(--font-he); line-height: 1.2; }
+.blend-row { display: flex; flex-direction: row-reverse; justify-content: center; gap: 4px; font-family: var(--font-he); font-size: 44px; }
+.blend-syl.hidden { visibility: hidden; }
+.blend-syl.current { outline: 2px dashed var(--accent); border-radius: 8px; padding: 0 4px; }
+.blend-syl.read { opacity: .7; }
+.speed-flash { font-size: 44px; font-family: var(--font-he); transition: opacity .3s ease; }
+.speed-flash.gone { opacity: 0; }
 
 /* ---------- Matching ---------- */
 
@@ -865,6 +893,14 @@ body.in-session .bottom-nav { display: none; }
 .module-tile:active { transform: scale(.985); }
 .module-tile.done { border-color: var(--good); }
 .module-tile.locked { opacity: .72; }
+/* "empfohlen fuer dich" (Grammatik-Tab): hervorgehobene Kachel + ▶-Badge. */
+.module-tile.recommended { outline: 2px solid var(--accent); outline-offset: 1px; }
+.recommended .module-title::after { content: " ▶"; color: var(--accent); }
+/* Level-Ueberschrift der Grammatik-Sektionen + Empfehlungs-Hinweis. */
+.gram-band-h { margin-top: 18px; }
+.rec-tag { margin: 2px 0 8px; }
+/* Power-Training-Karte (Vokabeln-Tab): Groessenauswahl umbricht bei Bedarf. */
+.power-card .data-actions { flex-wrap: wrap; }
 .module-emoji { font-size: 1.6rem; flex-shrink: 0; }
 .module-body { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .module-title { font-weight: 700; font-size: .95rem; }
@@ -918,6 +954,17 @@ body.in-session .bottom-nav { display: none; }
   resize: vertical; background: var(--bg); color: var(--ink);
 }
 
+/* ---------- Interaktive Tour (Spotlight) ---------- */
+
+.tour-dim { position: fixed; inset: 0; z-index: 60; background: rgba(10, 25, 30, .55); }
+.tour-spot { position: absolute; border-radius: 14px; background: transparent;
+  box-shadow: 0 0 0 9999px rgba(10, 25, 30, .55); }
+.tour-dim:has(.tour-spot) { background: transparent; } /* Cutout: Spot dunkelt, Dim nicht doppelt */
+.tour-card { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 61;
+  background: var(--card, #fff); border-radius: 16px; padding: 16px; max-height: 70vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.tour-card.centered { top: 50%; bottom: auto; transform: translateY(-50%); }
+
 /* ---------- Reduzierte Bewegung ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -942,6 +989,8 @@ body.in-session .bottom-nav { display: none; }
 
 /* Heute-Block (Home) */
 .today-card { border: 2px solid var(--primary, #177e89); }
+/* Wissens-Haeppchen des Tages: Emoji + Titel + Start-Knopf in einer Zeile. */
+.snack-card { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; }
 .today-tiles { display: flex; gap: 10px; margin: 10px 0 12px; }
 .today-tile { flex: 1; background: rgba(23, 126, 137, .06); border: 1px solid var(--line); border-radius: 12px; padding: 10px; cursor: pointer; text-align: center; position: relative; }
 .today-label { font-size: .75rem; color: var(--muted); margin-bottom: 4px; }

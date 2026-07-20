@@ -7,8 +7,13 @@
  *   - Content-Items:       key = item.id            (lesbarer Dateiname)
  *   - Dialogzeilen:        key = "h_" + hash(he)    (Text-Hash, keine stabile ID)
  *   - Grammatik-Beispiele: key = "h_" + hash(he)
+ *   - Lese-Silben:         key = "h_" + hash(he)    (READING.syllables[].he, Band A0)
+ *   - Snack-Beispiele:     key = "h_" + hash(he)    (explain.examples[].he, Snack-Band)
+ *   - Inline-Szenen-Zeilen key = "h_" + hash(he)    (lesson.scene.lines[].he, Lektions-Band)
  * Vertonter Text: Items -> niqqud (Vokale!), Buchstaben -> Name (speak);
- *                 Dialog/Grammatik -> he wie hinterlegt.
+ *                 Dialog/Grammatik/Silben/Snacks/Szenen -> he wie hinterlegt
+ *                 (genau der String, den sayText(he) in app.js hasht).
+ * Szenen mit dialogueId sind ueber die Dialog-Enumeration bereits vertont.
  */
 "use strict";
 
@@ -33,21 +38,40 @@ function voicedItemText(item) {
   return item.niqqud || item.he;
 }
 
-/** content.js (+grammar.js) laden - gleiches Muster wie Test-/Zaehl-Skripte. */
+/** content.js (+grammar.js/course.js/snacks.js/reading.js) laden - gleiches
+ *  Muster wie Test-/Zaehl-Skripte. Zusatz-Globals sind optional (fehlend ok). */
 function loadContent(appDir) {
   global.window = global.window || {};
   var dir = path.resolve(appDir); // absolut aufloesen: require(relativ) waere sonst modulrelativ
   require(path.join(dir, "content.js"));
   try { require(path.join(dir, "grammar.js")); } catch (e) { /* Grammatik optional */ }
-  return { CONTENT: global.window.TACHELES_CONTENT, GRAMMAR: global.window.TACHELES_GRAMMAR || null };
+  try { require(path.join(dir, "course.js")); } catch (e) { /* Kurs optional */ }
+  try { require(path.join(dir, "snacks.js")); } catch (e) { /* Snacks optional */ }
+  try { require(path.join(dir, "reading.js")); } catch (e) { /* Lese-Trainer optional */ }
+  return {
+    CONTENT: global.window.TACHELES_CONTENT,
+    GRAMMAR: global.window.TACHELES_GRAMMAR || null,
+    COURSE: global.window.TACHELES_COURSE || null,
+    SNACKS: global.window.TACHELES_SNACKS || null,
+    READING: global.window.TACHELES_READING || null
+  };
 }
 
 /**
  * Alle vertonbaren Ziele als Liste { key, text, band, kind }.
  * Dedupliziert nach key; bei Mehrfach-Vorkommen gewinnt das niedrigste Band
  * (damit ein Clip beim fruehesten Bedarf vorgeladen wird).
+ *
+ * COURSE/SNACKS/READING sind optional; werden sie nicht uebergeben, greift ein
+ * Fallback auf die von loadContent() gesetzten global.window-Globals, damit
+ * bestehende Aufrufer (enumerateTargets(CONTENT, GRAMMAR)) die neuen Ziele
+ * automatisch mitnehmen. Fehlt ein Global, wird die Gruppe uebersprungen.
  */
-function enumerateTargets(CONTENT, GRAMMAR) {
+function enumerateTargets(CONTENT, GRAMMAR, COURSE, SNACKS, READING) {
+  const W = (typeof global !== "undefined" && global.window) ? global.window : {};
+  if (COURSE === undefined) COURSE = W.TACHELES_COURSE || null;
+  if (SNACKS === undefined) SNACKS = W.TACHELES_SNACKS || null;
+  if (READING === undefined) READING = W.TACHELES_READING || null;
   const themeBand = {};
   CONTENT.themes.forEach(t => { themeBand[t.id] = t.band || "A0"; });
   const seen = new Map();
@@ -70,6 +94,25 @@ function enumerateTargets(CONTENT, GRAMMAR) {
     (m.steps || []).forEach(s => {
       (s.examples || []).forEach(e => { if (e.he) add("h_" + audioHash(e.he), e.he, b, "grammar"); });
     });
+  });
+  // Lese-Silben: gehoeren zu den fruehesten Lektionen -> Band A0.
+  // speak-Override (lautgleicher Ersatz) nur fuer den VORGELESENEN Text;
+  // der Key bleibt der Hash des Original-he (wie sayText ihn sucht).
+  (READING ? READING.syllables || [] : []).forEach(syl => {
+    if (syl && syl.he) add("h_" + audioHash(syl.he), syl.speak || syl.he, "A0", "syllable");
+  });
+  // Snack-Beispiele: jedes explain.examples[].he, Band = Snack-Band.
+  (SNACKS ? SNACKS.snacks || [] : []).forEach(sn => {
+    const b = sn.band || "A0";
+    (sn.steps || []).forEach(s => {
+      (s.examples || []).forEach(e => { if (e && e.he) add("h_" + audioHash(e.he), e.he, b, "snack"); });
+    });
+  });
+  // Inline-Szenen-Zeilen: nur scene.lines (dialogueId ist ueber Dialoge vertont).
+  (COURSE ? COURSE.lessons || [] : []).forEach(l => {
+    if (!l || !l.scene || !Array.isArray(l.scene.lines)) return;
+    const b = l.band || "A0";
+    l.scene.lines.forEach(line => { if (line && line.he) add("h_" + audioHash(line.he), line.he, b, "scene"); });
   });
   return Array.from(seen.values());
 }

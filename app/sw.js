@@ -11,14 +11,17 @@
  */
 "use strict";
 
-var CACHE_NAME = "tacheles-v13";
-var AUDIO_CACHE = "tacheles-audio-v1";
+var CACHE_NAME = "tacheles-v14";
+var AUDIO_CACHE = "tacheles-audio-v2"; // v2: Neuladen nach Server-MIME-Fix (audio/ogg)
 var ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./content.js",
   "./grammar.js",
+  "./course.js",
+  "./snacks.js",
+  "./reading.js",
   "./app.js",
   "./audio/manifest.js",
   "./manifest.webmanifest",

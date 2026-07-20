@@ -11,6 +11,26 @@ echten Content-Kern. Erst Wirkung, dann Breite.
 
 Alles darüber (Reels, Dialog, Sprechen, Audio-Kurs, Ligen) ist Ausbau.
 
+## Umsetzungsstand (2026-07-20, nach Kurs-Runde)
+
+Der guided Kurs-Spine ist gebaut und getestet (Voll-Suite 178 Checks grün, drei Content-Validatoren
+PASS, Audio 1174/1174):
+
+- **Kurs-Curriculum A0–C2:** 109 Lektionen in 19 Sektionen (`app/course.js`); jedes der ~673
+  Content-Items ist genau einer Lektion zugeordnet. Der Kurs orchestriert das vorhandene SRS,
+  er ersetzt es nicht: lineare Freischaltung, Quereinstieg (ab ~60 % gemeistert, mit Empfehlung).
+- **Lektions-Player:** Session-Modus mit 8-Schritt-Bogen (Aufwärmen, Szene, neue Wörter, Grammatik,
+  Lesen, Hören, Quiz) und Resume auf den zuletzt offenen Schritt.
+- **Lese-Trainer:** Silben-Inventar + Silbifizierer + Drills (hearPick/readPick/blend/speed) in
+  `app/reading.js`, als Block auf der Grammatik-Seite und in frühen A0-Lektionen; plus freier Trainer.
+- **Wissens-Häppchen:** 41 Sprach-/Kultur-Snacks (`app/snacks.js`), Tages-Rotation im „Heute"-Block
+  (Ungesehenes zuerst), optionaler Anhang fälliger Vokabeln (`profile.snackVocab`).
+- **Navigation & Tour:** 5-Tab-Nav (Home/Lernen=Kurs/Vokabeln/Grammatik/Profil), Fortschritt über
+  den Statistik-Tipp; interaktive Spotlight-Tour ersetzt die alte Slideshow.
+- **Bewusst offen (unverändert):** Cloud-Sync (Supabase), echte Muttersprachler-Aufnahmen,
+  muttersprachliches Review von Niqqud/Dialogen (nun inkl. Snack-Texten und Silben), Ligen,
+  Expo/Android-Native.
+
 ## Umsetzungsstand (2026-07-13, nach C2/Grammatik-Runde)
 
 Das Web-MVP+ in [`../app`](../app/README.md) ist gebaut, getestet und übertrifft den
