@@ -4,137 +4,137 @@
   "clips": {
     "let_shin": {
       "band": "A0",
-      "bytes": 2395,
+      "bytes": 2012,
       "kind": "item"
     },
     "let_lamed": {
       "band": "A0",
-      "bytes": 2204,
+      "bytes": 2163,
       "kind": "item"
     },
     "let_vav": {
       "band": "A0",
-      "bytes": 1819,
+      "bytes": 1974,
       "kind": "item"
     },
     "let_mem": {
       "band": "A0",
-      "bytes": 1933,
+      "bytes": 1754,
       "kind": "item"
     },
     "let_mem_s": {
       "band": "A0",
-      "bytes": 3039,
+      "bytes": 3146,
       "kind": "item"
     },
     "let_tav": {
       "band": "A0",
-      "bytes": 1476,
+      "bytes": 1605,
       "kind": "item"
     },
     "let_dalet": {
       "band": "A0",
-      "bytes": 2133,
+      "bytes": 2697,
       "kind": "item"
     },
     "let_he": {
       "band": "A0",
-      "bytes": 1472,
+      "bytes": 1833,
       "kind": "item"
     },
     "let_alef": {
       "band": "A0",
-      "bytes": 2158,
+      "bytes": 1992,
       "kind": "item"
     },
     "let_kaf": {
       "band": "A0",
-      "bytes": 1945,
+      "bytes": 2144,
       "kind": "item"
     },
     "let_nun": {
       "band": "A0",
-      "bytes": 1726,
+      "bytes": 2045,
       "kind": "item"
     },
     "let_nun_s": {
       "band": "A0",
-      "bytes": 3111,
+      "bytes": 3295,
       "kind": "item"
     },
     "let_bet": {
       "band": "A0",
-      "bytes": 2431,
+      "bytes": 1998,
       "kind": "item"
     },
     "let_qof": {
       "band": "A0",
-      "bytes": 1761,
+      "bytes": 2220,
       "kind": "item"
     },
     "let_yod": {
       "band": "A0",
-      "bytes": 1780,
+      "bytes": 2280,
       "kind": "item"
     },
     "let_resh": {
       "band": "A0",
-      "bytes": 2331,
+      "bytes": 2472,
       "kind": "item"
     },
     "let_ayin": {
       "band": "A0",
-      "bytes": 2056,
+      "bytes": 1924,
       "kind": "item"
     },
     "let_chet": {
       "band": "A0",
-      "bytes": 2124,
+      "bytes": 2163,
       "kind": "item"
     },
     "let_pe": {
       "band": "A0",
-      "bytes": 2742,
+      "bytes": 1628,
       "kind": "item"
     },
     "let_tet": {
       "band": "A0",
-      "bytes": 1943,
+      "bytes": 1863,
       "kind": "item"
     },
     "let_zayin": {
       "band": "A0",
-      "bytes": 2227,
+      "bytes": 1982,
       "kind": "item"
     },
     "let_gimel": {
       "band": "A0",
-      "bytes": 1983,
+      "bytes": 2256,
       "kind": "item"
     },
     "let_tsadi": {
       "band": "A0",
-      "bytes": 1982,
+      "bytes": 1975,
       "kind": "item"
     },
     "let_samech": {
       "band": "A0",
-      "bytes": 2272,
+      "bytes": 2261,
       "kind": "item"
     },
     "let_kaf_s": {
       "band": "A0",
-      "bytes": 3202,
+      "bytes": 3498,
       "kind": "item"
     },
     "let_pe_s": {
       "band": "A0",
-      "bytes": 3175,
+      "bytes": 3032,
       "kind": "item"
     },
     "let_tsadi_s": {
       "band": "A0",
-      "bytes": 3153,
+      "bytes": 3017,
       "kind": "item"
     },
     "shalom": {
