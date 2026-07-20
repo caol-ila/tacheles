@@ -62,8 +62,8 @@ window.TACHELES_COURSE = {
     },
     {
       id: "sec_a1_feinschliff",
-      title: "Feinschliff",
-      emoji: "🔗",
+      title: "Farben & Feinschliff",
+      emoji: "🎨",
       band: "A1"
     },
     {
@@ -143,9 +143,7 @@ window.TACHELES_COURSE = {
       newItemIds: ["shalom", "ken", "lo", "toda", "bevakasha", "slicha"],
       scene: null,
       grammar: null,
-      reading: {
-        drill: "drill_a0_05"
-      },
+      reading: null,
       listening: true
     },
     {
@@ -172,9 +170,7 @@ window.TACHELES_COURSE = {
       newItemIds: ["laila_tov", "ma_shlomcha", "ma_shlomech", "lo_mevin", "lo_mevina", "efshar"],
       scene: null,
       grammar: null,
-      reading: {
-        drill: "drill_a0_06"
-      },
+      reading: null,
       listening: true
     },
     {
@@ -234,7 +230,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_genus",
-        steps: [3, 4, 5]
+        steps: [5, 6, 7]
       },
       reading: null,
       listening: true
@@ -245,7 +241,7 @@ window.TACHELES_COURSE = {
       title: "Die ersten Buchstaben",
       emoji: "🔤",
       band: "A0",
-      newItemIds: ["let_lamed", "let_shin", "let_vav", "let_mem", "let_mem_s", "let_tav", "let_alef"],
+      newItemIds: ["let_lamed", "let_shin", "let_bet", "let_mem", "let_mem_s", "let_tav", "let_alef"],
       scene: null,
       grammar: null,
       reading: {
@@ -259,7 +255,7 @@ window.TACHELES_COURSE = {
       title: "Mehr Buchstaben",
       emoji: "🔡",
       band: "A0",
-      newItemIds: ["let_dalet", "let_he", "let_kaf", "let_nun", "let_nun_s", "let_bet", "let_qof"],
+      newItemIds: ["let_dalet", "let_he", "let_kaf", "let_nun", "let_nun_s", "let_vav", "let_qof"],
       scene: null,
       grammar: null,
       reading: {
@@ -304,13 +300,12 @@ window.TACHELES_COURSE = {
       title: "Zählen bis sechs",
       emoji: "🔢",
       band: "A0",
-      newItemIds: ["achat", "shtayim", "arba", "shalosh", "chamesh", "shesh"],
+      newItemIds: ["achat", "shtayim", "shalosh", "arba", "chamesh", "shesh"],
       scene: null,
-      grammar: {
-        moduleId: "mod_gram_pronomen",
-        steps: [6, 7, 8]
+      grammar: null,
+      reading: {
+        drill: "drill_a0_05"
       },
-      reading: null,
       listening: true
     },
     {
@@ -319,11 +314,11 @@ window.TACHELES_COURSE = {
       title: "Zählen bis zehn",
       emoji: "🔟",
       band: "A0",
-      newItemIds: ["sheva", "shmone", "eser", "tesha", "efes"],
+      newItemIds: ["efes", "sheva", "shmone", "tesha", "eser"],
       scene: null,
       grammar: {
         moduleId: "mod_gram_genus",
-        steps: [6, 7]
+        steps: [3, 4]
       },
       reading: null,
       listening: true
@@ -341,7 +336,7 @@ window.TACHELES_COURSE = {
         steps: [5, 6]
       },
       reading: {
-        drill: "drill_a0_07"
+        drill: "drill_a0_06"
       },
       listening: true
     },
@@ -361,7 +356,7 @@ window.TACHELES_COURSE = {
       id: "l_a0_16",
       section: "sec_a0_unterwegs",
       title: "Schilder im Alltag",
-      emoji: "🈲",
+      emoji: "🅿️",
       band: "A0",
       newItemIds: ["chanaya", "kupa", "mivtsa", "kasher", "panui", "tafus"],
       scene: null,
@@ -380,9 +375,7 @@ window.TACHELES_COURSE = {
         dialogueId: "way"
       },
       grammar: null,
-      reading: {
-        drill: "drill_a0_08"
-      },
+      reading: null,
       listening: true
     },
     {
@@ -394,7 +387,9 @@ window.TACHELES_COURSE = {
       newItemIds: ["karov", "rachok", "s_eifo_sher", "s_yesh_po", "s_rachok_po"],
       scene: null,
       grammar: null,
-      reading: null,
+      reading: {
+        drill: "drill_a0_07"
+      },
       listening: true
     },
     {
@@ -405,8 +400,13 @@ window.TACHELES_COURSE = {
       band: "A0",
       newItemIds: ["ma", "eifo", "mi", "kama", "matai", "s_ma_ze"],
       scene: null,
-      grammar: null,
-      reading: null,
+      grammar: {
+        moduleId: "mod_gram_fragen",
+        steps: [0, 1, 2]
+      },
+      reading: {
+        drill: "drill_a0_08"
+      },
       listening: true
     },
     {
@@ -467,7 +467,7 @@ window.TACHELES_COURSE = {
       title: "Die Wochentage",
       emoji: "📅",
       band: "A0",
-      newItemIds: ["yom_rishon", "yom_sheni", "yom_shishi", "yom_chamishi", "yom_revii", "yom_shlishi"],
+      newItemIds: ["yom_rishon", "yom_sheni", "yom_shlishi", "yom_revii", "yom_chamishi", "yom_shishi"],
       scene: null,
       grammar: null,
       reading: null,
@@ -483,7 +483,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_praesens",
-        steps: [0, 1, 2]
+        steps: [0, 1, 3]
       },
       reading: null,
       listening: true
@@ -510,7 +510,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_praesens",
-        steps: [3, 4, 5]
+        steps: [4, 6, 7]
       },
       reading: null,
       listening: true
@@ -606,7 +606,10 @@ window.TACHELES_COURSE = {
       band: "A1",
       newItemIds: ["mishpacha", "yalda", "yeled", "ach", "achot", "s_ima_aba"],
       scene: null,
-      grammar: null,
+      grammar: {
+        moduleId: "mod_gram_pronomen",
+        steps: [6, 7, 8]
+      },
       reading: null,
       listening: true
     },
@@ -620,7 +623,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_praesens",
-        steps: [6, 7, 8]
+        steps: [2, 5, 8]
       },
       reading: null,
       listening: true
@@ -635,7 +638,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_fragen",
-        steps: [0, 1, 2]
+        steps: [3, 4]
       },
       reading: null,
       listening: true
@@ -663,7 +666,7 @@ window.TACHELES_COURSE = {
       title: "Reisen & Tickets",
       emoji: "🎫",
       band: "A1",
-      newItemIds: ["yam", "chof", "ir", "kartis", "sde_teufa", "s_eifo_tach"],
+      newItemIds: ["yam", "chof", "ir", "kartis", "sde_teufa", "s_eifo_tach", "s_yesh_kartis", "s_eifo_chof"],
       scene: {
         dialogueId: "hotel"
       },
@@ -674,14 +677,14 @@ window.TACHELES_COURSE = {
     {
       id: "l_a1_15",
       section: "sec_a1_unterwegs2",
-      title: "Am Ziel & Notruf",
+      title: "Hilfe rufen",
       emoji: "🆘",
       band: "A1",
-      newItemIds: ["s_yesh_kartis", "s_eifo_chof", "s_monit_po", "ezra", "rofe", "beit_cholim"],
+      newItemIds: ["ezra", "hatsilu", "mishtara", "s_monit_po", "beit_cholim"],
       scene: null,
       grammar: {
         moduleId: "mod_gram_fragen",
-        steps: [3, 4, 5]
+        steps: [5, 6]
       },
       reading: null,
       listening: true
@@ -692,7 +695,7 @@ window.TACHELES_COURSE = {
       title: "Beim Arzt",
       emoji: "🚑",
       band: "A1",
-      newItemIds: ["koev", "mishtara", "beit_mirkachat", "chole", "hatsilu", "trufa"],
+      newItemIds: ["koev", "rofe", "trufa", "beit_mirkachat", "chole"],
       scene: {
         dialogueId: "pharmacy"
       },
@@ -702,7 +705,7 @@ window.TACHELES_COURSE = {
     },
     {
       id: "l_a1_17",
-      section: "sec_a1_unterwegs2",
+      section: "sec_a1_feinschliff",
       title: "Farben",
       emoji: "🎨",
       band: "A1",
@@ -717,7 +720,7 @@ window.TACHELES_COURSE = {
     },
     {
       id: "l_a1_18",
-      section: "sec_a1_unterwegs2",
+      section: "sec_a1_feinschliff",
       title: "Mehr Farben",
       emoji: "🌈",
       band: "A1",
@@ -737,7 +740,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_fragen",
-        steps: [6, 7, 8]
+        steps: [7, 8]
       },
       reading: null,
       listening: true
@@ -748,7 +751,7 @@ window.TACHELES_COURSE = {
       title: "Mehr kleine Wörter",
       emoji: "➕",
       band: "A1",
-      newItemIds: ["betach", "ki", "ulai", "adain", "kvar", "gadol"],
+      newItemIds: ["betach", "ki", "ulai", "adain", "kvar", "gadol", "s_chof_gadol"],
       scene: null,
       grammar: null,
       reading: null,
@@ -760,7 +763,7 @@ window.TACHELES_COURSE = {
       title: "Gegensätze",
       emoji: "⚖️",
       band: "A1",
-      newItemIds: ["katan", "cham", "kar", "le_at", "chadash", "maher", "yashan"],
+      newItemIds: ["katan", "cham", "kar", "le_at", "chadash", "maher", "yashan", "s_kafe_cham"],
       scene: null,
       grammar: {
         moduleId: "mod_gram_besitz",
@@ -772,10 +775,10 @@ window.TACHELES_COURSE = {
     {
       id: "l_a1_22",
       section: "sec_a1_feinschliff",
-      title: "Groß, klein & erste Zahlen",
+      title: "Zahlen bis zwanzig",
       emoji: "🔢",
       band: "A1",
-      newItemIds: ["s_chof_gadol", "s_kafe_cham", "shekel_w", "achat_esre", "esrim", "mea"],
+      newItemIds: ["achat_esre", "shtem_esre", "esrim", "mea", "shekel_w"],
       scene: null,
       grammar: null,
       reading: null,
@@ -787,7 +790,7 @@ window.TACHELES_COURSE = {
       title: "Zahlen bis fünfzig",
       emoji: "🔢",
       band: "A1",
-      newItemIds: ["shtem_esre", "arba_esre", "chamesh_esre", "chamishim", "shlosh_esre", "shloshim"],
+      newItemIds: ["shlosh_esre", "arba_esre", "chamesh_esre", "shloshim", "chamishim"],
       scene: null,
       grammar: null,
       reading: null,
@@ -815,7 +818,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_vergangenheit",
-        steps: [0, 1, 2]
+        steps: [0, 1, 4]
       },
       reading: null,
       listening: true
@@ -842,7 +845,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_zukunft",
-        steps: [0, 1, 2]
+        steps: [0, 1, 3]
       },
       reading: null,
       listening: true
@@ -903,7 +906,7 @@ window.TACHELES_COURSE = {
       },
       grammar: {
         moduleId: "mod_gram_vergangenheit",
-        steps: [3, 4]
+        steps: [5, 6]
       },
       reading: null,
       listening: true
@@ -918,7 +921,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_zukunft",
-        steps: [3, 4]
+        steps: [4, 5]
       },
       reading: null,
       listening: true
@@ -987,7 +990,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_vergangenheit",
-        steps: [5, 6, 7]
+        steps: [2, 3, 7]
       },
       reading: null,
       listening: true
@@ -1002,7 +1005,7 @@ window.TACHELES_COURSE = {
       scene: null,
       grammar: {
         moduleId: "mod_gram_zukunft",
-        steps: [5, 6, 7]
+        steps: [2, 6, 7]
       },
       reading: null,
       listening: true
@@ -1017,14 +1020,14 @@ window.TACHELES_COURSE = {
       scene: {
         lines: [
           {
-            he: "אתמול הלכתי לים",
-            translit: "etmol halachti la-yam",
-            de: "Gestern ging ich zum Meer."
+            he: "מחר יהיה גשם",
+            translit: "machar yihye geshem",
+            de: "Morgen wird es regnen."
           },
           {
-            he: "כן, נכון",
-            translit: "ken, nachon",
-            de: "Ja, das stimmt."
+            he: "טוב, אנחנו צריכים גשם",
+            translit: "tov, anachnu tsrichim geshem",
+            de: "Gut, wir brauchen Regen."
           }
         ]
       },
@@ -1717,9 +1720,9 @@ window.TACHELES_COURSE = {
             de: "Beide Seiten unterschrieben den Vertrag."
           },
           {
-            he: "כן, נכון",
-            translit: "ken, nachon",
-            de: "Ja, das stimmt."
+            he: "החוזה מחייב את שני הצדדים",
+            translit: "ha-choze mechayev et shnei ha-tsdadim",
+            de: "Der Vertrag verpflichtet beide Seiten."
           }
         ]
       },
@@ -1766,9 +1769,9 @@ window.TACHELES_COURSE = {
             de: "Tatsächlich hatte er völlig recht."
           },
           {
-            he: "כן, נכון",
-            translit: "ken, nachon",
-            de: "Ja, das stimmt."
+            he: "אתה צודק, זו בעיה",
+            translit: "ata tsodek, zo be'aya",
+            de: "Du hast recht, das ist ein Problem."
           }
         ]
       },

@@ -27,9 +27,9 @@
   // "he" ist der reine Buchstabe (schin traegt den Schin-Punkt, damit er
   // als "sch/sh" gelesen und vertont wird). "tr" = Umschrift des Konsonanten.
   var CONS = [
-    { he: "ב", tr: "b" }, { he: "שׁ", tr: "sh" }, { he: "ל", tr: "l" }, { he: "מ", tr: "m" },
+    { he: "בּ", tr: "b" }, { he: "שׁ", tr: "sh" }, { he: "ל", tr: "l" }, { he: "מ", tr: "m" },
     { he: "ת", tr: "t" }, { he: "ד", tr: "d" }, { he: "ה", tr: "h" }, { he: "כּ", tr: "k" },
-    { he: "נ", tr: "n" }, { he: "ק", tr: "k" }, { he: "י", tr: "j" }, { he: "ר", tr: "r" },
+    { he: "נ", tr: "n" }, { he: "ק", tr: "k" }, { he: "י", tr: "y" }, { he: "ר", tr: "r" },
     { he: "ח", tr: "ch" }, { he: "פּ", tr: "p" }, { he: "ט", tr: "t" }, { he: "ז", tr: "s" },
     { he: "ג", tr: "g" }, { he: "צ", tr: "ts" }, { he: "ס", tr: "s" }, { he: "ו", tr: "w" },
     { he: "א", tr: "" }, { he: "ע", tr: "" }
@@ -77,7 +77,7 @@
   var exceptions = {
     // Eigennamen / bekannte Sonderfaelle
     "יִשְׂרָאֵל": [ // יִשְׂרָאֵל Israel
-      { he: "יִשְׂ", translit: "jis" },
+      { he: "יִשְׂ", translit: "yis" },
       { he: "רָ", translit: "ra" },
       { he: "אֵל", translit: "el" }
     ],
@@ -89,7 +89,7 @@
     "תּוֹדָה": [ { he: "תּוֹ", translit: "to" }, { he: "דָה", translit: "da" } ],    // toda
     "כֵּן": [ { he: "כֵּן", translit: "ken" } ],                                     // ken
     "לֹא": [ { he: "לֹא", translit: "lo" } ],                                        // lo
-    "מַיִם": [ { he: "מַ", translit: "ma" }, { he: "יִם", translit: "jim" } ],       // mayim
+    "מַיִם": [ { he: "מַ", translit: "ma" }, { he: "יִם", translit: "yim" } ],       // mayim
     "קָפֶה": [ { he: "קָ", translit: "ka" }, { he: "פֶה", translit: "fe" } ],        // kafe
     "תֵּה": [ { he: "תֵּה", translit: "te" } ],                                      // te
     "לֶחֶם": [ { he: "לֶ", translit: "le" }, { he: "חֶם", translit: "chem" } ],      // lechem
@@ -133,7 +133,7 @@
       case "ז": return "s"; // Sajin (stimmhaftes s)
       case "ח": return "ch";// Chet
       case "ט": return "t"; // Tet
-      case "י": return "j"; // Jod (als Konsonant)
+      case "י": return "y"; // Jod (als Konsonant)
       case "כ": return dagesh ? "k" : "ch"; // Kaf / Chaf
       case "ך": return dagesh ? "k" : "ch"; // Kaf sofit
       case "ל": return "l"; // Lamed
@@ -293,7 +293,7 @@
       title: "Erste Silben: ba, scha, la",
       level: 1,
       types: ["hearPick", "readPick"],
-      syllables: ["בָ", "שָׁ", "לָ", "מָ", "תָ"], // בָ שָׁ לָ מָ תָ
+      syllables: ["בָּ","שָׁ","לָ","מָ","תָ"], // ba scha la ma ta (Bet mit Dagesch)
       wordIds: []
     },
     {
@@ -301,7 +301,7 @@
       title: "Neue Vokale: be, sche, le",
       level: 1,
       types: ["hearPick", "readPick"],
-      syllables: ["בֶ", "שֶׁ", "לֶ", "מֶ", "דֶ"], // בֶ שֶׁ לֶ מֶ דֶ
+      syllables: ["בֶּ","שֶׁ","לֶ","מֶ","דֶ"], // be sche le me de
       wordIds: []
     },
     {
@@ -309,7 +309,7 @@
       title: "Der i-Laut: bi, schi, li",
       level: 1,
       types: ["hearPick", "readPick"],
-      syllables: ["בִ", "שִׁ", "לִ", "מִ", "נִ", "קִ"], // בִ שִׁ לִ מִ נִ קִ
+      syllables: ["בִּ","שִׁ","לִ","מִ","נִ","קִ"], // bi schi li mi ni ki
       wordIds: []
     },
     {
@@ -317,7 +317,7 @@
       title: "o-Laut und Schwa",
       level: 1,
       types: ["hearPick", "readPick"],
-      syllables: ["בֹ", "מֹ", "שֹׁ", "בְ", "לְ", "מְ"], // בֹ מֹ שֹׁ בְ לְ מְ
+      syllables: ["בֹּ","מֹ","שֹׁ","בְּ","לְ","מְ"], // bo mo scho be le me
       wordIds: []
     },
     {
@@ -330,19 +330,19 @@
     },
     {
       id: "drill_a0_06",
-      title: "Im Cafe lesen",
-      level: 2,
-      types: ["blend"],
-      syllables: [],
-      wordIds: ["mayim", "kafe", "te", "lechem"]
-    },
-    {
-      id: "drill_a0_07",
       title: "Schilder lesen",
       level: 2,
       types: ["blend"],
       syllables: [],
-      wordIds: ["sagur", "karov", "rachok", "kafe"]
+      wordIds: ["knisa", "yetsia", "patuach", "sagur"]
+    },
+    {
+      id: "drill_a0_07",
+      title: "Nach dem Weg lesen",
+      level: 2,
+      types: ["blend"],
+      syllables: [],
+      wordIds: ["karov", "rachok", "yashar", "yamina"]
     },
     {
       id: "drill_a0_08",
@@ -350,7 +350,7 @@
       level: 3,
       types: ["speed"],
       syllables: [],
-      wordIds: ["shalom", "toda", "ken", "lo", "mayim", "kafe"]
+      wordIds: ["shalom", "toda", "sagur", "karov", "rachok", "knisa"]
     }
   ];
 

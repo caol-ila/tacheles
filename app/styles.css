@@ -330,6 +330,7 @@ body.in-session .bottom-nav { display: none; }
 .done-review-mark.ok { color: var(--good); }
 .done-review-mark.re { color: var(--accent); }
 .done-review-he { font-family: var(--font-he); font-size: 1.15rem; min-width: 72px; text-align: right; }
+.done-review-tr { font-size: .8rem; color: var(--muted); font-style: italic; min-width: 64px; }
 .done-review-de { flex: 1; font-size: .85rem; color: var(--muted); }
 .icon-btn.small-btn { width: 32px; height: 32px; font-size: .9rem; }
 .done-review-more { font-size: .78rem; color: var(--muted); margin-top: 6px; }

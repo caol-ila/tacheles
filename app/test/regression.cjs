@@ -164,6 +164,28 @@ function check(name, ok, detail) {
     "size=" + course.badSize + " ref=" + course.badRef);
   check("Kurs: alle Grammatik-Module referenziert", course.gramUsed === course.gmods, course.gramUsed + "/" + course.gmods);
 
+  // --- 1e. Lese-Progression (F1): Lektion 1 ohne Lese-Schritt; Drills nur auf
+  //         Woerter, die bis zur jeweiligen Lektion bereits gelehrt wurden. ---
+  const readingProg = await page.evaluate(() => {
+    const K = window.TACHELES_COURSE, R = window.TACHELES_READING;
+    const drills = {}; (R ? R.drills : []).forEach(d => drills[d.id] = d);
+    const taughtAt = {};
+    K.lessons.forEach((l, li) => (l.newItemIds || []).forEach(id => { if (taughtAt[id] === undefined) taughtAt[id] = li; }));
+    const ahead = [];
+    K.lessons.forEach((l, li) => {
+      if (!l.reading) return;
+      const d = drills[l.reading.drill];
+      if (!d) return;
+      (d.wordIds || []).forEach(wid => {
+        if (taughtAt[wid] === undefined || taughtAt[wid] > li) ahead.push(l.id + ":" + wid);
+      });
+    });
+    return { l1NoReading: !K.lessons[0].reading, ahead };
+  });
+  check("F1: Lektion 1 hat keinen Lese-Schritt", readingProg.l1NoReading);
+  check("F1: Lese-Drills referenzieren nur bis dahin gelehrte Woerter",
+    readingProg.ahead.length === 0, readingProg.ahead.slice(0, 6).join(","));
+
   // --- 2. Onboarding E2E (frischer State) ---
   check("Onboarding erscheint beim Erststart", await page.evaluate(() => !!document.querySelector(".onb")));
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /los geht/i.test(x.textContent)); if (b) b.click(); });
@@ -1075,8 +1097,11 @@ function check(name, ok, detail) {
     sceneUi.label === "Szene 🎬" && sceneUi.bubbles >= 2 && sceneUi.weiter, JSON.stringify(sceneUi));
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim())); if (b) b.click(); });
   await page.waitForTimeout(300);
-  check("Player: Szene -> Verstaendnisfrage (MC ueber eine Zeile)", await page.evaluate(() =>
-    window.TACHELES_DEBUG.lessonStepLabel() === "Szene 🎬" && !!document.querySelector("[data-correct-opt]")));
+  check("Player: Szene -> Verstaendnisfrage (MC ueber eine Zeile)", await page.evaluate(() => {
+    const lab = window.TACHELES_DEBUG.optCorrectLabel();
+    return window.TACHELES_DEBUG.lessonStepLabel() === "Szene 🎬" && !!lab &&
+      [...document.querySelectorAll(".opt")].some(o => o.textContent === lab);
+  }));
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
   await page.waitForTimeout(300);
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
@@ -1117,8 +1142,11 @@ function check(name, ok, detail) {
     await page.evaluate(() => {
       const w = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
       if (w) { w.click(); return; }
-      const hook = document.querySelector("[data-correct-opt]:not([disabled])");
-      if (hook) { hook.click(); return; }
+      const lab = window.TACHELES_DEBUG.optCorrectLabel();
+      if (lab) {
+        const right = [...document.querySelectorAll(".opt:not(:disabled)")].find(o => o.textContent === lab);
+        if (right) { right.click(); return; }
+      }
       const he = window.TACHELES_DEBUG.moduleCurrentCorrect();
       if (he) {
         const right = [...document.querySelectorAll(".opt:not(:disabled)")].find(b => (b.querySelector(".b-he") || {}).textContent === he);
@@ -1132,8 +1160,11 @@ function check(name, ok, detail) {
     await page.waitForTimeout(1050);
   }
   check("Player: Bogen erreicht den Rueckblick (done-screen)", recapReached, [...seenArcs].join("|"));
-  check("Player: Neue Woerter, Lesen, Hoeren und Quiz kamen vor",
-    seenArcs.has("Neue Wörter ✨") && seenArcs.has("Lesen 👓") && seenArcs.has("Hören 👂") && seenArcs.has("Quiz 🏁"),
+  // Lektion 1 hat seit F1 keinen Lese-Schritt mehr (Blend-Drills sitzen ab
+  // Lektion 8, wenn die Buchstaben da sind); der Lesen-Bogen wird ueber den
+  // Lese-Trainer und die Reading-Lektionen separat abgedeckt.
+  check("Player: Neue Woerter, Hoeren und Quiz kamen vor",
+    seenArcs.has("Neue Wörter ✨") && seenArcs.has("Hören 👂") && seenArcs.has("Quiz 🏁"),
     [...seenArcs].join("|"));
   const quizScope = await page.evaluate((ids) => {
     const lesson = window.TACHELES_COURSE.lessons[0];
@@ -1155,8 +1186,16 @@ function check(name, ok, detail) {
     await page.evaluate(() => {
       const w = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
       if (w) { w.click(); return; }
-      const hook = document.querySelector("[data-correct-opt]:not([disabled])");
-      if (hook) { hook.click(); return; }
+      const lab = window.TACHELES_DEBUG.optCorrectLabel();
+      if (lab) {
+        const right = [...document.querySelectorAll(".opt:not(:disabled)")].find(o => o.textContent === lab);
+        if (right) { right.click(); return; }
+      }
+      const he = window.TACHELES_DEBUG.moduleCurrentCorrect();
+      if (he) {
+        const right = [...document.querySelectorAll(".opt:not(:disabled)")].find(b => (b.querySelector(".b-he") || {}).textContent === he);
+        if (right) { right.click(); return; }
+      }
       const any = document.querySelector(".opt:not(:disabled)");
       if (any) any.click();
     });
@@ -1211,8 +1250,9 @@ function check(name, ok, detail) {
     if (st.done) break;
     if (st.fresh) {
       await page.evaluate(() => {
-        const hook = document.querySelector("[data-correct-opt]:not([disabled])");
-        if (hook) { hook.click(); return; }
+        const lab = window.TACHELES_DEBUG.optCorrectLabel();
+        const right = lab && [...document.querySelectorAll(".opt:not(:disabled)")].find(o => o.textContent === lab);
+        if (right) { right.click(); return; }
         const any = document.querySelector(".opt:not(:disabled)");
         if (any) any.click();
       });
@@ -1224,8 +1264,16 @@ function check(name, ok, detail) {
     await page.evaluate(() => {
       const w = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
       if (w) { w.click(); return; }
-      const hook = document.querySelector("[data-correct-opt]:not([disabled])");
-      if (hook) { hook.click(); return; }
+      const lab = window.TACHELES_DEBUG.optCorrectLabel();
+      if (lab) {
+        const right = [...document.querySelectorAll(".opt:not(:disabled)")].find(o => o.textContent === lab);
+        if (right) { right.click(); return; }
+      }
+      const he = window.TACHELES_DEBUG.moduleCurrentCorrect();
+      if (he) {
+        const right = [...document.querySelectorAll(".opt:not(:disabled)")].find(b => (b.querySelector(".b-he") || {}).textContent === he);
+        if (right) { right.click(); return; }
+      }
       const any = document.querySelector(".opt:not(:disabled)");
       if (any) any.click();
     });
@@ -1628,7 +1676,7 @@ function check(name, ok, detail) {
     const st = await page.evaluate(() => ({
       done: !!document.querySelector(".done-screen"),
       info: window.TACHELES_DEBUG.readingInfo(),
-      correctText: (document.querySelector("[data-correct-opt]") || {}).textContent || null,
+      correctText: window.TACHELES_DEBUG.optCorrectLabel(),
       hasWeiter: !![...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim()))
     }));
     if (st.done) { drillDone = true; break; }
@@ -1636,7 +1684,8 @@ function check(name, ok, detail) {
       await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter$/i.test((x.textContent || "").trim())); if (b) b.click(); });
     } else {
       await page.evaluate(() => {
-        const right = document.querySelector("[data-correct-opt]");
+        const lab = window.TACHELES_DEBUG.optCorrectLabel();
+        const right = lab && [...document.querySelectorAll(".opt:not(:disabled)")].find(o => o.textContent === lab);
         const any = document.querySelector(".opt:not(:disabled)");
         (right || any) && (right || any).click();
       });
@@ -1867,10 +1916,17 @@ function check(name, ok, detail) {
   // Bis zum Demo-Schritt weiterklicken und die Demo-Frage RICHTIG beantworten.
   let demoSeen = false;
   for (let i = 0; i < 12; i++) {
-    const hasDemo = await page.evaluate(() => !!document.querySelector(".tour-card [data-correct-opt]"));
+    const hasDemo = await page.evaluate(() => {
+      const lab = window.TACHELES_DEBUG.optCorrectLabel();
+      return !!lab && [...document.querySelectorAll(".tour-card .opt")].some(o => o.textContent === lab);
+    });
     if (hasDemo) {
       demoSeen = true;
-      await page.evaluate(() => { document.querySelector(".tour-card [data-correct-opt]").click(); });
+      await page.evaluate(() => {
+        const lab = window.TACHELES_DEBUG.optCorrectLabel();
+        const right = [...document.querySelectorAll(".tour-card .opt")].find(o => o.textContent === lab);
+        (right || document.querySelector(".tour-card .opt")).click();
+      });
       await page.waitForTimeout(500);
       break;
     }
@@ -1895,6 +1951,45 @@ function check(name, ok, detail) {
   check("Tour: Ueberspringen beendet die Tour (Home)", await page.evaluate(() =>
     !document.querySelector(".tour-card") && !!document.querySelector("#stats-row") &&
     window.TACHELES_DEBUG.tourActive() === false));
+
+  // --- 14z. Tour vs. Quereinstieg (F21): renderCourse stapelt kein
+  //          Einstiegs-Overlay, solange die Tour laeuft. ---
+  await page.evaluate(() => { localStorage.removeItem("tacheles_state_v1"); });
+  await page.goto(APP); await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.profile.onboarded = true; s.profile.autoplay = false;
+    s.profile.micHintDismissed = true; s.profile.tourSeen = true;
+    s.course = { lessons: {}, entry: null, snacksSeen: {} };
+    // Lektion 1 grossteils gekonnt -> recommendedEntryLesson zeigt auf > Lektion 0.
+    window.TACHELES_COURSE.lessons[0].newItemIds.slice(0, 4).forEach(id => {
+      s.srs[id] = { ease: 2.5, intervalDays: 5, dueTs: Date.now() + 8.64e7, reps: 3, lapses: 0, mastery: 3, lastReviewTs: Date.now() };
+    });
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(400);
+  const entryRecTour = await page.evaluate(() => window.TACHELES_DEBUG.recommendedEntry());
+  // Tour starten (Profil -> Einführung ansehen).
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#btn-tour"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "course"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const duringTour = await page.evaluate(() => ({
+    tour: window.TACHELES_DEBUG.tourActive(), entry: !!document.querySelector("#btn-entry-ok")
+  }));
+  check("F21: waehrend der Tour kein Einstiegs-Overlay ueber renderCourse",
+    duringTour.tour === true && duringTour.entry === false, JSON.stringify(duringTour) + " rec=" + entryRecTour);
+  // Tour beenden, dann bietet der Kurs den Quereinstieg wieder an (Beleg fuer das Gating).
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".tour-card button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "course"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  check("F21: nach der Tour wird der Quereinstieg wieder angeboten",
+    await page.evaluate(() => !!document.querySelector("#btn-entry-ok")));
+  await page.evaluate(() => { const b = document.querySelector("#btn-entry-first"); if (b) b.click(); });
+  await page.waitForTimeout(200);
 
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));

@@ -50,7 +50,7 @@ window.TACHELES_SNACKS = {
       ]
     },
     {
-      id: "snack_10_woerter", title: "Mit 10 Wörtern durch den Tag", emoji: "🔟", band: "A0",
+      id: "snack_10_woerter", title: "Mit sechs Wörtern durch den Tag", emoji: "6️⃣", band: "A0",
       steps: [
         { type: "explain", title: "Weniger ist mehr",
           text: "Mit einer Handvoll Wörter kommst du erstaunlich weit. Schalom, toda, ken, lo, slicha und bevakasha decken Begrüßung, Höflichkeit und die halbe Verständigung ab. Den Rest erledigen ein Lächeln und die Hände.",
@@ -308,7 +308,7 @@ window.TACHELES_SNACKS = {
             { he: "הַצִּילוּ", translit: "hatsilu", de: "Hilfe! (Ruf)" },
             { he: "מִשְׁטָרָה", translit: "mishtara", de: "Polizei" }
           ] },
-        { type: "quiz", itemId: "hatsilu", distractorIds: ["ezra", "rofe"] }
+        { type: "quiz", itemId: "hatsilu", distractorIds: ["mishtara", "rofe"] }
       ]
     },
     {
@@ -332,7 +332,7 @@ window.TACHELES_SNACKS = {
       id: "snack_shabbat", title: "Schabbat-Grüße", emoji: "🕯️", band: "A2",
       steps: [
         { type: "explain", title: "Der Ruhetag prägt die Woche",
-          text: "Von Freitagnachmittag bis Samstagabend ist Schabbat, der Ruhetag. Freitags wünscht man sich Schabbat schalom, zu Wochenbeginn shavua tov, „gute Woche“. Vieles hat dann geschlossen, das solltest du beim Planen mitdenken.",
+          text: "Von Freitagabend (Sonnenuntergang) bis Samstagabend ist Schabbat, der Ruhetag. Freitags wünscht man sich Schabbat schalom, zu Wochenbeginn shavua tov, „gute Woche“. Vieles hat dann geschlossen, das solltest du beim Planen mitdenken.",
           examples: [
             { he: "שַׁבָּת שָׁלוֹם", translit: "shabat shalom", de: "friedlichen Schabbat" },
             { he: "שָׁבוּעַ טוֹב", translit: "shavua tov", de: "gute Woche" },
@@ -493,7 +493,7 @@ window.TACHELES_SNACKS = {
             { he: "סַבַּבָּה", translit: "sababa", de: "super / passt" },
             { he: "מַגְנִיב", translit: "magniv", de: "cool / geil" }
           ] },
-        { type: "quiz", itemId: "achla", distractorIds: ["magniv", "sababa"] }
+        { type: "quiz", itemId: "achla", distractorIds: ["stam", "chaval_zman"] }
       ]
     },
     {
@@ -554,7 +554,7 @@ window.TACHELES_SNACKS = {
       id: "snack_literature", title: "Dichter, Werke, Kritik", emoji: "🎭", band: "C1",
       steps: [
         { type: "explain", title: "In Israel wird viel gelesen",
-          text: "Kultur hat einen hohen Stellenwert: Ein sofer ist ein Schriftsteller, ein meshorer ein Dichter, ihre shira (Poesie) füllt Cafés und Festivals. Über ein yetsira (Werk) wird leidenschaftlich diskutiert, samt bikoret, der Kritik.",
+          text: "Kultur hat einen hohen Stellenwert: Ein sofer ist ein Schriftsteller, ein meshorer ein Dichter, ihre shira (Poesie) füllt Cafés und Festivals. Über eine yetsira, ein Werk, wird leidenschaftlich diskutiert, samt bikoret, der Kritik.",
           examples: [
             { he: "סוֹפֵר", translit: "sofer", de: "Schriftsteller" },
             { he: "מְשׁוֹרֵר", translit: "meshorer", de: "Dichter" },

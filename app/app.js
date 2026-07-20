@@ -1172,6 +1172,11 @@
   function sayText(text, onDone) {
     playByKey("h_" + audioHash(text), function () { TTS.speak(text); }, onDone);
   }
+  /** Silbe vorlesen: Clip-Key bleibt Hash(syl.he), TTS-Fallback = syl.speak || syl.he
+   *  (manche nackten Silben synthetisiert die Browser-Stimme nur mit Lautersatz). */
+  function saySyl(syl, onDone) {
+    playByKey("h_" + audioHash(syl.he), function () { TTS.speak(syl.speak || syl.he); }, onDone);
+  }
 
   /**
    * Alle Samples vom Service Worker im Hintergrund vorladen lassen (gesamt ~2.4 MB):
@@ -1826,12 +1831,15 @@
           var mark = st.done ? "✓" : (isNext ? "▶" : (locked ? "🔒" : ""));
           var resume = !st.done && st.step > 0 ? ' · fortsetzen ab Schritt ' + (st.step + 1) : '';
           var entryTag = state.course.entry === l.id ? ' <span class="entry-tag">dein Einstieg</span>' : '';
+          // Buchstaben-Lektionen zaehlen Buchstaben, nicht Woerter (Mehrheit entscheidet).
+          var letters = l.newItemIds.filter(function (id) { var it = itemById(id); return it && it.type === "letter"; }).length;
+          var noun = letters * 2 > l.newItemIds.length ? ' neue Buchstaben' : ' neue Wörter';
           return '<div class="theme-row lesson-row ' + cls + '" role="button" tabindex="0" data-lesson="' + esc(l.id) + '"' +
             (locked ? ' aria-disabled="true"' : '') + '>' +
             '<span class="path-status">' + mark + '</span>' +
             '<span class="theme-emoji">' + esc(l.emoji) + '</span>' +
             '<div class="theme-info"><div class="theme-title">' + esc(l.title) + entryTag + '</div>' +
-            '<div class="setting-sub">' + l.newItemIds.length + ' neue Wörter' + resume + '</div></div>' +
+            '<div class="setting-sub">' + l.newItemIds.length + noun + resume + '</div></div>' +
             '</div>';
         }).join("") + '</div>';
     });
@@ -1854,7 +1862,9 @@
       });
     });
     wireFooterLinks(app);
-    maybeOfferEntry();
+    // Waehrend der Tour (Spotlight-Overlay/Demo) kein Einstiegs-Overlay stapeln;
+    // der Quereinstieg wird beim naechsten natuerlichen Kurs-Besuch angeboten.
+    if (!tourDemo && !document.querySelector(".tour-dim")) maybeOfferEntry();
   }
 
   /** Vorschau-Overlay: Woerter der Lektion + Grammatikpunkt + Start. */
@@ -1870,6 +1880,7 @@
       var he = el("span", "done-review-he", item.he);
       he.dir = "rtl"; he.lang = "he";
       row.appendChild(he);
+      if (item.translit) row.appendChild(el("span", "done-review-tr", item.translit));
       row.appendChild(el("span", "done-review-de", item.de));
       var p = btn("🔊", "icon-btn small-btn", function () { say(item); });
       row.appendChild(p);
@@ -2600,6 +2611,7 @@
   function sessionShell(subtitle, progress, bodyClass) {
     var app = $("#app");
     app.innerHTML = "";
+    activeCorrectLabel = null; // pro Render zuruecksetzen; drillOptions setzt neu
     var head = el("div", "session-head");
     var quit = btn("✕", "quit-btn", quitSession);
     quit.title = "Session beenden";
@@ -3507,14 +3519,18 @@
     return shuffle(close.slice()).concat(shuffle(rest.slice())).slice(0, n);
   }
 
-  /** Gemeinsames Options-UI der Drills; correctIdx per data-correct-opt markiert (Testhook). */
+  // Label der aktuell korrekten Drill-/Szene-/Demo-Option. Nur ein Debug-/Testhook:
+  // die Korrektheit selbst bleibt in der Closure (kein data-correct-opt im DOM).
+  var activeCorrectLabel = null;
+
+  /** Gemeinsames Options-UI der Drills; correctIdx bleibt in der Closure. */
   function drillOptions(body, labels, correctIdx, isHe, onAnswer) {
     var list = el("div", "opt-list");
     var done = false;
+    activeCorrectLabel = labels[correctIdx];
     labels.forEach(function (label, i) {
       var b = el("button", "opt" + (isHe ? " he-opt" : ""), label);
       if (isHe) { b.dir = "rtl"; b.lang = "he"; }
-      if (i === correctIdx) b.dataset.correctOpt = "1";
       b.addEventListener("click", function () {
         if (done) return;
         done = true;
@@ -3571,10 +3587,10 @@
       // Silbe hoeren -> geschriebene Silbe waehlen. Kein Item -> recordFreeAnswer.
       body.appendChild(el("div", "task-question", "Welche Silbe hörst du?"));
       var card = el("div", "card learn-card syl-card");
-      var play = btn("🔊", "icon-btn large", function () { sayText(task.syl.he); });
+      var play = btn("🔊", "icon-btn large", function () { saySyl(task.syl); });
       card.appendChild(play);
       body.appendChild(card);
-      sayText(task.syl.he);
+      saySyl(task.syl);
       var opts = shuffle([task.syl].concat(pickSylDistractors(task.syl, 3)));
       drillOptions(body, opts.map(function (o) { return o.he; }), opts.indexOf(task.syl), true, function (correct) {
         recordFreeAnswer("mc", correct);
@@ -3591,7 +3607,7 @@
       var opts2 = shuffle([task.syl].concat(pickSylDistractors(task.syl, 3)));
       drillOptions(body, opts2.map(function (o) { return o.translit; }), opts2.indexOf(task.syl), false, function (correct) {
         recordFreeAnswer("mc", correct);
-        if (correct) sayText(task.syl.he);
+        if (correct) saySyl(task.syl);
         next(correct);
       });
     } else if (task.kind === "blend") {
@@ -3620,7 +3636,7 @@
       .concat(pickSylDistractors({ he: cur.he, letter: cur.he.charAt(0), vowel: "", translit: cur.translit }, 3))).slice(0, 3);
     var opts = shuffle([cur].concat(distr));
     drillOptions(body, opts.map(function (o) { return o.translit; }), opts.indexOf(cur), false, function (correct) {
-      if (correct) sayText(cur.he);
+      if (correct) saySyl(cur);
       task.errs = (task.errs || 0) + (correct ? 0 : 1);
       if (pos + 1 < parts.length) {
         task.pos = pos + 1;
@@ -4980,9 +4996,9 @@
     var opts = shuffle([item].concat(pickDistractors(item, 3)));
     var list = el("div", "opt-list");
     var done = false;
+    activeCorrectLabel = item.de;
     opts.forEach(function (o) {
       var b = el("button", "opt", o.de);
-      if (o.id === item.id) b.dataset.correctOpt = "1";
       b.addEventListener("click", function () {
         if (done) return;
         done = true;
@@ -5738,7 +5754,11 @@
   function renderLessonSceneQuiz(step, title) {
     var body = sessionShell(title, session.stepIdx / session.steps.length);
     var lines = step.lines;
-    var target = lines[dayHash(session.lesson.id + "|scene") % lines.length];
+    // Verstaendnisfrage nur auf inhaltstragende Zeilen stellen: sehr kurze
+    // Bestaetigungen (< 3 Woerter, z. B. "כן, נכון" / "באמת?") waeren trivial.
+    var meaty = lines.filter(function (l) { return l.he && l.he.trim().split(/\s+/).length >= 3; });
+    var pool = meaty.length ? meaty : lines;
+    var target = pool[dayHash(session.lesson.id + "|scene") % pool.length];
     body.appendChild(el("div", "task-question", "Was bedeutet diese Zeile?"));
     var card = el("div", "card learn-card");
     var he = el("div", "he-text big", target.he);
@@ -6286,7 +6306,10 @@
       return { drillId: session.drill.id, i: session.i, total: session.drillTasks.length, kind: t ? t.kind : null };
     },
     // Interaktive Tour (T10): laeuft gerade ein Spotlight-Overlay?
-    tourActive: function () { return !!document.querySelector(".tour-dim"); }
+    tourActive: function () { return !!document.querySelector(".tour-dim"); },
+    // Label der aktuell korrekten Drill-/Szene-/Tour-Demo-Option (kein DOM-Leak,
+    // ersetzt den frueheren data-correct-opt-Testhook).
+    optCorrectLabel: function () { return activeCorrectLabel; }
   };
 
   if (document.readyState === "loading") {
