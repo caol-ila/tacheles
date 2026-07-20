@@ -43,18 +43,28 @@
     { id: "kubutz", mark: "ֻ", tr: "u" }, { id: "shva", mark: "ְ", tr: "e" }
   ];
 
+  // Sprech-Overrides fuer die Vertonung: einzelne Silben, die die TTS-API als
+  // nackten String nicht synthetisieren kann, sprechen mit einem lautgleichen
+  // Ersatz (Key/Anzeige bleiben das Original; nur der VORGELESENE Text weicht ab).
+  var SPEAK_OVERRIDES = {
+    "קְ": "קֶ" // Qof+Schwa: API liefert Leerdaten; Segol klingt gleich ("ke")
+  };
+
   var syllables = [];
   CONS.forEach(function (c) {
     VOWELS.forEach(function (v) {
       // Stumme Traeger (Alef/Ajin) tragen kein Schwa (klingt nach nichts).
       if (!c.tr && v.id === "shva") return;
-      syllables.push({
-        he: c.he + v.mark,
+      var he = c.he + v.mark;
+      var syl = {
+        he: he,
         // Schwa = kurzes e; ansonsten Konsonant + Vokal. Stille Traeger -> nur Vokal.
         translit: (c.tr || "") + v.tr,
         letter: c.he.charAt(0),
         vowel: v.id
-      });
+      };
+      if (SPEAK_OVERRIDES[he]) syl.speak = SPEAK_OVERRIDES[he];
+      syllables.push(syl);
     });
   });
 

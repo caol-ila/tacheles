@@ -96,8 +96,10 @@ function enumerateTargets(CONTENT, GRAMMAR, COURSE, SNACKS, READING) {
     });
   });
   // Lese-Silben: gehoeren zu den fruehesten Lektionen -> Band A0.
+  // speak-Override (lautgleicher Ersatz) nur fuer den VORGELESENEN Text;
+  // der Key bleibt der Hash des Original-he (wie sayText ihn sucht).
   (READING ? READING.syllables || [] : []).forEach(syl => {
-    if (syl && syl.he) add("h_" + audioHash(syl.he), syl.he, "A0", "syllable");
+    if (syl && syl.he) add("h_" + audioHash(syl.he), syl.speak || syl.he, "A0", "syllable");
   });
   // Snack-Beispiele: jedes explain.examples[].he, Band = Snack-Band.
   (SNACKS ? SNACKS.snacks || [] : []).forEach(sn => {
