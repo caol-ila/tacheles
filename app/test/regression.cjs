@@ -675,7 +675,8 @@ function check(name, ok, detail) {
   const placedInfo = await page.evaluate(() => {
     const D = window.TACHELES_DEBUG;
     const K = window.TACHELES_COURSE;
-    const rec = D.recommendedEntry();
+    const recId = D.recommendedEntry(); // Hook liefert die Lektions-ID
+    const rec = K.lessons.filter(l => l.id === recId)[0] || null;
     const a0 = K.lessons.filter(l => l.band === "A0")[0];
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
     return { recBand: rec ? rec.band : null, a0Skip: D.lessonSkippable(a0.id), placed: s.profile.placedBand };
