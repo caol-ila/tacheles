@@ -2564,7 +2564,16 @@
   }
 
   /** Raeumt Timer/Listener/Audio einer laufenden Session auf. */
+  /** Auto-Weiter-Timer des Lektions-Rueckblicks (Lesson-Chaining). Liegt
+   *  ausserhalb der Session (der Rueckblick IST keine Session mehr) und wird
+   *  von showScreen/startSession/cleanupSession immer aufgeraeumt. */
+  var doneChainTimer = null;
+  function clearDoneChain() {
+    if (doneChainTimer) { clearInterval(doneChainTimer); doneChainTimer = null; }
+  }
+
   function cleanupSession() {
+    clearDoneChain();
     if (session) {
       clearTimeout(session.timer);
       if (session.tick) clearInterval(session.tick);
@@ -4218,17 +4227,41 @@
       wrap.appendChild(review);
     }
 
-    // Lektions-Rueckblick: EIN klarer CTA auf die naechste Lektion (statt Themen-Tipp).
-    if (stats.lesson && courseAvailable()) {
-      var nl = nextLesson();
-      if (nl) {
-        var lrow = el("div", "done-next", "Als Nächstes: " + nl.emoji + " " + nl.title);
-        lrow.setAttribute("role", "button");
-        lrow.tabIndex = 0;
-        lrow.id = "btn-next-lesson";
-        lrow.addEventListener("click", function () { startSession("lesson", { lessonId: nl.id }); });
-        wrap.appendChild(lrow);
-      }
+    // Lektions-Rueckblick: nahtlos weiterlernen. Die naechste Lektion startet
+    // nach kurzem Countdown AUTOMATISCH (kein Umweg ueber den Lernen-Screen);
+    // jede andere Interaktion (Rueckblick anhoeren, "Fertig") stoppt den
+    // Countdown, der Knopf bleibt als manueller Weiter-Weg erhalten.
+    var lessonNext = null;
+    if (stats.lesson && courseAvailable()) lessonNext = nextLesson();
+    if (lessonNext) {
+      var nlLabel = "▶ Weiter: " + lessonNext.emoji + " " + lessonNext.title;
+      var nlBtn = btn(nlLabel, "btn primary big", function () {
+        clearDoneChain();
+        startSession("lesson", { lessonId: lessonNext.id });
+      });
+      nlBtn.id = "btn-next-lesson";
+      wrap.appendChild(nlBtn);
+      // Countdown (7s): sichtbar im Knopf; laeuft NICHT in Tests weiter, weil
+      // showScreen/startSession ihn immer aufraeumen.
+      var left = 7;
+      nlBtn.textContent = nlLabel + " · " + left;
+      doneChainTimer = setInterval(function () {
+        left--;
+        if (left <= 0) {
+          clearDoneChain();
+          startSession("lesson", { lessonId: lessonNext.id });
+          return;
+        }
+        nlBtn.textContent = nlLabel + " · " + left;
+      }, 1000);
+      // Erste anderweitige Interaktion stoppt den Auto-Start (z. B. Rueckblick anhoeren).
+      wrap.addEventListener("click", function (ev) {
+        if (doneChainTimer && !nlBtn.contains(ev.target)) {
+          clearDoneChain();
+          nlBtn.textContent = nlLabel;
+        }
+      });
+      setTimeout(function () { try { nlBtn.focus(); } catch (e) { /* egal */ } }, 50);
     }
     // "Was jetzt?": ein klarer naechster Schritt statt Sackgasse (nicht in Lektionen).
     var rec = recommendedTheme();
@@ -4242,7 +4275,8 @@
 
     var actions = el("div", "done-actions");
     actions.appendChild(btn("Nochmal", "btn ghost", function () { startSession(stats.mode, stats.startOpts); }));
-    actions.appendChild(btn("Fertig", "btn primary", function () {
+    // Bei Lektionen ist "Weiter" der Primaerweg (oben); Fertig wird zum Ausstieg.
+    actions.appendChild(btn(lessonNext ? "Fertig für heute" : "Fertig", lessonNext ? "btn ghost" : "btn primary", function () {
       document.body.classList.remove("in-session");
       showScreen("home");
     }));
