@@ -1164,6 +1164,29 @@
     } catch (e) { fallback(); if (onDone) onDone(); }
   }
 
+  /**
+   * Sequenziertes Vorlesen fuers Hands-free (Audio-Kurs): spielt das echte
+   * Sample und ruft onDone erst NACH dem Abspielende; ohne Clip (oder bei
+   * Fehler) uebernimmt TTS.speakSeq, dessen Callback-Garantie erhalten bleibt.
+   * (say() taugt hier nicht: dessen TTS-Fallback feuert onDone sofort.)
+   */
+  function saySeq(item, onDone) {
+    var url = clipUrl(item.id);
+    if (!url) { TTS.speakSeq(spoken(item), "he", onDone); return; }
+    try {
+      try { if (STT && STT.abort) STT.abort(); } catch (e) { /* egal */ }
+      if (audioPlayer) { try { audioPlayer.pause(); } catch (e) { /* egal */ } }
+      var a = new Audio(url);
+      audioPlayer = a;
+      var fell = false;
+      var fb = function () { if (fell) return; fell = true; TTS.speakSeq(spoken(item), "he", onDone); };
+      a.onended = function () { if (onDone) onDone(); };
+      a.onerror = fb;
+      var p = a.play();
+      if (p && p.catch) p.catch(fb);
+    } catch (e) { TTS.speakSeq(spoken(item), "he", onDone); }
+  }
+
   /** Item vorlesen (Key = item.id). Ersetzt direkte TTS.speak(spoken(item))-Aufrufe. */
   function say(item, onDone) {
     playByKey(item.id, function () { TTS.speak(spoken(item)); }, onDone);
@@ -1308,7 +1331,8 @@
       s.title = "Langsam anhören";
       row.appendChild(s);
     }
-    if (!TTS.available || !TTS.hasHebrew()) {
+    // Hinweis nur, wenn es WEDER ein echtes Sample NOCH eine he-Stimme gibt.
+    if (!audioUrl(item) && (!TTS.available || !TTS.hasHebrew())) {
       row.appendChild(el("span", "tts-hint", "Hebräische Stimme im Browser nicht verfügbar"));
     }
     return row;
@@ -1392,7 +1416,8 @@
     // Saetze: bevorzugt zusammenbauen (Produktion), sonst erkennen.
     if (item.type === "sentence") return Math.random() < 0.6 ? "build" : "mc";
     var pool = ["mc", "mc", "flash", "flash"];
-    if (TTS.available && TTS.hasHebrew()) pool.push("listen");
+    // Hoeren geht mit echtem Sample ODER Browser-Stimme.
+    if (audioUrl(item) || (TTS.available && TTS.hasHebrew())) pool.push("listen");
     if (getMastery(item.id) >= 2 && item.type !== "letter") pool.push("speak");
     if (item.emoji) pool.push("image");
     return pool[randInt(pool.length)];
@@ -2712,7 +2737,7 @@
     }
     body.appendChild(el("div", "tts-hint",
       (TTS.hasGerman() ? "" : "Keine deutsche Stimme gefunden – Frage wird nur angezeigt. ") +
-      (TTS.hasHebrew() ? "" : "Keine hebräische Stimme – Antwort wird nur angezeigt.")));
+      (audioUrl(item) || TTS.hasHebrew() ? "" : "Keine hebräische Stimme – Antwort wird nur angezeigt.")));
 
     // Automatik nur anstossen, wenn nicht pausiert und gerade frisch gerendert
     if (!s.paused && !s.audioRunning) audioStep();
@@ -2733,12 +2758,12 @@
       renderAudioShell();
       TTS.speakSeq("Neu: " + item.de + ". Auf Hebräisch:", "de", function () {
         if (!session || session !== s || s.paused) return;
-        TTS.speakSeq(spoken(item), "he", function () {
+        saySeq(item, function () {
           if (!session || session !== s || s.paused) return;
           // kurz wirken lassen, einmal wiederholen, dann weiter
           s.timer = setTimeout(function () {
             if (!session || session !== s || s.paused) return;
-            TTS.speakSeq(spoken(item), "he", function () {
+            saySeq(item, function () {
               if (!session || session !== s || s.paused) return;
               s.timer = setTimeout(function () {
                 if (!session || session !== s || s.paused) return;
@@ -2768,7 +2793,7 @@
       });
     } else if (s.audioPhase === "antwort") {
       renderAudioShell();
-      TTS.speakSeq(spoken(item), "he", function () {
+      saySeq(item, function () {
         if (!session || session !== s || s.paused) return;
         // kurze Nachwirkzeit, dann automatisch weiter
         s.timer = setTimeout(function () {
@@ -3258,7 +3283,7 @@
         task.dir = "he2de";
       } else {
         var dirs = ["he2de", "de2he"];
-        if (TTS.available && TTS.hasHebrew()) dirs.push("audio2de");
+        if (audioUrl(item) || (TTS.available && TTS.hasHebrew())) dirs.push("audio2de");
         task.dir = dirs[randInt(dirs.length)];
       }
     }
@@ -3304,7 +3329,7 @@
   function renderListen(task, title) {
     var body = sessionShell(title, session.i / session.tasks.length);
     var item = task.item;
-    var hasVoice = TTS.available && TTS.hasHebrew();
+    var hasVoice = !!audioUrl(item) || (TTS.available && TTS.hasHebrew());
 
     body.appendChild(el("div", "task-question", "Hör zu – was bedeutet das?"));
     var card = el("div", "card learn-card");
@@ -3967,7 +3992,7 @@
       var play = btn("🔊", "icon-btn", function () { say(item); });
       play.title = "Nochmal anhören";
       mid.appendChild(play);
-      if (!TTS.available || !TTS.hasHebrew()) {
+      if (!audioUrl(item) && (!TTS.available || !TTS.hasHebrew())) {
         mid.appendChild(el("div", "tts-hint", "Hebräische Stimme im Browser nicht verfügbar"));
       }
       body.appendChild(mid);
