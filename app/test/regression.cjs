@@ -1004,6 +1004,230 @@ function check(name, ok, detail) {
     entryDone.entry === entryRec.fourth && entryDone.earlierDone && entryDone.fourthDone === false,
     JSON.stringify(entryDone));
 
+  // --- Lektions-Player (T8): Bogen-Komposition, Szene-UI, E2E-Walk, Quiz-Scope, Resume, Erstkontakt ---
+  // Frischer Kurs- + SRS-Zustand.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.profile.onboarded = true; s.profile.tourSeen = true; s.profile.autoplay = false; s.profile.micHintDismissed = true;
+    s.srs = {};
+    s.course = { lessons: {}, entry: null, snacksSeen: {} };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+
+  // (a) Komposition: erste Lektion ohne Aufwaermen, mit Woerter/Hoeren/Quiz;
+  //     eine Szene+Grammatik-Lektion komponiert beide Phasen.
+  const comp = await page.evaluate(() => {
+    const K = window.TACHELES_COURSE, D = window.TACHELES_DEBUG;
+    const sceneLesson = K.lessons.find(x => x.scene && x.grammar);
+    return {
+      l1: D.lessonArcLabels(K.lessons[0].id),
+      sceneId: sceneLesson ? sceneLesson.id : null,
+      sceneArcs: sceneLesson ? D.lessonArcLabels(sceneLesson.id) : []
+    };
+  });
+  check("Player: Bogen Lektion 1 (Woerter/Hoeren/Quiz, kein Aufwaermen fuer Erst-Lektion)",
+    comp.l1.indexOf("Neue Wörter ✨") >= 0 && comp.l1.indexOf("Hören 👂") >= 0 &&
+    comp.l1.indexOf("Quiz 🏁") >= 0 && comp.l1.indexOf("Aufwärmen ↺") < 0, comp.l1.join("|"));
+  check("Player: Szene+Grammatik-Lektion komponiert beide Phasen",
+    !!comp.sceneId && comp.sceneArcs.indexOf("Szene 🎬") >= 0 && comp.sceneArcs.indexOf("Grammatik 🧠") >= 0,
+    comp.sceneId + ": " + comp.sceneArcs.join("|"));
+
+  // (b) Aufwaermen erscheint, sobald frueher Gelerntes vorliegt (spiral).
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    window.TACHELES_COURSE.lessons[0].newItemIds.forEach(id => {
+      s.srs[id] = { ease: 2.5, intervalDays: 1, dueTs: 0, reps: 2, lapses: 0, mastery: 1, lastReviewTs: Date.now() - 100000 };
+    });
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(400);
+  const warmArcs = await page.evaluate(() =>
+    window.TACHELES_DEBUG.lessonArcLabels(window.TACHELES_COURSE.lessons[1].id));
+  check("Player: Aufwaermen ↺ erscheint mit frueher gelernten Woertern (spiral)",
+    warmArcs.indexOf("Aufwärmen ↺") >= 0, warmArcs.join("|"));
+
+  // (c) Szene-UI direkt: Chat-Blasen + Weiter -> Verstaendnisfrage.
+  // Frisches SRS, damit vor der Szene KEIN Aufwaermen einsortiert wird.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(400);
+  await page.evaluate((id) => window.TACHELES_DEBUG.startLesson(id), comp.sceneId);
+  await page.waitForTimeout(400);
+  const sceneUi = await page.evaluate(() => ({
+    label: window.TACHELES_DEBUG.lessonStepLabel(),
+    bubbles: document.querySelectorAll(".chat .bubble").length,
+    weiter: !![...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()))
+  }));
+  check("Player: Szene rendert Chat-Blasen + Weiter-Knopf",
+    sceneUi.label === "Szene 🎬" && sceneUi.bubbles >= 2 && sceneUi.weiter, JSON.stringify(sceneUi));
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  check("Player: Szene -> Verstaendnisfrage (MC ueber eine Zeile)", await page.evaluate(() =>
+    window.TACHELES_DEBUG.lessonStepLabel() === "Szene 🎬" && !!document.querySelector("[data-correct-opt]")));
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
+  // (d) E2E-Walk der ersten Lektion aus frischem SRS: bis zum Rueckblick spielen.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {};
+    s.course = { lessons: {}, entry: null, snacksSeen: {} };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "course"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const b = document.querySelector("#btn-entry-first"); if (b) b.click(); }); // etwaiges Einstiegs-Overlay
+  await page.waitForTimeout(200);
+  await page.evaluate(() => { const b = document.querySelector("#cta-lesson-go"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const l1start = await page.evaluate(() => ({
+    label: window.TACHELES_DEBUG.lessonStepLabel(),
+    title: (document.querySelector(".session-title") || {}).textContent || ""
+  }));
+  check("Player: Lektion 1 startet (kein Aufwaermen zuerst, Phasen-Label sichtbar)",
+    !!l1start.label && l1start.label !== "Aufwärmen ↺" && /Lektion/.test(l1start.title), JSON.stringify(l1start));
+  const seenArcs = new Set();
+  const quizIds = new Set();
+  let recapReached = false;
+  for (let i = 0; i < 110; i++) {
+    const st = await page.evaluate(() => ({
+      done: !!document.querySelector(".done-screen"),
+      label: window.TACHELES_DEBUG.lessonStepLabel(),
+      item: window.TACHELES_DEBUG.currentTaskItem()
+    }));
+    if (st.done) { recapReached = true; break; }
+    if (st.label) seenArcs.add(st.label);
+    if (st.label === "Quiz 🏁" && st.item) quizIds.add(st.item);
+    await page.evaluate(() => {
+      const w = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
+      if (w) { w.click(); return; }
+      const hook = document.querySelector("[data-correct-opt]:not([disabled])");
+      if (hook) { hook.click(); return; }
+      const he = window.TACHELES_DEBUG.moduleCurrentCorrect();
+      if (he) {
+        const right = [...document.querySelectorAll(".opt:not(:disabled)")].find(b => (b.querySelector(".b-he") || {}).textContent === he);
+        if (right) { right.click(); return; }
+      }
+      const any = document.querySelector(".opt:not(:disabled)");
+      if (any) { any.click(); return; }
+      const self = [...document.querySelectorAll("button")].find(x => /konnte ich/i.test(x.textContent));
+      if (self) self.click();
+    });
+    await page.waitForTimeout(1050);
+  }
+  check("Player: Bogen erreicht den Rueckblick (done-screen)", recapReached, [...seenArcs].join("|"));
+  check("Player: Neue Woerter, Lesen, Hoeren und Quiz kamen vor",
+    seenArcs.has("Neue Wörter ✨") && seenArcs.has("Lesen 👓") && seenArcs.has("Hören 👂") && seenArcs.has("Quiz 🏁"),
+    [...seenArcs].join("|"));
+  const quizScope = await page.evaluate((ids) => {
+    const lesson = window.TACHELES_COURSE.lessons[0];
+    return ids.length > 0 && ids.every(id => lesson.newItemIds.indexOf(id) >= 0);
+  }, [...quizIds]);
+  check("Player: Quiz fragt NUR Lektionswoerter", quizScope, [...quizIds].join(","));
+  const afterL1 = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const K = window.TACHELES_COURSE;
+    return { done: (s.course.lessons[K.lessons[0].id] || {}).done, nextBtn: !!document.querySelector("#btn-next-lesson") };
+  });
+  check("Player: Lektion erledigt markiert + Naechste-Lektion-CTA (naechste freigeschaltet)",
+    afterL1.done === true && afterL1.nextBtn, JSON.stringify(afterL1));
+
+  // (e) Resume: Lektion 2 ueber die CTA starten, ein paar Schritte, abbrechen -> Schritt gemerkt.
+  await page.evaluate(() => { const b = document.querySelector("#btn-next-lesson"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => {
+      const w = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
+      if (w) { w.click(); return; }
+      const hook = document.querySelector("[data-correct-opt]:not([disabled])");
+      if (hook) { hook.click(); return; }
+      const any = document.querySelector(".opt:not(:disabled)");
+      if (any) any.click();
+    });
+    await page.waitForTimeout(1100);
+  }
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const resume = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    const l2 = window.TACHELES_COURSE.lessons[1].id;
+    return { step: (s.course.lessons[l2] || {}).step || 0, done: (s.course.lessons[l2] || {}).done };
+  });
+  check("Player: Abbruch merkt den Schritt (Resume), Lektion nicht erledigt",
+    resume.step >= 1 && resume.done !== true, JSON.stringify(resume));
+
+  // (f) Erstkontakt in der Lektion: Neue-Woerter-Phase markiert introducedThisSession,
+  //     und der ERSTE Abruf eines frisch gelehrten Worts hebt die Mastery NICHT.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.srs = {}; s.course = { lessons: {}, entry: null, snacksSeen: {} };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+  });
+  await page.reload(); await page.waitForTimeout(400);
+  await page.evaluate(() => window.TACHELES_DEBUG.startLesson(window.TACHELES_COURSE.lessons[0].id));
+  await page.waitForTimeout(300);
+  // Durch die Teach-Karten (Neue Woerter) klicken, ohne etwas abzufragen.
+  for (let i = 0; i < 12; i++) {
+    const lbl = await page.evaluate(() => window.TACHELES_DEBUG.lessonStepLabel());
+    if (lbl !== "Neue Wörter ✨") break;
+    await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim())); if (b) b.click(); });
+    await page.waitForTimeout(250);
+  }
+  const introduced = await page.evaluate(() => ({
+    n: window.TACHELES_DEBUG.introducedCount(),
+    total: window.TACHELES_COURSE.lessons[0].newItemIds.length
+  }));
+  check("Player: Neue-Woerter-Phase markiert Erstkontakt (introducedThisSession)",
+    introduced.n === introduced.total, JSON.stringify(introduced));
+  // Ersten frisch gelehrten (reps === 0) Wort-Abruf korrekt beantworten -> Mastery bleibt 0.
+  let fcItem = null, fcMastery = null;
+  for (let i = 0; i < 40; i++) {
+    const st = await page.evaluate(() => {
+      const it = window.TACHELES_DEBUG.currentTaskItem();
+      return {
+        done: !!document.querySelector(".done-screen"),
+        it: it,
+        fresh: it && window.TACHELES_COURSE.lessons[0].newItemIds.indexOf(it) >= 0 && window.TACHELES_DEBUG.srsReps(it) === 0
+      };
+    });
+    if (st.done) break;
+    if (st.fresh) {
+      await page.evaluate(() => {
+        const hook = document.querySelector("[data-correct-opt]:not([disabled])");
+        if (hook) { hook.click(); return; }
+        const any = document.querySelector(".opt:not(:disabled)");
+        if (any) any.click();
+      });
+      await page.waitForTimeout(800);
+      fcItem = st.it;
+      fcMastery = await page.evaluate((id) => window.TACHELES_DEBUG.getMastery(id), st.it);
+      break;
+    }
+    await page.evaluate(() => {
+      const w = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
+      if (w) { w.click(); return; }
+      const hook = document.querySelector("[data-correct-opt]:not([disabled])");
+      if (hook) { hook.click(); return; }
+      const any = document.querySelector(".opt:not(:disabled)");
+      if (any) any.click();
+    });
+    await page.waitForTimeout(950);
+  }
+  check("Player: Erstkontakt-Regel haelt in der Lektion (erster Abruf hebt Mastery NICHT)",
+    fcItem !== null && fcMastery === 0, fcItem + " -> " + fcMastery);
+  await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(250);
+
   // Zustand fuer nachfolgende Sektionen neutral hinterlassen (onboarded, tour gesehen).
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));

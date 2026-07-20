@@ -2321,17 +2321,13 @@
     smart: "Smart-Session", flash: "Karten", mc: "Multiple Choice", match: "Paare",
     swipe: "Wisch", reels: "Reels", signs: "Schilder lesen", listen: "Hören", speak: "Sprechen",
     dialog: "Dialog", build: "Satzbau", image: "Bilder", blitz: "Blitz", audio: "Audio-Kurs",
-    module: "Modul", mastercheck: "Mastery-Check", reading: "Lesen üben"
+    module: "Modul", mastercheck: "Mastery-Check", reading: "Lesen üben",
+    lesson: "Lektion", snack: "Häppchen"
   };
 
   function startSession(modeId, opts) {
     opts = opts || {};
     cleanupSession();
-    if (modeId === "lesson") {
-      // Lektions-Player folgt in T8; bis dahin freundlicher Hinweis statt Rate-Fallback.
-      toast("🎓 Der Lektions-Player ist gleich fertig – schau in Kürze nochmal rein.");
-      return;
-    }
     var size = opts.size ? clamp(opts.size, 1, 20) : sessionSize();
     session = {
       mode: modeId, answered: 0, correct: 0, wrong: 0, xp: 0, mastered: 0,
@@ -2448,6 +2444,17 @@
       session.i = 0;
       session.label = "👓 " + (drill.title || "Lesen üben");
       if (!session.drillTasks.length) { session = null; toast("Übung ist leer."); return; }
+    } else if (modeId === "lesson") {
+      // Lektions-Player (T8): fester 8-Schritt-Bogen als flache Schrittliste.
+      // Resume: bei gespeichertem, nicht erledigtem Schritt dort fortsetzen.
+      var lesson = lessonById(opts.lessonId);
+      if (!lesson) { session = null; toast("Lektion nicht gefunden."); return; }
+      session.lesson = lesson;
+      session.steps = buildLessonSteps(lesson);
+      if (!session.steps.length) { session = null; toast("Diese Lektion ist noch leer."); return; }
+      var saved = lessonState(lesson.id);
+      session.stepIdx = (!saved.done && saved.step > 0 && saved.step < session.steps.length) ? saved.step : 0;
+      session.label = lesson.emoji + " " + lesson.title;
     } else {
       // Schilder-Modus: nur Schilder. Sprechen: keine Einzelbuchstaben. Satzbau: nur Saetze.
       // Bilder: nur Items mit Emoji. Blitz: schnelle MC-Runde gegen die Uhr.
@@ -2588,6 +2595,7 @@
     if (m === "dialog") return renderDialog();
     if (m === "audio") return renderAudio();
     if (m === "module") return renderModuleStep();
+    if (m === "lesson") return renderLessonStep();
     if (m === "reading") return renderDrillTask();
     return renderTask();
   }
@@ -3500,17 +3508,6 @@
     return list;
   }
 
-  /** Nach einer Antwort: richtig -> automatisch weiter, falsch -> "Weiter"-Button. */
-  function drillNext(body, correct) {
-    if (correct) { later(function () { session.i++; renderSession(); }, 900); }
-    else {
-      var cont = btn("Weiter", "btn primary big", function () { session.i++; renderSession(); });
-      cont.dataset.k = "cont";
-      body.appendChild(cont);
-      cont.focus();
-    }
-  }
-
   function renderDrillTask() {
     var s = session;
     var task = s.drillTasks[s.i];
@@ -3518,6 +3515,24 @@
     setOptKeys(null);
     var title = s.label + " · " + (s.i + 1) + "/" + s.drillTasks.length;
     var body = sessionShell(title, s.i / s.drillTasks.length);
+    renderDrillTaskInto(task, body, function () { s.i++; renderSession(); });
+  }
+
+  /** Gemeinsamer Drill-Renderer (T6/T8): rendert EINEN Task in `body`.
+   *  `onDone` = "weiter zum naechsten Task" (Reading: session.i++;
+   *  Lektion: moduleStepNext). Mehrschritt-Tasks (blend) rendern denselben Task
+   *  ueber renderSession neu, bis sie fertig sind, und rufen dann onDone. */
+  function renderDrillTaskInto(task, body, onDone) {
+    // Nach einer Antwort: richtig -> automatisch weiter, falsch -> "Weiter"-Button.
+    var next = function (correct) {
+      if (correct) { later(onDone, 900); }
+      else {
+        var cont = btn("Weiter", "btn primary big", onDone);
+        cont.dataset.k = "cont";
+        body.appendChild(cont);
+        cont.focus();
+      }
+    };
     if (task.kind === "hearPick") {
       // Silbe hoeren -> geschriebene Silbe waehlen. Kein Item -> recordFreeAnswer.
       body.appendChild(el("div", "task-question", "Welche Silbe hörst du?"));
@@ -3529,7 +3544,7 @@
       var opts = shuffle([task.syl].concat(pickSylDistractors(task.syl, 3)));
       drillOptions(body, opts.map(function (o) { return o.he; }), opts.indexOf(task.syl), true, function (correct) {
         recordFreeAnswer("mc", correct);
-        drillNext(body, correct);
+        next(correct);
       });
     } else if (task.kind === "readPick") {
       // Silbe sehen -> Umschrift waehlen.
@@ -3543,18 +3558,18 @@
       drillOptions(body, opts2.map(function (o) { return o.translit; }), opts2.indexOf(task.syl), false, function (correct) {
         recordFreeAnswer("mc", correct);
         if (correct) sayText(task.syl.he);
-        drillNext(body, correct);
+        next(correct);
       });
     } else if (task.kind === "blend") {
-      renderBlendTask(task, body);
+      renderBlendTask(task, body, next);
     } else { // speed
-      renderSpeedTask(task, body);
+      renderSpeedTask(task, body, next);
     }
   }
 
   /** Wort zusammenlesen: Silbe fuer Silbe aufdecken, pro Silbe die Lesung waehlen,
    *  am Ende Ganzwort-Audio + eine SRS-Verbuchung (Erkennen he->de). */
-  function renderBlendTask(task, body) {
+  function renderBlendTask(task, body, next) {
     var item = task.item, parts = task.parts;
     var pos = task.pos || 0;
     body.appendChild(el("div", "task-question", "Lies das Wort Silbe für Silbe:"));
@@ -3583,13 +3598,13 @@
         var reveal = el("div", "listen-reveal");
         reveal.appendChild(el("div", "de-prompt", item.translit + " · " + item.de));
         body.appendChild(reveal);
-        drillNext(body, !task.errs);
+        next(!task.errs);
       }
     });
   }
 
   /** Tempo-Lesen: Wort kurz zeigen, dann Bedeutung waehlen. */
-  function renderSpeedTask(task, body) {
+  function renderSpeedTask(task, body, next) {
     var item = task.item;
     body.appendChild(el("div", "task-question", "Schnell lesen – was heißt das?"));
     var card = el("div", "card learn-card syl-card");
@@ -3603,7 +3618,7 @@
     drillOptions(body, opts.map(function (o) { return o.de; }), opts.indexOf(item), false, function (correct) {
       recordAnswer(item.id, "mc", correct ? "good" : "again", "he2de");
       flash.classList.remove("gone"); // Aufloesung wieder zeigen
-      drillNext(body, correct);
+      next(correct);
     });
   }
 
@@ -4065,6 +4080,8 @@
         return { id: id, ok: !!session.seenIds[id] };
       })
     };
+    // Lektions-Player (T8): Lektion fuer den Rueckblick + Naechste-Lektion-CTA merken.
+    if (session.lesson) stats.lesson = { id: session.lesson.id, title: session.lesson.title, emoji: session.lesson.emoji };
     // Modus-Zaehler fuer Abzeichen (nur bei ECHTEM Session-Ende, nicht bei Abbruch)
     var counters = state.gamification.counters;
     if (session.mode === "blitz" && session.correct > (counters.bestBlitz || 0)) {
@@ -4151,9 +4168,21 @@
       wrap.appendChild(review);
     }
 
-    // "Was jetzt?": ein klarer naechster Schritt statt Sackgasse
+    // Lektions-Rueckblick: EIN klarer CTA auf die naechste Lektion (statt Themen-Tipp).
+    if (stats.lesson && courseAvailable()) {
+      var nl = nextLesson();
+      if (nl) {
+        var lrow = el("div", "done-next", "Als Nächstes: " + nl.emoji + " " + nl.title);
+        lrow.setAttribute("role", "button");
+        lrow.tabIndex = 0;
+        lrow.id = "btn-next-lesson";
+        lrow.addEventListener("click", function () { startSession("lesson", { lessonId: nl.id }); });
+        wrap.appendChild(lrow);
+      }
+    }
+    // "Was jetzt?": ein klarer naechster Schritt statt Sackgasse (nicht in Lektionen).
     var rec = recommendedTheme();
-    if (rec && !stats.exam) {
+    if (rec && !stats.exam && !stats.lesson) {
       var nextRow = el("div", "done-next", "Weiter geht’s: " + rec.emoji + " " + rec.title);
       nextRow.setAttribute("role", "button");
       nextRow.tabIndex = 0;
@@ -5106,7 +5135,9 @@
   function moduleStepNext() {
     if (!session) return;
     session.stepIdx++;
-    renderModuleStep();
+    // Lektions-Player: Resume-Zeiger nach jedem Schritt sichern.
+    if (session.mode === "lesson" && session.lesson) setLessonStep(session.lesson.id, session.stepIdx);
+    renderSession(); // verzweigt nach mode (module -> renderModuleStep, lesson -> renderLessonStep)
   }
 
   function renderModuleStep() {
@@ -5447,6 +5478,305 @@
   }
 
   /* ==========================================================
+   * 16b. Lektions-Player (Modus "lesson", 8-Schritt-Bogen, Resume)
+   *
+   * Der Kurs orchestriert die vorhandenen Aufgaben-Renderer: eine Lektion
+   * wird zu einer FLACHEN Schrittliste (Bogen) gebaut, jeder Schritt traegt
+   * `arc` (Index in LESSON_ARCS) fuer die sichtbare Phasen-Beschriftung.
+   * Fortschritt/Weiter laeuft ueber moduleStepNext (persistiert den Schritt).
+   * ========================================================== */
+
+  var LESSON_ARCS = ["Aufwärmen ↺", "Szene 🎬", "Neue Wörter ✨", "Grammatik 🧠", "Lesen 👓", "Hören 👂", "Quiz 🏁"];
+
+  /** Baut den Bogen einer Lektion als flache Schrittliste. Defensiv gegen
+   *  fehlende Refs: fehlt etwas, wird die Phase uebersprungen (nie crashen). */
+  function buildLessonSteps(lesson) {
+    var steps = [];
+    var idx = lessonIndex(lesson.id);
+    var now = Date.now();
+    // 1. Aufwaermen: 2-3 Abrufaufgaben aus FRUEHEREN Lektionen, faellige SRS zuerst.
+    //    Fuer die erste Lektion / ohne frueher Gelerntes: entfaellt.
+    if (COURSE && idx > 0) {
+      var earlier = [];
+      for (var i = 0; i < idx; i++) earlier = earlier.concat(COURSE.lessons[i].newItemIds || []);
+      var pool = earlier.map(itemById).filter(function (it) { return it && !isNew(it.id); });
+      var due = pool.filter(function (it) { return isDue(it.id, now); });
+      var rest = pool.filter(function (it) { return !isDue(it.id, now); });
+      var warm = shuffle(due.slice()).concat(shuffle(rest.slice())).slice(0, 3);
+      warm.forEach(function (it, w) {
+        steps.push({ arc: 0, type: "task", item: it, kind: "mc", dir: w % 2 === 0 ? "he2de" : "de2he" });
+      });
+    }
+    // 2. Szene: Dialog-/Inline-Zeilen mit Audio + 1 Verstaendnisfrage.
+    var lines = null;
+    if (lesson.scene && lesson.scene.dialogueId) {
+      var d = null;
+      (CONTENT.dialogues || []).forEach(function (x) { if (x.id === lesson.scene.dialogueId) d = x; });
+      if (d) lines = d.lines;
+    } else if (lesson.scene && lesson.scene.lines) {
+      lines = lesson.scene.lines;
+    }
+    if (lines && lines.length >= 2) {
+      steps.push({ arc: 1, type: "scene", lines: lines });
+      steps.push({ arc: 1, type: "sceneQuiz", lines: lines });
+    }
+    // 3. Neue Woerter: teach-Karten (markieren introducedThisSession -> Erstkontakt).
+    (lesson.newItemIds || []).forEach(function (id) {
+      if (itemById(id)) steps.push({ arc: 2, type: "teach", itemId: id });
+    });
+    // 4. Grammatik: referenzierte Modul-Schritte oder inline (grammar.js-Schema).
+    if (lesson.grammar) {
+      var gsteps = [];
+      if (lesson.grammar.moduleId) {
+        var gm = moduleById(lesson.grammar.moduleId);
+        if (gm) (lesson.grammar.steps || []).forEach(function (ix) { if (gm.steps[ix]) gsteps.push(gm.steps[ix]); });
+      } else if (lesson.grammar.inline) {
+        gsteps = lesson.grammar.inline;
+      }
+      gsteps.forEach(function (g) { if (g && g.type) steps.push({ arc: 3, type: g.type, gstep: g }); });
+    }
+    // 5. Lesen: Drill-Aufgaben inline (nur fruehe Lektionen).
+    if (lesson.reading && READING) {
+      var drill = null;
+      READING.drills.forEach(function (dd) { if (dd.id === lesson.reading.drill) drill = dd; });
+      if (drill) buildDrillTasks(drill).forEach(function (t) { steps.push({ arc: 4, type: "drill", task: t }); });
+    }
+    // 6. Hoeren: 2-3 audio2de ueber die Lektionswoerter (nur Ohr).
+    if (lesson.listening !== false) {
+      shuffle((lesson.newItemIds || []).slice()).slice(0, 3).forEach(function (id) {
+        var it = itemById(id);
+        if (it) steps.push({ arc: 5, type: "task", item: it, kind: "mc", dir: "audio2de" });
+      });
+    }
+    // 7. Quiz: dynamisch NUR ueber diese Lektion; Erkennen + Produzieren im Wechsel.
+    var quizItems = shuffle((lesson.newItemIds || []).map(itemById).filter(Boolean));
+    quizItems.forEach(function (it, q) {
+      var dir = ["he2de", "de2he"][q % 2];
+      if (it.type === "sentence" && it.tokens && it.tokens.length >= 2 && q % 3 === 2) {
+        steps.push({ arc: 6, type: "task", item: it, kind: "build", dir: null });
+      } else {
+        steps.push({ arc: 6, type: "task", item: it, kind: "mc", dir: dir });
+      }
+      // Jedes 3. Wort zusaetzlich hoeren; Sprechen nur, wenn Mikro da (ueberspringbar).
+      if (q % 3 === 0) steps.push({ arc: 6, type: "task", item: it, kind: "mc", dir: "audio2de" });
+      else if (STT.available() && q % 3 === 1 && it.type !== "letter") {
+        steps.push({ arc: 6, type: "task", item: it, kind: "speak", dir: null });
+      }
+    });
+    return steps;
+  }
+
+  function renderLessonStep() {
+    var s = session;
+    if (!s) return;
+    var step = s.steps[s.stepIdx];
+    if (!step) {
+      markLessonDone(s.lesson.id);
+      return endSession();
+    }
+    setOptKeys(null);
+    var arcLabel = LESSON_ARCS[step.arc] || "";
+    // Sichtbare Phasen-Beschriftung im Session-Titel (mit Lektion + Fortschritt).
+    var title = "🎓 Lektion · " + arcLabel + " · " + (s.stepIdx + 1) + "/" + s.steps.length;
+    // Grammatik-Schritte laufen durch die unveraenderten Modul-Renderer (gstep).
+    if (step.type === "teach") return renderModuleTeach({ type: "teach", itemId: step.itemId }, title);
+    if (step.type === "explain") return renderModuleExplain(step.gstep, title);
+    if (step.type === "cloze") return renderModuleCloze(step.gstep, title);
+    if (step.type === "form") return renderModuleForm(step.gstep, title);
+    if (step.type === "quiz") return renderModuleQuiz(step.gstep, title);
+    if (step.type === "pairquiz") return renderModulePairQuiz(step.gstep, title);
+    if (step.type === "scene") return renderLessonScene(step, title);
+    if (step.type === "sceneQuiz") return renderLessonSceneQuiz(step, title);
+    if (step.type === "drill") return renderLessonDrill(step, title);
+    return renderLessonTask(step, title); // type "task"
+  }
+
+  /** Weiter-Logik der Lesson-Zwischenschritte (wie drillNext, aber moduleStepNext). */
+  function drillNextLesson(body, correct) {
+    if (correct) { later(moduleStepNext, 900); }
+    else {
+      var cont = btn("Weiter", "btn primary big", moduleStepNext);
+      cont.dataset.k = "cont";
+      body.appendChild(cont);
+      cont.focus();
+    }
+  }
+
+  /** Szene 🎬: Zeilen als Chat mit Audio, Weiter-Knopf (kein Abruf, keine XP). */
+  function renderLessonScene(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    var xpEl = $(".session-xp"); if (xpEl) xpEl.textContent = "";
+    body.appendChild(el("div", "task-question", "Hör dir die Szene an:"));
+    var chat = el("div", "chat");
+    step.lines.forEach(function (l) { chat.appendChild(dialogueBubble(l)); });
+    body.appendChild(chat);
+    if (state.profile.autoplay && step.lines[0]) sayText(step.lines[0].he);
+    moduleContinueBtn(body);
+  }
+
+  /** Szene-Verstaendnisfrage: 1 MC ueber eine Zeile (deutsche Bedeutung). */
+  function renderLessonSceneQuiz(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    var lines = step.lines;
+    var target = lines[dayHash(session.lesson.id + "|scene") % lines.length];
+    body.appendChild(el("div", "task-question", "Was bedeutet diese Zeile?"));
+    var card = el("div", "card learn-card");
+    var he = el("div", "he-text big", target.he);
+    he.dir = "rtl"; he.lang = "he";
+    card.appendChild(he);
+    card.appendChild(el("div", "translit", target.translit || ""));
+    card.appendChild(btn("🔊", "icon-btn", function () { sayText(target.he); }));
+    body.appendChild(card);
+    var distr = shuffle(lines.filter(function (l) { return l.de !== target.de; })).slice(0, 3);
+    var opts = shuffle([target].concat(distr));
+    drillOptions(body, opts.map(function (o) { return o.de; }), opts.indexOf(target), false, function (correct) {
+      // Dialog-Zeilen koennen ein Item referenzieren -> dann SRS, sonst frei.
+      if (target.itemId && itemById(target.itemId)) recordAnswer(target.itemId, "dialog", correct ? "good" : "again");
+      else recordFreeAnswer("dialog", correct);
+      drillNextLesson(body, correct);
+    });
+  }
+
+  /** Lesen 👓: ein Drill-Task im Bogen; delegiert an den gemeinsamen T6-Renderer. */
+  function renderLessonDrill(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    renderDrillTaskInto(step.task, body, function () { moduleStepNext(); });
+  }
+
+  /** Aufgaben-Schritt (mc/build/speak) auf einem Einzel-Item, Modul-Runner-Stil. */
+  function renderLessonTask(step, title) {
+    var body = sessionShell(title, session.stepIdx / session.steps.length);
+    var item = step.item;
+    if (!item) return moduleStepNext();
+    if (step.kind === "build" && item.tokens && item.tokens.length >= 2) {
+      return renderLessonBuild(step, body);
+    }
+    if (step.kind === "speak") {
+      // Sprechen im Quiz: optional ueberspringbar (Selbstbewertung, kein Zwang).
+      body.appendChild(el("div", "task-question", "Sag das laut auf Hebräisch:"));
+      var scard = el("div", "card learn-card");
+      scard.appendChild(el("div", "de-prompt", item.de));
+      scard.appendChild(heEl(item, { big: true, showHint: true }));
+      scard.appendChild(speakRow(item, true));
+      body.appendChild(scard);
+      var self = el("div", "self-grade-row");
+      self.appendChild(btn("✓ Konnte ich", "btn", function () {
+        recordAnswer(item.id, "speak", "good");
+        later(moduleStepNext, 700);
+      }));
+      self.appendChild(btn("✗ Noch nicht", "btn ghost", function () {
+        recordAnswer(item.id, "speak", "again");
+        later(moduleStepNext, 500);
+      }));
+      self.appendChild(btn("⏭ Überspringen", "btn ghost", function () { moduleStepNext(); }));
+      body.appendChild(self);
+      return;
+    }
+    // mc (he2de | de2he | audio2de): Distraktoren bevorzugt aus der Lektion.
+    var seenDe = {}, seenHe = {}, distr = [];
+    seenDe[item.de] = true; seenHe[item.he] = true;
+    var lessonDistr = (session.lesson.newItemIds || []).map(itemById)
+      .filter(function (x) { return x && x.id !== item.id; });
+    shuffle(lessonDistr.slice()).forEach(function (x) {
+      if (distr.length >= 3 || seenDe[x.de] || seenHe[x.he]) return;
+      seenDe[x.de] = true; seenHe[x.he] = true; distr.push(x);
+    });
+    pickDistractors(item, 3).forEach(function (x) {
+      if (distr.length >= 3 || seenDe[x.de] || seenHe[x.he]) return;
+      seenDe[x.de] = true; seenHe[x.he] = true; distr.push(x);
+    });
+    var card = el("div", "card learn-card");
+    if (step.dir === "he2de") {
+      body.appendChild(el("div", "task-question", "Was bedeutet das?"));
+      card.appendChild(heEl(item, { big: true, showHint: true, quiz: true }));
+      card.appendChild(speakRow(item));
+    } else if (step.dir === "de2he") {
+      body.appendChild(el("div", "task-question", "Wie heißt das auf Hebräisch?"));
+      card.appendChild(el("div", "de-prompt", item.de));
+      if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
+    } else { // audio2de - nur Ohr
+      body.appendChild(el("div", "task-question", "Was hörst du?"));
+      card.appendChild(btn("🔊", "icon-btn large", function () { say(item); }));
+      say(item);
+    }
+    body.appendChild(card);
+    var isHe = step.dir === "de2he";
+    var opts = shuffle([item].concat(distr));
+    drillOptions(body,
+      opts.map(function (o) { return isHe ? heOptionText(o) : o.de; }),
+      opts.indexOf(item), isHe, function (correct) {
+        recordAnswer(item.id, "mc", correct ? "good" : "again", step.dir);
+        if (step.dir === "audio2de") {
+          var reveal = el("div", "listen-reveal");
+          reveal.appendChild(heEl(item, {}));
+          card.appendChild(reveal);
+        }
+        drillNextLesson(body, correct);
+      });
+  }
+
+  /** Satzbau-Schritt im Quiz: Token-Kacheln wie renderBuild, aber auf step.item
+   *  und mit moduleStepNext statt nextTask. */
+  function renderLessonBuild(step, body) {
+    var item = step.item;
+    body.appendChild(el("div", "task-question", "Baue den Satz:"));
+    var card = el("div", "card learn-card");
+    card.appendChild(el("div", "de-prompt", item.de));
+    if (item.note) card.appendChild(el("div", "note-line", "(" + item.note + ")"));
+    body.appendChild(card);
+    var answer = el("div", "build-answer");
+    answer.dir = "rtl";
+    body.appendChild(answer);
+    var order = shuffle(item.tokens.map(function (t, i) { return i; }));
+    if (order.length === 2 && order[0] === 0) order = [1, 0];
+    var bank = el("div", "build-bank");
+    bank.dir = "rtl";
+    body.appendChild(bank);
+    var picked = [];
+    var feedback = el("div", "feedback-note");
+    body.appendChild(feedback);
+    function finish() {
+      var built = picked.map(function (i) { return item.tokens[i].he; }).join(" ");
+      var target = item.tokens.map(function (t) { return t.he; }).join(" ");
+      var correct = built === target;
+      answer.classList.add(correct ? "ok" : "no");
+      if (correct) {
+        feedback.textContent = "Richtig! " + item.translit + " · " + item.de;
+        say(item);
+      } else {
+        feedback.textContent = "Richtige Reihenfolge: " + item.translit + " · " + item.de;
+        answer.innerHTML = "";
+        item.tokens.forEach(function (t) { answer.appendChild(el("span", "build-chip done", t.he)); });
+      }
+      recordAnswer(item.id, "build", correct ? "good" : "again");
+      later(moduleStepNext, correct ? 1200 : 2600);
+    }
+    order.forEach(function (tokenIdx) {
+      var t = item.tokens[tokenIdx];
+      var tile = el("button", "build-tile");
+      var he = el("div", "b-he", t.he); he.dir = "rtl"; he.lang = "he";
+      tile.appendChild(he);
+      tile.appendChild(el("div", "b-translit", t.translit));
+      tile.title = t.de;
+      tile.addEventListener("click", function () {
+        if (tile.disabled) return;
+        tile.disabled = true;
+        tile.classList.add("used");
+        picked.push(tokenIdx);
+        answer.appendChild(el("span", "build-chip", t.he));
+        if (picked.length === item.tokens.length) finish();
+      });
+      bank.appendChild(tile);
+    });
+    body.appendChild(btn("↺ Zurücksetzen", "btn ghost", function () {
+      picked = [];
+      answer.innerHTML = "";
+      answer.classList.remove("ok", "no");
+      bank.querySelectorAll(".build-tile").forEach(function (x) { x.disabled = false; x.classList.remove("used"); });
+    }));
+  }
+
+  /* ==========================================================
    * 17. Sync: Merge-Import, Sync-Code (Base64), Import-Overlay
    * ========================================================== */
 
@@ -5761,6 +6091,13 @@
     capUrl: function (base, body, max) { return capUrl(base, body, max); },
     // Item-ID der aktuellen Session-Aufgabe (fuer den Erstkontakt-Test).
     currentTaskItem: function () {
+      if (session && session.mode === "lesson") {
+        var ls = session.steps[session.stepIdx];
+        if (!ls) return null;
+        if (ls.item) return ls.item.id;
+        if (ls.itemId) return ls.itemId;
+        return (ls.gstep && ls.gstep.itemId) ? ls.gstep.itemId : null;
+      }
       if (!session || !session.tasks) return null;
       var t = session.tasks[session.i];
       return t ? t.item.id : null;
@@ -5775,8 +6112,11 @@
     moduleCurrentCorrect: function () {
       if (!session || !session.steps) return null;
       var st = session.steps[session.stepIdx];
-      if (!st || !Array.isArray(st.options)) return null;
-      var c = st.options.filter(function (o) { return o && o.correct === true; })[0];
+      if (!st) return null;
+      // Lektions-Grammatik: Optionen liegen im gestellten gstep.
+      var opts = Array.isArray(st.options) ? st.options : (st.gstep && Array.isArray(st.gstep.options) ? st.gstep.options : null);
+      if (!opts) return null;
+      var c = opts.filter(function (o) { return o && o.correct === true; })[0];
       return c ? c.he : null;
     },
     // Audio-Schicht (fuer die Regression, ohne echte Dateien anzufassen).
@@ -5793,6 +6133,27 @@
       };
     },
     lessonStateOf: function (id) { return lessonState(id); },
+    // Lektions-Player (T8): aktuelle Phasen-Beschriftung + Phasen-Komposition.
+    lessonStepLabel: function () {
+      if (!session || session.mode !== "lesson") return null;
+      var st = session.steps[session.stepIdx];
+      return st ? (LESSON_ARCS[st.arc] || "") : null;
+    },
+    lessonArcLabels: function (id) {
+      var l = lessonById(id);
+      if (!l) return null;
+      var seen = {}, out = [];
+      buildLessonSteps(l).forEach(function (s) {
+        var lab = LESSON_ARCS[s.arc];
+        if (lab && !seen[lab]) { seen[lab] = 1; out.push(lab); }
+      });
+      return out;
+    },
+    startLesson: function (id) { return startSession("lesson", { lessonId: id }); },
+    srsReps: function (id) { var e = state.srs[id]; return e ? (e.reps || 0) : 0; },
+    introducedCount: function () {
+      return (session && session.introducedThisSession) ? Object.keys(session.introducedThisSession).length : 0;
+    },
     // Quereinstieg (T7): Ueberspringbarkeit + empfohlener Einstieg fuer die Regression.
     lessonSkippable: function (id) { var l = lessonById(id); return l ? lessonSkippable(l) : null; },
     recommendedEntry: function () { var l = recommendedEntryLesson(); return l ? l.id : null; },
