@@ -1143,6 +1143,21 @@
   }
   function audioUrl(item) { return item ? clipUrl(item.id) : null; } // fuer Debug/Regression
 
+  /** Einmal pro Sitzung sichtbar machen, wenn Clips existieren, aber die
+   *  Wiedergabe scheitert (z. B. Autoplay-Richtlinie, eingebettete Webviews
+   *  wie die VS-Code-Vorschau). Sonst ist der TTS-Fallback unsichtbar und
+   *  schwer zu diagnostizieren. */
+  var audioFallbackWarned = false;
+  function warnAudioFallback(why) {
+    if (audioFallbackWarned) return;
+    audioFallbackWarned = true;
+    try {
+      console.info("Tacheles: echte Sprach-Samples vorhanden, aber Wiedergabe fehlgeschlagen (" +
+        why + ") – nutze Browser-TTS als Ersatz. In eingebetteten Vorschauen " +
+        "(z. B. VS Code) ist Audio oft blockiert; im normalen Browser testen.");
+    } catch (e) { /* egal */ }
+  }
+
   /**
    * Spielt den Clip zu KEY ab; ohne Clip (oder bei Ladefehler, z. B. offline und
    * noch nicht gecacht) ruft es fallback() (Browser-TTS) und geht weiter.
@@ -1156,12 +1171,12 @@
       var a = new Audio(url);
       audioPlayer = a;
       var fell = false;
-      var fb = function () { if (fell) return; fell = true; fallback(); if (onDone) onDone(); };
+      var fb = function (why) { if (fell) return; fell = true; warnAudioFallback(why || "Ladefehler"); fallback(); if (onDone) onDone(); };
       a.onended = function () { if (onDone) onDone(); };
-      a.onerror = fb;
+      a.onerror = function () { fb("Medienfehler " + (a.error && a.error.code)); };
       var p = a.play();
-      if (p && p.catch) p.catch(fb);
-    } catch (e) { fallback(); if (onDone) onDone(); }
+      if (p && p.catch) p.catch(function (e) { fb(e && e.name); });
+    } catch (e) { warnAudioFallback("Exception"); fallback(); if (onDone) onDone(); }
   }
 
   /**
