@@ -11,7 +11,7 @@
  */
 "use strict";
 
-var CACHE_NAME = "tacheles-v13";
+var CACHE_NAME = "tacheles-v14";
 var AUDIO_CACHE = "tacheles-audio-v1";
 var ASSETS = [
   "./",
@@ -19,6 +19,9 @@ var ASSETS = [
   "./styles.css",
   "./content.js",
   "./grammar.js",
+  "./course.js",
+  "./snacks.js",
+  "./reading.js",
   "./app.js",
   "./audio/manifest.js",
   "./manifest.webmanifest",
