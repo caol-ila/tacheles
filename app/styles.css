@@ -977,6 +977,8 @@ body.in-session .bottom-nav { display: none; }
 
 /* Heute-Block (Home) */
 .today-card { border: 2px solid var(--primary, #177e89); }
+/* Wissens-Haeppchen des Tages: Emoji + Titel + Start-Knopf in einer Zeile. */
+.snack-card { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; }
 .today-tiles { display: flex; gap: 10px; margin: 10px 0 12px; }
 .today-tile { flex: 1; background: rgba(23, 126, 137, .06); border: 1px solid var(--line); border-radius: 12px; padding: 10px; cursor: pointer; text-align: center; position: relative; }
 .today-label { font-size: .75rem; color: var(--muted); margin-bottom: 4px; }

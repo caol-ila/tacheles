@@ -181,7 +181,7 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(400);
   check("Tour ueberspringen fuehrt zu Home, tourSeen gesetzt", await page.evaluate(() =>
-    !!document.querySelector("#cta-start") &&
+    !!document.querySelector("#stats-row") &&
     JSON.parse(localStorage.getItem("tacheles_state_v1")).profile.tourSeen === true));
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
@@ -189,7 +189,7 @@ function check(name, ok, detail) {
     localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
   });
   await page.reload(); await page.waitForTimeout(600);
-  check("Weiter-lernen-Karte auf Home", await page.evaluate(() => !!document.querySelector(".next-card")));
+  check("Heute-Block auf Home", await page.evaluate(() => !!document.querySelector(".today-card")));
 
   // --- 2a. Neue State-Felder ueberleben Laden/Normalisieren ---
   const newFields = await page.evaluate(() => {
@@ -211,8 +211,10 @@ function check(name, ok, detail) {
 
   // --- 2b. Tag-1-Verhalten (Teach-First) ---
   // Smart-Session: erste Aufgabe zu einem NEUEN Wort ist eine Intro-Karte,
-  // keine unbeantwortbare Frage.
-  await page.evaluate(() => { const b = document.querySelector("#cta-start"); if (b) b.click(); });
+  // keine unbeantwortbare Frage. Power-Training liegt seit T5 im Vokabeln-Tab.
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#cta-power"); if (b) b.click(); });
   await page.waitForTimeout(500);
   const intro = await page.evaluate(() => ({
     tag: (document.querySelector(".intro-tag") || {}).textContent || null,
@@ -653,7 +655,7 @@ function check(name, ok, detail) {
   const corrupt = await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
     return {
-      home: !!document.querySelector("#cta-start"),
+      home: !!document.querySelector("#stats-row"),
       shalomType: typeof s.srs.shalom,
       shalomDropped: s.srs.shalom === undefined,
       validMastery: s.srs.w_valid ? s.srs.w_valid.mastery : null,
@@ -755,10 +757,18 @@ function check(name, ok, detail) {
       goal: s.profile.dailyGoalMin,
       defaults: s.profile.levelCap === "auto" && s.profile.unlockedBand === "A1" &&
         s.profile.placementDone === false && s.profile.sttNoticeConfirmed === false,
-      noOnb: !document.querySelector(".onb"), home: !!document.querySelector("#cta-start"),
-      themeRows: document.querySelectorAll(".theme-list .theme-row[data-theme]").length
+      noOnb: !document.querySelector(".onb"), home: !!document.querySelector("#stats-row")
     };
   });
+  // Themen liegen seit T5 im Vokabeln-Tab: 41 Zeilen gesamt, 20 offen (A0+A1).
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const legacyThemes = await page.evaluate(() => ({
+    total: document.querySelectorAll(".path-list .path-row[data-theme]").length,
+    open: document.querySelectorAll(".path-list .path-row[data-theme]:not(.locked)").length
+  }));
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(250);
   check("Alt-State: SRS-Fortschritt bleibt exakt erhalten",
     legacy.shalom && legacy.shalom.reps === 9 && legacy.shalom.mastery === 5 &&
     legacy.shalom.ease === 2.7 && legacy.shalom.intervalDays === 21 && legacy.todaReps === 3,
@@ -768,8 +778,8 @@ function check(name, ok, detail) {
     legacy.blitz === 12 && legacy.logOk && legacy.goal === 10,
     legacy.xp + "/" + legacy.ach + "/" + legacy.blitz);
   check("Alt-State: neue Felder mit Defaults, kein Re-Onboarding, A0+A1 offen (20 Themen)",
-    legacy.defaults && legacy.noOnb && legacy.home && legacy.themeRows === 20,
-    "defaults=" + legacy.defaults + " themen=" + legacy.themeRows);
+    legacy.defaults && legacy.noOnb && legacy.home && legacyThemes.total === 41 && legacyThemes.open === 20,
+    "defaults=" + legacy.defaults + " themen=" + legacyThemes.open + "/" + legacyThemes.total);
 
   // Bestandsnutzer-Hinweis (WS5): Alt-State (onboarded, tourSeen fehlt) sieht
   // EINMALIG den Einfuehrungs-Hinweis; Ueberspringen setzt tourSeen.
@@ -1274,7 +1284,9 @@ function check(name, ok, detail) {
     s.srs = {}; localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
   });
   await page.reload(); await page.waitForTimeout(500);
-  await page.evaluate(() => { const b = document.querySelector("#cta-start"); if (b) b.click(); });
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "vocab"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#cta-power"); if (b) b.click(); });
   await page.waitForTimeout(500);
   const introId = await page.evaluate(() => window.TACHELES_DEBUG.currentTaskItem());
   check("Erstkontakt: Intro-Karte zu einem neuen Wort", !!introId &&
@@ -1456,7 +1468,7 @@ function check(name, ok, detail) {
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
   await page.waitForTimeout(300);
 
-  // --- 14f. Heute-Block: stabil per Datums-Hash, Haeppchen startet Mini-Session ---
+  // --- 14f. Heute-Block: Snack des Tages (deterministisch), Kurs-Karte, Buchstabe/Wort ---
   await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
   await page.waitForTimeout(400);
   const heute = await page.evaluate(() => {
@@ -1467,34 +1479,100 @@ function check(name, ok, detail) {
       card: !!document.querySelector(".today-card"),
       tiles: document.querySelectorAll(".today-tile").length,
       snack: !!document.querySelector("#btn-snack"),
+      snackCard: !!document.querySelector(".snack-card"),
       stable: p1.letter === p2.letter && p1.word === p2.word,
       letterIsLetter: /^let_/.test(p1.letter || ""),
       hashDet: D.dayHash("2026-07-17|word") === D.dayHash("2026-07-17|word") &&
                D.dayHash("2026-07-17|word") !== D.dayHash("2026-07-18|word")
     };
   });
-  check("Heute: Block mit Buchstabe+Wort des Tages auf Home",
-    heute.card && heute.tiles === 2 && heute.snack, JSON.stringify(heute));
+  check("Heute: Block mit Snack + Buchstabe/Wort des Tages auf Home",
+    heute.card && heute.tiles === 2 && heute.snack && heute.snackCard, JSON.stringify(heute));
   check("Heute: Auswahl deterministisch (Datums-Hash, kein Math.random)",
     heute.stable && heute.letterIsLetter && heute.hashDet);
+  // Snack-Rotation: deterministisch, Ungesehenes zuerst.
+  const snackRot = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const first = D.dailySnackId();
+    const again = D.dailySnackId();
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.course.snacksSeen[first] = true; // heutigen Snack als gesehen markieren
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    return { first, stable: first === again, snacks: window.TACHELES_SNACKS.snacks.length };
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const snackRot2 = await page.evaluate((first) => ({
+    second: window.TACHELES_DEBUG.dailySnackId(),
+    differs: window.TACHELES_DEBUG.dailySnackId() !== first
+  }), snackRot.first);
+  check("Heute: Snack deterministisch + Ungesehenes zuerst",
+    snackRot.stable && snackRot.snacks >= 38 && snackRot2.differs,
+    snackRot.first + " -> " + snackRot2.second);
+  // Snack starten -> Snack-Session auf dem Modul-Runner (explain-Schritt zuerst).
   await page.evaluate(() => { const b = document.querySelector("#btn-snack"); if (b) b.click(); });
   await page.waitForTimeout(500);
-  const snackInfo = await page.evaluate(() => window.TACHELES_DEBUG.sessionInfo());
-  check("Heute: Haeppchen startet Mini-Session (<= 5 Aufgaben)",
-    snackInfo && snackInfo.mode === "smart" && snackInfo.taskIds.length > 0 && snackInfo.taskIds.length <= 5,
-    JSON.stringify(snackInfo && snackInfo.taskIds.length));
+  const snackSess = await page.evaluate(() => ({
+    mode: (window.TACHELES_DEBUG.sessionInfo() || {}).mode,
+    stepType: window.TACHELES_DEBUG.moduleStepType()
+  }));
+  check("Heute: Haeppchen startet Snack-Session (explain-Schritt)",
+    snackSess.mode === "snack" && snackSess.stepType === "explain", JSON.stringify(snackSess));
+  // Snack bis zum Ende durchspielen -> snacksSeen wird gesetzt, Rotation rueckt weiter.
+  const snackPlayed = snackRot2.second;
+  for (let i = 0; i < 12; i++) {
+    const done = await page.evaluate(() => !document.querySelector(".session-body"));
+    if (done) break;
+    await page.evaluate(() => {
+      let b = [...document.querySelectorAll("button")].find(x => /^weiter/i.test((x.textContent || "").trim()));
+      if (b) { b.click(); return; }
+      const o = document.querySelector(".opt:not(:disabled)");
+      if (o) { o.click(); return; }
+    });
+    await page.waitForTimeout(500);
+  }
+  await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const snackSeen = await page.evaluate((id) => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { seen: s.course.snacksSeen[id] === true, next: window.TACHELES_DEBUG.dailySnackId() };
+  }, snackPlayed);
+  check("Heute: absolvierter Snack ist als gesehen markiert, Rotation rueckt weiter",
+    snackSeen.seen && snackSeen.next !== snackPlayed, JSON.stringify(snackSeen));
+  // Profil: snackVocab-Schalter vorhanden und schreibt den State.
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const snackToggle = await page.evaluate(() => {
+    const chk = document.querySelector("#snackvocab-chk");
+    if (!chk) return null;
+    chk.checked = false; chk.dispatchEvent(new Event("change"));
+    return JSON.parse(localStorage.getItem("tacheles_state_v1")).profile.snackVocab;
+  });
+  check("Profil: snackVocab-Schalter schreibt State", snackToggle === false, snackToggle);
+  // Kurs-Karte auf Home fuehrt in eine Lektion (Weiterlernen/Start).
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "home"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const homeCta = await page.evaluate(() => !!document.querySelector("#cta-lesson") || !!document.querySelector("#cta-lesson-vocab"));
+  check("Home: Kurs-Karte als primaerer CTA vorhanden", homeCta);
+  await page.evaluate(() => { const b = document.querySelector("#cta-lesson"); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const courseCta = await page.evaluate(() =>
+    /·/.test((document.querySelector(".session-title") || {}).textContent || "") &&
+    window.TACHELES_DEBUG.lessonStepLabel() !== null);
+  check("Home: Kurs-Karte startet die naechste Lektion", courseCta);
   await page.evaluate(() => { const b = document.querySelector(".quit-btn"); if (b) b.click(); });
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(300);
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^fertig$/i.test((x.textContent || "").trim())); if (b) b.click(); });
   await page.waitForTimeout(250);
 
-  // --- 14g. Lesen lernen: Buchstabe+enthaltendes Wort gepaart, Home-Einstieg ---
+  // --- 14g. Lesen lernen: Buchstabe+enthaltendes Wort gepaart, Einstieg im Grammatik-Tab ---
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
     s.srs = {}; // Anfaenger: 0 gemeisterte Buchstaben -> Einstieg sichtbar
     localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
   });
   await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "grammar"); if (b) b.click(); });
+  await page.waitForTimeout(350);
   const reading = await page.evaluate(() => {
     const steps = window.TACHELES_DEBUG.readingModuleSteps();
     const byId = {}; window.TACHELES_CONTENT.items.forEach(i => byId[i.id] = i);
@@ -1513,12 +1591,12 @@ function check(name, ok, detail) {
       if (type === "quiz") quizzes++;
     }
     return { steps: steps.length, pairsOk, quizzes, teachesLetters,
-      btn: !!document.querySelector("#btn-reading") };
+      btn: !!document.querySelector("#btn-reading-path") };
   });
-  check("Lesen lernen: Home-Einstieg fuer Anfaenger sichtbar", reading.btn);
+  check("Lesen lernen: Einstieg im Grammatik-Tab sichtbar", reading.btn);
   check("Lesen lernen: Sequenz paart Buchstabe + enthaltendes Wort + Quiz",
     reading.teachesLetters >= 1 && reading.quizzes >= 1 && reading.pairsOk, JSON.stringify(reading));
-  await page.evaluate(() => { const b = document.querySelector("#btn-reading"); if (b) b.click(); });
+  await page.evaluate(() => { const b = document.querySelector("#btn-reading-path"); if (b) b.click(); });
   await page.waitForTimeout(450);
   const readingSession = await page.evaluate(() => ({
     title: (document.querySelector(".session-title") || {}).textContent || "",
@@ -1754,7 +1832,7 @@ function check(name, ok, detail) {
   await page.waitForTimeout(300);
   // FIX-6: von Home geoeffnet -> Zurueck fuehrt zurueck nach Home (nicht pauschal Profil).
   check("Recht: Zurueck fuehrt zum Ausgangs-Screen (Home)",
-    await page.evaluate(() => !!document.querySelector("#cta-start")));
+    await page.evaluate(() => !!document.querySelector("#stats-row")));
   // Datenschutz aus dem Profil oeffnen (Button dort).
   await page.evaluate(() => { const b = [...document.querySelectorAll(".nav-btn")].find(x => x.dataset.screen === "profile"); if (b) b.click(); });
   await page.waitForTimeout(300);
@@ -1785,7 +1863,7 @@ function check(name, ok, detail) {
   check("Tour: Weiter blaettert zu Folie 2", await page.evaluate(() => /Einführung · 2\/5/i.test(document.body.innerText)));
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /überspringen/i.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(400);
-  check("Tour: Ueberspringen fuehrt zu Home", await page.evaluate(() => !!document.querySelector("#cta-start")));
+  check("Tour: Ueberspringen fuehrt zu Home", await page.evaluate(() => !!document.querySelector("#stats-row")));
 
   // --- 15. Konsolenfehler ---
   check("0 Konsolen-/Seitenfehler", errors.length === 0, errors.slice(0, 3).join(" | "));

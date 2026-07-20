@@ -741,6 +741,28 @@
     return { letter: letter, word: word };
   }
 
+  /* ---------- Wissens-Haeppchen (WS-D): Snack des Tages ---------- */
+
+  /**
+   * Snack des Tages: deterministisch ueber den Datums-Hash, Ungesehenes zuerst,
+   * band-gated (bevorzugt freigeschaltete Baender). Kein Math.random, damit die
+   * Wahl ueber einen Tag stabil bleibt. Defensiv: ohne Snacks -> null.
+   */
+  function dailySnack() {
+    if (!SNACKS || !SNACKS.snacks.length) return null;
+    var pool = SNACKS.snacks.filter(function (s) { return bandUnlocked(s.band || "A0"); });
+    if (!pool.length) pool = SNACKS.snacks;
+    var unseen = pool.filter(function (s) { return !state.course.snacksSeen[s.id]; });
+    var pick = unseen.length ? unseen : pool; // alles gesehen: von vorn rotieren
+    return pick[dayHash(todayStr() + "|snack") % pick.length];
+  }
+
+  function snackById(id) {
+    if (!SNACKS) return null;
+    for (var i = 0; i < SNACKS.snacks.length; i++) if (SNACKS.snacks[i].id === id) return SNACKS.snacks[i];
+    return null;
+  }
+
   /* ==========================================================
    * 6. XP & zentrale Antwort-Verbuchung
    * XP nur fuer echten Abruf, gewichtet nach Lerntiefe
@@ -1650,11 +1672,20 @@
     var today = todayLog();
     var goal = goalItems();
     var pct = Math.min(100, Math.round(today.answers / goal * 100));
+    var snack = dailySnack();
+    var lesson = nextLesson();
+    var picks = dailyPicks();
+    var tile = function (item, label) {
+      if (!item) return "";
+      return '<div class="today-tile" role="button" tabindex="0" data-today="' + esc(item.id) + '">' +
+        '<div class="today-label">' + label + '</div>' +
+        '<div class="today-he" dir="rtl" lang="he">' + esc(item.niqqud || item.he) + '</div>' +
+        '<div class="today-meta">' + esc(item.translit || "") + ' · ' + esc(item.de) + '</div>' +
+        '<button class="icon-btn small-btn" data-say="' + esc(item.id) + '" title="Anhören">🔊</button></div>';
+    };
     app.innerHTML =
-      '<header class="brand">' +
-      '<div class="brand-title">🕊️ Tacheles</div>' +
-      '<div class="brand-sub">dein Schalömchen</div>' +
-      '</header>' +
+      '<header class="brand"><div class="brand-title">🕊️ Tacheles</div>' +
+      '<div class="brand-sub">dein Schalömchen</div></header>' +
       '<section class="stats-row tappable" id="stats-row" role="button" tabindex="0" title="Fortschritt ansehen">' +
       '<div class="stat" title="Streak-Freezes retten verpasste Tage"><div class="stat-num">🔥 ' + g.streakDays +
       (g.streakDays > 0 && freezesAvailable() > 0 ? ' <span class="freeze-mini">❄️' + freezesAvailable() + '</span>' : '') +
@@ -1662,31 +1693,26 @@
       '<div class="stat"><div class="stat-num">⭐ ' + g.xpTotal + '</div><div class="stat-label">XP</div></div>' +
       '<div class="stat"><div class="stat-num">🏅 ' + g.masteredCount + '</div><div class="stat-label">gemeistert</div></div>' +
       '</section>' +
-      (function () {
-        // "Heute"-Block (1.3): Tages-Haeppchen + Buchstabe/Wort des Tages.
-        var picks = dailyPicks();
-        var tile = function (kind, item, label) {
-          if (!item) return "";
-          return '<div class="today-tile" role="button" tabindex="0" data-today="' + esc(item.id) + '">' +
-            '<div class="today-label">' + label + '</div>' +
-            '<div class="today-he" dir="rtl" lang="he">' + esc(item.niqqud || item.he) + '</div>' +
-            '<div class="today-meta">' + esc(item.translit || "") + ' · ' + esc(item.de) + '</div>' +
-            '<button class="icon-btn small-btn" data-say="' + esc(item.id) + '" title="Anhören">🔊</button>' +
-            '</div>';
-        };
-        return '<section class="card today-card">' +
-          '<div class="setting-label">🌅 Heute</div>' +
-          '<div class="today-tiles">' +
-          tile("letter", picks.letter, "Buchstabe des Tages") +
-          tile("word", picks.word, "Wort des Tages") +
-          '</div>' +
-          '<div class="today-actions">' +
-          '<button class="btn primary" id="btn-snack">🥨 Häppchen · kurze Runde</button>' +
-          (countMastered(function (it) { return it.theme === "alefbet"; }) < 8 ?
-            '<button class="btn" id="btn-reading">👓 Lesen lernen</button>' : '') +
-          '</div>' +
-          '</section>';
-      })() +
+      // Kurs-Karte: DER primaere CTA (WS-A).
+      (lesson ?
+        '<section class="card goal-card"><div class="setting-label">🎓 Deine Lektion</div>' +
+        '<div class="setting-sub">' + esc(lesson.emoji + " " + lesson.title) + ' · ' + esc(lesson.band) +
+        (lessonState(lesson.id).step > 0 ? ' · angefangen' : '') + '</div>' +
+        '<button class="btn primary big" id="cta-lesson">▶ Weiterlernen</button></section>' :
+        (courseAvailable() ?
+          '<section class="card goal-card"><div class="setting-label">🎉 Kurs komplett!</div>' +
+          '<button class="btn primary big" id="cta-lesson-vocab">▶ Vokabeln trainieren</button></section>' :
+          '<section class="card goal-card"><button class="btn primary big" id="cta-lesson-vocab">▶ Los geht’s</button></section>')) +
+      // Heute-Block (WS-D): Snack des Tages + Buchstabe/Wort des Tages.
+      '<section class="card today-card"><div class="setting-label">🌅 Heute</div>' +
+      (snack ?
+        '<div class="snack-card"><span class="tile-emoji">' + esc(snack.emoji) + '</span>' +
+        '<div class="theme-info"><div class="theme-title">' + esc(snack.title) + '</div>' +
+        '<div class="setting-sub">Häppchen des Tages · 2 Minuten' +
+        (state.profile.snackVocab ? ' · + fällige Vokabeln' : '') + '</div></div>' +
+        '<button class="btn primary" id="btn-snack">▶</button></div>' : '') +
+      '<div class="today-tiles">' + tile(picks.letter, "Buchstabe des Tages") + tile(picks.word, "Wort des Tages") + '</div>' +
+      '</section>' +
       '<section class="card goal-card">' +
       '<div class="goal-line"><span>Heute fällig: <b>' + dueCount() + '</b> · Neu: <b>' + newCount() + '</b></span>' +
       '<span>' + today.answers + ' / ' + goal + '</span></div>' +
@@ -1696,35 +1722,27 @@
         Math.round((today.correct || 0) / today.answers * 100) + ' % richtig' +
         ((today.mastered || 0) > 0 ? ' · 🏅 ' + today.mastered + ' neu gemeistert' : '') + '</div>' : "") +
       (today.goalMet ? '<div class="goal-done">Tagesziel erreicht – schön! 🎉</div>' : "") +
-      '<button class="btn primary big" id="cta-start">▶ Los geht’s</button>' +
       '</section>' +
-      (function () {
-        // "Weiter lernen": empfohlenes Thema mit einem Tipp erreichbar
-        var next = recommendedTheme();
-        if (!next) return "";
-        var s = themeStats(next);
-        return '<div class="next-card" role="button" tabindex="0" data-theme="' + esc(next.id) + '">' +
-          '<span class="next-emoji">' + esc(next.emoji) + '</span>' +
-          '<div class="theme-info"><div class="next-label">Weiter lernen</div>' +
-          '<div class="theme-title">' + esc(next.title) + '</div>' +
-          '<div class="bar mini"><div class="bar-fill" style="width:' + s.pct + '%"></div></div></div>' +
-          '<span class="next-go">▶</span></div>';
-      })() +
-      '<h2 class="h2">Modi</h2>' + modeTilesHtml(false) +
-      '<h2 class="h2">Themen <span class="h2-sub">· antippen zum gezielten Üben</span></h2>' +
-      '<div class="theme-list">' + themeListHtml() + '</div>' +
       '<div class="footer-tag">Reden wir Tacheles. 🕊️</div>' + footerLinksHtml();
-    $("#cta-start").addEventListener("click", function () { startSession("smart"); });
-    var snack = $("#btn-snack");
-    if (snack) snack.addEventListener("click", function () { startSession("smart", { size: 5 }); });
-    var reading = $("#btn-reading");
-    if (reading) reading.addEventListener("click", function () {
-      startSession("module", { moduleObj: buildReadingModule() });
+    // Verdrahtung: stats-Tipp, Kurs-CTA, Snack, Tages-Kacheln, Footer.
+    var stats = $("#stats-row");
+    if (stats) {
+      var goProg = function () { showScreen("progress"); };
+      stats.addEventListener("click", goProg);
+      stats.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goProg(); }
+      });
+    }
+    var cta = $("#cta-lesson");
+    if (cta && lesson) cta.addEventListener("click", function () { startSession("lesson", { lessonId: lesson.id }); });
+    var ctaV = $("#cta-lesson-vocab");
+    if (ctaV) ctaV.addEventListener("click", function () { startSession("smart"); });
+    var sn = $("#btn-snack");
+    if (sn && snack) sn.addEventListener("click", function () {
+      startSession("snack", { snackId: snack.id, withVocab: state.profile.snackVocab });
     });
     app.querySelectorAll("[data-today]").forEach(function (row) {
-      var go = function () {
-        startSession("smart", { itemIds: [row.dataset.today], size: 3, label: "🌅 Heute" });
-      };
+      var go = function () { startSession("smart", { itemIds: [row.dataset.today], size: 3, label: "🌅 Heute" }); };
       row.addEventListener("click", go);
       row.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
@@ -1737,17 +1755,6 @@
         if (it) say(it);
       });
     });
-    var stats = $("#stats-row");
-    if (stats) {
-      var goProg = function () { showScreen("progress"); };
-      stats.addEventListener("click", goProg);
-      stats.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goProg(); }
-      });
-    }
-    wireModeTiles(app);
-    wireThemeRows(app);
-    wireLockedSummary(app);
     wireFooterLinks(app);
   }
 
@@ -2206,6 +2213,9 @@
       '<div class="setting-row"><div><div class="setting-label">Audio-Autoplay</div>' +
       '<div class="setting-sub">Aussprache automatisch abspielen</div></div>' +
       '<input type="checkbox" id="autoplay-chk"' + (p.autoplay ? " checked" : "") + '></div>' +
+      '<div class="setting-row"><div><div class="setting-label">Häppchen mit Vokabeln</div>' +
+      '<div class="setting-sub">hängt dem Tages-Häppchen 2-3 fällige Wörter an</div></div>' +
+      '<input type="checkbox" id="snackvocab-chk"' + (p.snackVocab ? " checked" : "") + '></div>' +
       '</section>' +
       '<h2 class="h2">Inhalt &amp; Level</h2>' +
       '<section class="card">' +
@@ -2290,6 +2300,10 @@
     });
     $("#autoplay-chk").addEventListener("change", function (e) {
       state.profile.autoplay = !!e.target.checked;
+      saveState();
+    });
+    $("#snackvocab-chk").addEventListener("change", function (e) {
+      state.profile.snackVocab = !!e.target.checked;
       saveState();
     });
     $("#level-sel").addEventListener("change", function (e) {
@@ -2455,6 +2469,21 @@
       var saved = lessonState(lesson.id);
       session.stepIdx = (!saved.done && saved.step > 0 && saved.step < session.steps.length) ? saved.step : 0;
       session.label = lesson.emoji + " " + lesson.title;
+    } else if (modeId === "snack") {
+      // Wissens-Haeppchen (WS-D): laeuft auf dem Modul-Runner (Schritte sind
+      // Modul-Schritte). Optionaler Vokabel-Anhang haengt 2-3 faellige Woerter an.
+      var snack = snackById(opts.snackId);
+      if (!snack) { session = null; toast("Häppchen nicht gefunden."); return; }
+      var ssteps = snack.steps.slice();
+      if (opts.withVocab) {
+        buildQueue(3, {}).filter(function (it) { return isDue(it.id, Date.now()); })
+          .slice(0, 3).forEach(function (it) { ssteps.push({ type: "quiz", itemId: it.id }); });
+      }
+      session.module = { id: snack.id, title: snack.title, emoji: snack.emoji, steps: ssteps };
+      session.steps = ssteps;
+      session.stepIdx = 0;
+      session.snackId = snack.id;
+      session.label = snack.emoji + " " + snack.title;
     } else {
       // Schilder-Modus: nur Schilder. Sprechen: keine Einzelbuchstaben. Satzbau: nur Saetze.
       // Bilder: nur Items mit Emoji. Blitz: schnelle MC-Runde gegen die Uhr.
@@ -2594,7 +2623,7 @@
     if (m === "reels") return renderReel();
     if (m === "dialog") return renderDialog();
     if (m === "audio") return renderAudio();
-    if (m === "module") return renderModuleStep();
+    if (m === "module" || m === "snack") return renderModuleStep();
     if (m === "lesson") return renderLessonStep();
     if (m === "reading") return renderDrillTask();
     return renderTask();
@@ -5153,6 +5182,10 @@
         state.gamification.counters.modulesDone[s.module.id] = true;
         saveState();
       }
+      if (s.snackId) {
+        state.course.snacksSeen[s.snackId] = true; // Rotation: als gesehen markieren
+        saveState();
+      }
       return endSession();
     }
     setOptKeys(null);
@@ -6133,6 +6166,7 @@
       };
     },
     lessonStateOf: function (id) { return lessonState(id); },
+    dailySnackId: function () { var s = dailySnack(); return s ? s.id : null; },
     // Lektions-Player (T8): aktuelle Phasen-Beschriftung + Phasen-Komposition.
     lessonStepLabel: function () {
       if (!session || session.mode !== "lesson") return null;
