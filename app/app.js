@@ -2274,8 +2274,13 @@
       '<button class="btn" id="btn-placement">Starten</button></div>' +
       '</section>' +
       '<section class="card">' +
-      '<div class="kv-row"><span>Hebräische Stimme (Vorlesen)</span><b>' +
-      (TTS.available ? (TTS.hasHebrew() ? "✓ gefunden" : "keine gefunden") : "nicht verfügbar") + '</b></div>' +
+      // Vorlesen kommt aus den mitgelieferten Samples; die Browser-Stimme ist
+      // nur noch Rueckfall (MC-Optionen/Cloze, offline vor dem ersten Cache).
+      '<div class="kv-row"><span>Vorlesen (Aussprache)</span><b>' +
+      (AUDIO ? "✓ echte Sprach-Samples" :
+        (TTS.available && TTS.hasHebrew() ? "Browser-Stimme" : "nicht verfügbar")) + '</b></div>' +
+      (AUDIO && !(TTS.available && TTS.hasHebrew()) ?
+        '<div class="setting-sub" style="margin:-6px 0 8px">Hinweis: ohne hebräische Browser-Stimme bleiben einzelne Übungsformen (z. B. Antwort-Optionen) stumm.</div>' : '') +
       '<div class="kv-row"><span>Spracherkennung (Sprechen)</span><b>' +
       (STT.available() ? "✓ verfügbar" : "nicht verfügbar") + '</b></div>' +
       '</section>' +
