@@ -4407,44 +4407,44 @@
       "bytes": 3201,
       "kind": "grammar"
     },
-    "h_0c548591": {
+    "h_0eef67d5": {
       "band": "A0",
-      "bytes": 2025,
+      "bytes": 1655,
       "kind": "syllable"
     },
-    "h_05547a8c": {
+    "h_0fef6968": {
       "band": "A0",
-      "bytes": 1788,
+      "bytes": 2606,
       "kind": "syllable"
     },
-    "h_0b5483fe": {
+    "h_0def6642": {
       "band": "A0",
-      "bytes": 1484,
+      "bytes": 1887,
       "kind": "syllable"
     },
-    "h_0a54826b": {
+    "h_0cef64af": {
       "band": "A0",
-      "bytes": 1482,
+      "bytes": 1553,
       "kind": "syllable"
     },
-    "h_095480d8": {
+    "h_0bef631c": {
       "band": "A0",
-      "bytes": 1745,
+      "bytes": 1524,
       "kind": "syllable"
     },
-    "h_06547c1f": {
+    "h_10ef6afb": {
       "band": "A0",
-      "bytes": 1405,
+      "bytes": 1479,
       "kind": "syllable"
     },
-    "h_08547f45": {
+    "h_12ef6e21": {
       "band": "A0",
-      "bytes": 1742,
+      "bytes": 1422,
       "kind": "syllable"
     },
-    "h_0d548724": {
+    "h_07ef5cd0": {
       "band": "A0",
-      "bytes": 2315,
+      "bytes": 1692,
       "kind": "syllable"
     },
     "h_5491f138": {
@@ -5822,16 +5822,6 @@
       "bytes": 1901,
       "kind": "snack"
     },
-    "h_1b9592f0": {
-      "band": "A2",
-      "bytes": 5489,
-      "kind": "scene"
-    },
-    "h_ace3ae2a": {
-      "band": "A2",
-      "bytes": 3419,
-      "kind": "scene"
-    },
     "h_47f5bfa8": {
       "band": "C1",
       "bytes": 5488,
@@ -5850,6 +5840,11 @@
     "h_fbf7c13c": {
       "band": "C1",
       "bytes": 5213,
+      "kind": "scene"
+    },
+    "h_ace3ae2a": {
+      "band": "C1",
+      "bytes": 3419,
       "kind": "scene"
     },
     "h_b3257706": {
