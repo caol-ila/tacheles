@@ -662,6 +662,28 @@ function check(name, ok, detail) {
   const placeDone = await page.evaluate(() => (JSON.parse(localStorage.getItem("tacheles_state_v1")).profile || {}).placementDone);
   check("placementDone in localStorage gesetzt", placeDone === true, placeDone);
 
+  // Einstufung -> Kurs-Anschluss: placedBand macht Lektionen unterhalb des
+  // eingestuften Bandes ueberspringbar; der empfohlene Einstieg folgt dem Band.
+  const placedCourse = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    s.profile.placementDone = true; s.profile.placedBand = "B1"; s.profile.unlockedBand = "B1";
+    s.course = { lessons: {}, entry: null, snacksSeen: {} };
+    localStorage.setItem("tacheles_state_v1", JSON.stringify(s));
+    return true;
+  });
+  await page.reload(); await page.waitForTimeout(500);
+  const placedInfo = await page.evaluate(() => {
+    const D = window.TACHELES_DEBUG;
+    const K = window.TACHELES_COURSE;
+    const rec = D.recommendedEntry();
+    const a0 = K.lessons.filter(l => l.band === "A0")[0];
+    const s = JSON.parse(localStorage.getItem("tacheles_state_v1"));
+    return { recBand: rec ? rec.band : null, a0Skip: D.lessonSkippable(a0.id), placed: s.profile.placedBand };
+  });
+  check("Einstufung: placedBand ueberlebt Laden, A0-Lektion ueberspringbar, Einstieg = B1",
+    placedInfo.placed === "B1" && placedInfo.a0Skip === true && placedInfo.recBand === "B1",
+    JSON.stringify(placedInfo));
+
   // --- 12. Robustheit: korrupter Import, Groessenlimits, Distraktor-Dedupe ---
   // T3/T8: kaputte srs/log/Zaehler-Werte duerfen die App nicht abstuerzen lassen.
   await page.evaluate(() => {

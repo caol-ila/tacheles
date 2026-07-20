@@ -203,6 +203,7 @@
         levelCap: "auto",       // 'auto' | 'A0'..'C2' — manuelle Level-Grenze
         unlockedBand: "A1",     // hoechstes ERREICHTES Band (Default A1 = A0+A1 offen)
         placementDone: false,   // Einstufungstest schon einmal gemacht?
+        placedBand: null,       // Einstufung: bis UNTER dieses Band gilt Stoff als bekannt (Kurs-Quereinstieg)
         tourSeen: false,        // App-Tour (Erklaer-Slideshow) gesehen/uebersprungen?
         snackVocab: true        // Heute-Haeppchen: 2-3 faellige Vokabeln anhaengen
       },
@@ -256,6 +257,15 @@
       if (LEVEL_CAPS.indexOf(raw.profile.levelCap) >= 0) s.profile.levelCap = raw.profile.levelCap;
       if (BANDS.indexOf(raw.profile.unlockedBand) >= 0) s.profile.unlockedBand = raw.profile.unlockedBand;
       if (typeof raw.profile.placementDone === "boolean") s.profile.placementDone = raw.profile.placementDone;
+      if (BANDS.indexOf(raw.profile.placedBand) >= 0) s.profile.placedBand = raw.profile.placedBand;
+      // Migration: wer sich VOR Einfuehrung von placedBand eingestuft hat, hat nur
+      // unlockedBand. Liegt das ueber dem Default A1, uebernimmt es die Kurs-Rolle
+      // (harmlos, falls es stattdessen per Mastery-Aufstieg kam: die Lektionen
+      // darunter sind dann ohnehin per Mastery ueberspringbar).
+      if (!s.profile.placedBand && s.profile.placementDone &&
+          bandIndex(s.profile.unlockedBand) > bandIndex("A1")) {
+        s.profile.placedBand = s.profile.unlockedBand;
+      }
       if (typeof raw.profile.tourSeen === "boolean") s.profile.tourSeen = raw.profile.tourSeen;
       if (typeof raw.profile.snackVocab === "boolean") s.profile.snackVocab = raw.profile.snackVocab;
     }
@@ -456,6 +466,11 @@
 
   /** Ueberspringbar (Quereinstieg): >= 60 % der newItemIds mit Mastery >= 2. */
   function lessonSkippable(lesson) {
+    // Einstufungstest: Lektionen unterhalb des eingestuften Bandes gelten als
+    // bekannt (die Einstufung schreibt bewusst kein SRS, sonst saehe der Kurs
+    // sie nie). placedBand = Band NACH dem hoechsten bestandenen.
+    var placed = state.profile.placedBand;
+    if (placed && bandIndex(lesson.band) < bandIndex(placed)) return true;
     var ids = lesson.newItemIds || [];
     if (!ids.length) return false;
     var known = 0;
@@ -5303,6 +5318,13 @@
     var passedBand = p.highestPassed >= 0 ? BANDS[p.highestPassed] : null;
     state.profile.unlockedBand = band;
     state.profile.placementDone = true;
+    // Kurs-Anschluss: placedBand haelt fest, bis WOHIN die Einstufung Stoff als
+    // bekannt bewertet hat (Band NACH dem hoechsten bestandenen). Nur mit
+    // bestandenem Band setzen - wer A0 nicht besteht, startet den Kurs vorn.
+    if (p.highestPassed >= 0) {
+      var prev = state.profile.placedBand;
+      if (!prev || bandIndex(band) > bandIndex(prev)) state.profile.placedBand = band;
+    }
     saveState();
     renderPlacementResult(band, passedBand);
   }
@@ -5318,7 +5340,8 @@
     wrap.appendChild(el("div", "onb-sub",
       passedBand
         ? "Stark – Level " + passedBand + " sitzt schon! Du startest mit Level " + band +
-          ", passende Themen sind jetzt frei."
+          ", passende Themen sind jetzt frei. Auch der Kurs schlägt dir gleich den " +
+          "passenden Einstieg vor – frühere Lektionen kannst du überspringen."
         : "Wir fangen gemütlich vorne an. Die Themen der Level A0 und A1 sind offen, " +
           "weitere schalten sich frei, während du lernst."));
     wrap.appendChild(btn("Und los! 🚀", "btn primary big", function () {
@@ -6112,6 +6135,12 @@
     m.profile.sttNoticeConfirmed = !!(a.profile.sttNoticeConfirmed || b.profile.sttNoticeConfirmed);
     m.profile.onboarded = !!(a.profile.onboarded || b.profile.onboarded);
     m.profile.placementDone = !!(a.profile.placementDone || b.profile.placementDone);
+    // placedBand: das weitere von beiden (Einstufung nimmt nie etwas weg).
+    m.profile.placedBand = (function (pa, pb) {
+      if (!pa) return pb || null;
+      if (!pb) return pa;
+      return bandIndex(pa) >= bandIndex(pb) ? pa : pb;
+    })(a.profile.placedBand, b.profile.placedBand);
     m.profile.tourSeen = !!(a.profile.tourSeen || b.profile.tourSeen);
     m.profile.unlockedBand = bandIndex(a.profile.unlockedBand) >= bandIndex(b.profile.unlockedBand)
       ? a.profile.unlockedBand : b.profile.unlockedBand;
