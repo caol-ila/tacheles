@@ -882,7 +882,13 @@ body.in-session .bottom-nav { display: none; }
 .theme-row.locked .band-tag, .path-row.locked .band-tag, .module-tile.locked .band-tag { opacity: 1; }
 
 /* ---------- Module (Lernen-Screen) ---------- */
-.module-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+/* Module-Kacheln: eine Spalte auf schmalen Screens (2 Spalten quetschen die
+ * Beschreibungen zu 3-4 Woertern pro Zeile und reissen die Reihen ungleich auf);
+ * ab Tablet-Breite zweispaltig. */
+.module-list { display: grid; grid-template-columns: 1fr; gap: 8px; }
+@media (min-width: 520px) {
+  .module-list { grid-template-columns: repeat(2, 1fr); }
+}
 .module-tile {
   display: flex; align-items: center; gap: 12px; text-align: left;
   background: var(--card); border-radius: 14px; box-shadow: var(--shadow);
@@ -900,7 +906,9 @@ body.in-session .bottom-nav { display: none; }
 .gram-band-h { margin-top: 18px; }
 .rec-tag { margin: 2px 0 8px; }
 /* Power-Training-Karte (Vokabeln-Tab): Groessenauswahl umbricht bei Bedarf. */
-.power-card .data-actions { flex-wrap: wrap; }
+/* Power-Training: drei gleich breite Laengen-Knoepfe in EINER Reihe. */
+.power-card .data-actions { flex-wrap: nowrap; }
+.power-card .data-actions .btn { flex: 1 1 0; min-width: 0; padding-left: 6px; padding-right: 6px; }
 .module-emoji { font-size: 1.6rem; flex-shrink: 0; }
 .module-body { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .module-title { font-weight: 700; font-size: .95rem; }
