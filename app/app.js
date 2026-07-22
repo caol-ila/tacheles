@@ -3696,7 +3696,9 @@
     var row = el("div", "blend-row");
     row.dir = "rtl"; row.lang = "he";
     parts.forEach(function (p, i) {
-      row.appendChild(el("span", "blend-syl" + (i < pos ? " read" : (i === pos ? " current" : " hidden")), p.he));
+      // Zustandsklasse "pending" (NICHT "hidden": die globale Utility-Klasse
+      // .hidden setzt display:none und wuerde den Platzhalter kollabieren).
+      row.appendChild(el("span", "blend-syl" + (i < pos ? " read" : (i === pos ? " current" : " pending")), p.he));
     });
     card.appendChild(row);
     body.appendChild(card);

@@ -616,8 +616,11 @@ body.in-session .bottom-nav { display: none; }
 
 .syl-card { display: flex; align-items: center; justify-content: center; min-height: 96px; }
 .syl-he { font-size: 64px; font-family: var(--font-he); line-height: 1.2; }
-.blend-row { display: flex; flex-direction: row-reverse; justify-content: center; gap: 4px; font-family: var(--font-he); font-size: 44px; }
-.blend-syl.hidden { visibility: hidden; }
+/* Reihen-Container ist dir="rtl": Flex folgt der Schreibrichtung von selbst.
+ * KEIN row-reverse — das wuerde RTL wieder nach LTR zurueckdrehen (Silben
+ * erschienen links beginnend, das Wort baute sich rueckwaerts auf). */
+.blend-row { display: flex; justify-content: center; gap: 4px; font-family: var(--font-he); font-size: 44px; }
+.blend-syl.pending { visibility: hidden; } /* Platz halten, unsichtbar (globales .hidden wuerde kollabieren) */
 .blend-syl.current { outline: 2px dashed var(--accent); border-radius: 8px; padding: 0 4px; }
 .blend-syl.read { opacity: .7; }
 .speed-flash { font-size: 44px; font-family: var(--font-he); transition: opacity .3s ease; }
