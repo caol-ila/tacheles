@@ -11,6 +11,22 @@ echten Content-Kern. Erst Wirkung, dann Breite.
 
 Alles darüber (Reels, Dialog, Sprechen, Audio-Kurs, Ligen) ist Ausbau.
 
+## Umsetzungsstand (2026-07-24, nach Kurs-Follow-ups)
+
+Nach der Kurs-Runde sind mehrere Feedback-Fixes eingeflossen (PRs #12/#14). Voll-Suite jetzt
+**183 Checks grün**, drei Content-Validatoren PASS.
+
+- **Einstufung → Kurs-Einstieg:** Der Einstufungstest wird nun in den Quereinstieg übernommen
+  (`profile.placedBand`); Lektionen unter dem eingestuften Band gelten als überspringbar.
+- **Buchstaben nativer:** Alle 27 Buchstaben-Namen sind niqqud-vertont (vorher rieten TTS/Modell
+  die Vokale), Clips neu erzeugt.
+- **Lese-Trainer RTL:** Der Blend-Drill baut das Wort korrekt von rechts nach links auf
+  (Doppel-Reversal-Bug behoben, Platzhalter hält den Raum).
+- **Feinschliff:** Grammatik-Kacheln einspaltig auf schmalen Screens, Power-Training-Reihe,
+  Audio-MIME + `AUDIO_CACHE` v2, Server-MIME für `.opus`.
+- **Bewusst offen (unverändert):** echte Muttersprachler-Aufnahmen der Buchstaben-Namen (Recherche:
+  keine brauchbare offene Komplett-Quelle), muttersprachliches Review aller Inhalte.
+
 ## Umsetzungsstand (2026-07-20, nach Kurs-Runde)
 
 Der guided Kurs-Spine ist gebaut und getestet (Voll-Suite 178 Checks grün, drei Content-Validatoren
