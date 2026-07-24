@@ -70,7 +70,7 @@ Untertitel/Maskottchen-Ton „Schalömchen". Spec in `docs/00–12`, lauffähige
 ```
 cd app && node test/regression.cjs
 ```
-178 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
+183 Checks, Exit 0 = PASS. Braucht Edge + `playwright-core` (Pfad via `PLAYWRIGHT_PATH`,
 Default `c:/Source/SofaSuche/node_modules/playwright-core`). Nach JEDER Änderung laufen lassen;
 zusätzlich `node --check app.js content.js grammar.js course.js snacks.js reading.js sw.js` und die
 drei Content-Validatoren (`node tools/validate-course.cjs`/`validate-snacks.cjs`/`validate-reading.cjs`).

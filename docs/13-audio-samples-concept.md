@@ -1,9 +1,11 @@
 # 13 – Audio-Samples & Offline-Caching (Konzept)
 
-Status: in Umsetzung (Branch `feat/audio-samples`). Motiviert durch Feedback „Aussprache oft
-falsch": die Browser-Sprachausgabe (`speechSynthesis`) hat auf vielen Geräten keine echte
-he-IL-Stimme und bekommt Text meist ohne Niqqud, also ohne Vokale. Lösung: einmal
+Status: **umgesetzt** (gemergt in PR #6; Nachbesserungen in #12/#14). Motiviert durch Feedback
+„Aussprache oft falsch": die Browser-Sprachausgabe (`speechSynthesis`) hat auf vielen Geräten
+keine echte he-IL-Stimme und bekommt Text meist ohne Niqqud, also ohne Vokale. Lösung: einmal
 vorproduzierte, hochwertige Sprach-Samples, auf dem Handy offline gecacht, mit TTS als Rückfall.
+Vertont sind sechs Arten (~1170 Clips): Items, Dialoge, Grammatik-Beispiele, Silben,
+Häppchen-Beispiele und Szenen-Zeilen der Lektionen.
 
 **Getroffene Entscheidungen (Recherche siehe Chat-Bericht):**
 - **Quelle: ElevenLabs** (beste he-IL-Authentizität der geprüften Optionen), Tarif **Starter**

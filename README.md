@@ -2,8 +2,8 @@
 
 **Die freundliche App, die dich in Rekordzeit zum ersten "Schalom" bringt.**
 
-Tacheles ist eine Web- und Android-App, mit der deutsche Muttersprachler:innen modernes
-Hebräisch (Ivrit) lernen. Das Ziel ist bewusst schmal und praktisch: möglichst schnell
+Tacheles ist eine Web-App (als PWA auch auf Android installierbar), mit der deutsche
+Muttersprachler:innen modernes Hebräisch (Ivrit) lernen. Das Ziel ist bewusst schmal und praktisch: möglichst schnell
 **einfache Gespräche führen** und **Alltagsschilder und kurze Texte lesen** können. Nur eine
 Sprachrichtung, Deutsch → Hebräisch, kein Ballast.
 
@@ -11,6 +11,33 @@ Diese Spec ist evidenzbasiert. Die didaktischen Entscheidungen sind aus zwei
 Deep-Research-Durchläufen abgeleitet (Zweitspracherwerbs-Forschung + Teardown der führenden
 Lern-Apps). Alle belegten Kernaussagen mit Quellen stehen in
 [docs/01-research-findings.md](docs/01-research-findings.md).
+
+---
+
+## Die App: lauffähig in `app/`
+
+Es gibt nicht nur die Spec, sondern eine **fertige, laufende Web-App** unter [`app/`](app/).
+Sie ist bewusst **build-frei** gebaut: klassische Scripts, keine Module, kein Build, keine
+Abhängigkeiten. Starten per Doppelklick auf `app/index.html` (`file://`) oder über
+`app/Tacheles-starten.cmd` (Mini-Server auf http://localhost:8017, PWA installierbar, merkt sich
+die Mikrofon-Erlaubnis). Details und Bedienung: [app/README.md](app/README.md).
+
+Was drin ist:
+
+- **Geführter Kurs A0–C2:** 109 Lektionen in 19 Sektionen mit Lektions-Player (8-Schritt-Bogen,
+  Resume, automatisches Weiter), linearer Freischaltung und Quereinstieg nach Einstufung.
+- **13 Übungsmodi** plus Survival-Check, geführte Grundlagen- und Grammatik-Module, Einstufungs-
+  und Mastery-Check.
+- **Lese-Trainer:** 174 Silben mit Drills (Hören/Lesen/Blenden/Speed) für das Aleph-Bet.
+- **Wissens-Häppchen:** 41 Sprach-/Kultur-Snacks mit Tages-Rotation im „Heute"-Block.
+- **~673 Content-Items** in 41 Themen (A0–C2), 14 Dialoge, 21 Grammatik-Module.
+- **Vorproduzierte Sprach-Samples** (ElevenLabs, niqqud-vertont), offline gecacht, mit
+  TTS-Fallback.
+- **Ehrliche Mastery** (Produktion zählt anders als Erkennen, Widerspruch möglich),
+  5-Tab-Navigation und eine interaktive Spotlight-Tour.
+
+Fortschritt bleibt komplett lokal (`localStorage`), Mitnahme über Export/Import + Sync-Code. Der
+Umsetzungsstand gegenüber dieser Spec steht in [docs/11-roadmap-mvp.md](docs/11-roadmap-mvp.md#umsetzungsstand-2026-07-24-nach-kurs-follow-ups).
 
 ---
 
@@ -64,6 +91,12 @@ Details: [docs/03-content-model.md](docs/03-content-model.md).
 ---
 
 ## TL;DR der wichtigsten Entscheidungen
+
+> Hinweis: Das ist der ursprüngliche Spec-Stand. In der Umsetzung wurden zwei Punkte bewusst
+> revidiert: Statt Expo/TypeScript wurde **build-frei mit Vanilla-JS** gebaut, und statt
+> Supabase-Cloud-Sync gibt es **Export/Import + Sync-Code** (kein Server, kein Konto). SRS läuft
+> SM-2-artig. Der aktuelle Stand steht oben unter „Die App" und in
+> [docs/11](docs/11-roadmap-mvp.md#umsetzungsstand-2026-07-24-nach-kurs-follow-ups).
 
 - **Lernkern:** ein SRS-Scheduler (FSRS-Stil, drei Gedächtnis-Komponenten), der alle Modi speist.
   Belegt: verteiltes Üben hat einen mittel-bis-großen Effekt auf das Zweitsprachenlernen.
